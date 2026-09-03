@@ -7,6 +7,7 @@ import type { Battlefield } from "@/game/scene";
 import type { CharacterStats } from "@/game/types/stats";
 import { AudioManager } from "@/game/audio/audio-manager";
 import { derivePasswordKey } from "@/game/auth/pbkdf2";
+import { loadJobsLang } from "@/game/lang/jobs-lang";
 import { loginActor } from "@/game/machines/actors";
 import { spellCastActor } from "@/game/machines/spell-cast.machine";
 import {
@@ -25,6 +26,7 @@ import { ChatHandler } from "@/game/network/handlers/chat.handler";
 import { ExchangeHandler } from "@/game/network/handlers/exchange.handler";
 import { FightHandler } from "@/game/network/handlers/fight.handler";
 import { InventoryHandler } from "@/game/network/handlers/inventory.handler";
+import { JobsHandler } from "@/game/network/handlers/jobs.handler";
 import { MapHandler } from "@/game/network/handlers/map.handler";
 import { NpcDialogHandler } from "@/game/network/handlers/npc-dialog.handler";
 import { SpellHandler } from "@/game/network/handlers/spell.handler";
@@ -48,12 +50,17 @@ import {
   ExchangeBigStoreItemListRequestSchema,
   ExchangeBigStoreSearchRequestSchema,
   ExchangeBigStoreTypeRequestSchema,
+  ExchangeGetCrafterRequestSchema,
   ExchangeGetMiddlePriceSchema,
   ExchangeLeaveRequestSchema,
   ExchangeMoveItemSchema,
   ExchangeMoveKamaSchema,
+  ExchangeMovePayItemSchema,
+  ExchangeMovePayKamaSchema,
+  ExchangeRepeatCraftSchema,
   ExchangeRequestSendSchema,
   ExchangeSetReadySchema,
+  ExchangeStopRepeatCraftSchema,
   encodeClient,
   GameActionRequestSchema,
   GameCreateRequestSchema,
@@ -64,6 +71,7 @@ import {
   ItemDropRequestSchema,
   ItemMoveRequestSchema,
   ItemUseRequestSchema,
+  JobChangeOptionsRequestSchema,
   SpellDetailsRequestSchema,
   SpellMoveRequestSchema,
   SpellUpgradeRequestSchema,
@@ -78,7 +86,13 @@ import {
   markLost,
   markReconnecting,
 } from "@/game/stores/connection-store";
+import { noteRequestedSkill } from "@/game/stores/craft-store";
 import { fightActor, fightStore } from "@/game/stores/fight-store";
+import {
+  isHarvesting,
+  isHarvestSkill,
+  jobsStore,
+} from "@/game/stores/jobs-store";
 import {
   markSpellDetailsPending,
   spellDetailsStore,
@@ -136,6 +150,7 @@ export class GameClient {
   private pendingInteraction: {
     mapId: number | null;
     cellId: number;
+    approachCellId: number;
     skillId: number;
   } | null = null;
 
@@ -150,6 +165,24 @@ export class GameClient {
    * and anything added later all queue the same way.
    */
   private queuedAfterInterrupt: (() => void) | null = null;
+
+  /**
+   * The element the player chose while a harvest was still running.
+   *
+   * A harvest owns the character until the server's own deadline and
+   * nothing may cut it short (QA-143) — but *dropping* the click is what
+   * made "Faucher" do nothing at all every time the player lined up the
+   * next resource before the current one gave, which is how a gathering
+   * job is actually played. The request waits here instead and is replayed
+   * the moment the action ends. Only the last one survives, like every
+   * other click, and it is abandoned if the map changed underneath it.
+   * See QA-150.
+   */
+  private queuedAfterHarvest: {
+    mapId: number | null;
+    cellId: number;
+    skillId: number;
+  } | null = null;
 
   /**
    * Sequencer chain for in-fight visual events. Mirrors the canonical
@@ -198,6 +231,11 @@ export class GameClient {
     // Registers itself against `messageHandler` and writes straight into
     // `inventoryStore` — nothing here needs to hold a reference to it.
     new InventoryHandler(this.messageHandler);
+    // Likewise: writes only to `jobsStore`, which the interactive menu and
+    // the Métiers panel read. The lang bundle it needs for labels is loaded
+    // eagerly here because the menu's grey/enabled decision is synchronous.
+    new JobsHandler(this.messageHandler);
+    void loadJobsLang();
     new ExchangeHandler(this.messageHandler);
     new BigStoreHandler(this.messageHandler);
     // Likewise: it only ever writes to `npcDialogStore`.
@@ -356,6 +394,12 @@ export class GameClient {
       // sending `ER`, exactly as `startDialog` does before `DC`.
       this.mapHandler.interruptSelfMove();
       this.requestExchange(targetSpriteId);
+    });
+    battlefield.setOnCraftInvite((targetSpriteId, skillId) => {
+      // Same rule again: the walk is cancelled before the proposal goes
+      // out, or the two players would drift apart while it is on screen.
+      this.mapHandler.interruptSelfMove();
+      this.requestSecureCraft(targetSpriteId, skillId, true);
     });
     // Sole driver of the MP-reachable-range tint: roll-over our own
     // avatar shows the green pattern, roll-out clears it. Replicates
@@ -846,7 +890,9 @@ export class GameClient {
         const highlighter = this.battlefield
           ?.getFightUI()
           ?.getCellHighlighter();
-        if (!highlighter) return;
+        if (!highlighter) {
+          return;
+        }
         // Remove the matching zone instance — the highlighter keeps
         // the cell footprint per (centerCell, type) so we don't need
         // to recompute it from areaKind/size here. Try both types
@@ -854,6 +900,21 @@ export class GameClient {
         highlighter.removeZone(zone.cellId, HighlightType.GLYPH);
         highlighter.removeZone(zone.cellId, HighlightType.TRAP);
       },
+    });
+
+    // The harvest lock lifting is the only signal an element action queued
+    // during a harvest waits on. The store owns it, and it is dropped
+    // either by the server's own `GDF` or by the duration the server
+    // announced — see `queuedAfterHarvest`.
+    let wasHarvesting = isHarvesting();
+    jobsStore.subscribe(() => {
+      const harvesting = isHarvesting();
+      const ended = wasHarvesting && !harvesting;
+      wasHarvesting = harvesting;
+
+      if (ended) {
+        this.flushQueuedAfterHarvest();
+      }
     });
 
     // Tint the MP-bound reachable cells whenever it becomes the
@@ -1196,6 +1257,11 @@ export class GameClient {
   // when the server's request side migrates away from GA-style strings.
 
   move(path: number[]): void {
+    if (isHarvesting()) {
+      log.debug("move ignored: harvest owns the character until its deadline");
+      return;
+    }
+
     const params = path.join(",");
     // Declared before it goes out: from here until the ack, this move
     // owns the character, and a click in that window interrupts it
@@ -1219,6 +1285,23 @@ export class GameClient {
    * let `flushPendingInteraction` fire it when the walk lands.
    */
   useInteractive(cellId: number, skillId: number): void {
+    if (isHarvesting()) {
+      // Not a refusal — the click is honoured as soon as the running
+      // action ends. See `queuedAfterHarvest`.
+      log.debug(`interactive queued behind the harvest: cell ${cellId}`);
+      this.queuedAfterHarvest = {
+        mapId: this.mapHandler.getCurrentMapId(),
+        cellId,
+        skillId,
+      };
+      return;
+    }
+
+    this.startInteractive(cellId, skillId);
+  }
+
+  /** `useInteractive` past the harvest gate — also where a queued one lands. */
+  private startInteractive(cellId: number, skillId: number): void {
     // Same rule as a cell click: an element chosen mid-walk stops the
     // walk first, then the approach is computed from where we stopped.
     if (this.mapHandler.isSelfMoveInFlight()) {
@@ -1229,31 +1312,34 @@ export class GameClient {
     this.approachInteractive(cellId, skillId);
   }
 
-  /** Walk onto the element's cell if we are not on it, then act on it. */
+  /** Walk beside a resource (onto other elements), then act on it. */
   private approachInteractive(cellId: number, skillId: number): void {
     const currentCellId = this.mapHandler.getCurrentCellId();
-
-    if (currentCellId === cellId) {
-      this.sendInteractiveUse(cellId, skillId);
-      return;
-    }
-
     const pathfinding = this.mapHandler.getPathfinding();
 
     if (currentCellId === null || !pathfinding) {
       return;
     }
 
-    const path = pathfinding.findPath(currentCellId, cellId);
+    const harvest = isHarvestSkill(skillId);
+    const path = harvest
+      ? pathfinding.findAdjacentPath(currentCellId, cellId)
+      : pathfinding.findPath(currentCellId, cellId);
 
-    if (!path || path.length < 2) {
+    if (!path) {
       log.debug(`interactive: no path from ${currentCellId} → ${cellId}`);
+      return;
+    }
+
+    if (path.length < 2) {
+      this.sendInteractiveUse(cellId, skillId);
       return;
     }
 
     this.pendingInteraction = {
       mapId: this.mapHandler.getCurrentMapId(),
       cellId,
+      approachCellId: path[path.length - 1] as number,
       skillId,
     };
     this.move(path);
@@ -1274,7 +1360,7 @@ export class GameClient {
     // player off the map. Either way the element is no longer under us.
     if (
       this.mapHandler.getCurrentMapId() !== pending.mapId ||
-      this.mapHandler.getCurrentCellId() !== pending.cellId
+      this.mapHandler.getCurrentCellId() !== pending.approachCellId
     ) {
       log.debug(`interactive: dropped, walk ended off cell ${pending.cellId}`);
       return;
@@ -1285,6 +1371,10 @@ export class GameClient {
 
   private sendInteractiveUse(cellId: number, skillId: number): void {
     log.info(`interactive-use cell=${cellId} skill=${skillId}`);
+    // `EC` will say "a craft window opened" and nothing more; which bench
+    // it is has to be remembered from here. Same in 1.29, whose client
+    // never needed the server to tell it what it had just clicked.
+    noteRequestedSkill(skillId);
     this.connection.send(
       encodeClient(
         "gameAction",
@@ -1493,6 +1583,118 @@ export class GameClient {
     );
   }
 
+  /**
+   * EK at a workbench — the "Créer" button.
+   *
+   * The same frame a trade uses to validate. `Craft.as:379` sends exactly
+   * this, and only when the bench is not empty; the server decides what it
+   * means from the type of the open exchange.
+   */
+  craftOnce(): void {
+    this.exchangeSetReady();
+  }
+
+  /** EMR — craft the same recipe up to `count` times. */
+  craftSeries(count: number): void {
+    this.connection.send(
+      encodeClient(
+        "exchangeRepeatCraft",
+        create(ExchangeRepeatCraftSchema, { count })
+      )
+    );
+  }
+
+  /** EMr — stop the running series after the round in flight. */
+  stopCraftSeries(): void {
+    this.connection.send(
+      encodeClient(
+        "exchangeStopRepeatCraft",
+        create(ExchangeStopRepeatCraftSchema, {})
+      )
+    );
+  }
+
+  /**
+   * ER12 / ER13 — propose a craft for somebody else.
+   *
+   * `cellNum` carries the skill: 1.29 describes it as an optional cell
+   * number, no secure-craft request has ever needed one, and the menu entry
+   * that sends this ("Inviter à Bûcheron") does have to name a job.
+   */
+  requestSecureCraft(
+    targetSpriteId: number,
+    skillId: number,
+    asArtisan: boolean
+  ): void {
+    this.connection.send(
+      encodeClient(
+        "exchangeRequest",
+        create(ExchangeRequestSendSchema, {
+          exchangeType: asArtisan
+            ? ExchangeType.EXCHANGE_SECURE_CRAFT_ARTISAN
+            : ExchangeType.EXCHANGE_SECURE_CRAFT_CLIENT,
+          targetId: String(targetSpriteId),
+          cellNum: skillId,
+        })
+      )
+    );
+  }
+
+  /** EPO — offer an item in payment for a co-operative craft. */
+  movePayItem(unicId: number, add: boolean, quantity: number): void {
+    this.connection.send(
+      encodeClient(
+        "exchangeMovePayItem",
+        create(ExchangeMovePayItemSchema, {
+          add,
+          itemId: unicId,
+          quantity,
+          price: 0n,
+        })
+      )
+    );
+  }
+
+  /** EPG — offer kamas. Absolute, like every other offer. */
+  movePayKamas(quantity: number): void {
+    this.connection.send(
+      encodeClient(
+        "exchangeMovePayKama",
+        create(ExchangeMovePayKamaSchema, { quantity: BigInt(quantity) })
+      )
+    );
+  }
+
+  /**
+   * JO — set the artisan's terms for a job.
+   *
+   * Sending this is also what puts the artisan in the craftsmen's book: 1.29
+   * has no separate "list me" frame, and asks for the options again at every
+   * connection for exactly that reason.
+   */
+  setJobOptions(jobId: number, options: number, minSlots: number): void {
+    this.connection.send(
+      encodeClient(
+        "jobChangeOptions",
+        create(JobChangeOptionsRequestSchema, {
+          jobId,
+          params: String(options),
+          minSlots,
+        })
+      )
+    );
+  }
+
+  /** EJF — who is offering that job's services right now. */
+  requestCrafters(jobId: number): void {
+    this.connection.send(
+      encodeClient(
+        "exchangeGetCrafter",
+        create(ExchangeGetCrafterRequestSchema, { jobId })
+      )
+    );
+  }
+
   /** EV — close the exchange. */
   exchangeLeave(): void {
     this.connection.send(
@@ -1696,6 +1898,11 @@ export class GameClient {
   }
 
   private handleCellClick(targetCellId: number): void {
+    if (isHarvesting()) {
+      log.debug("cell-click ignored: harvest owns the character");
+      return;
+    }
+
     const fightMode = fightStore.getSnapshot().mode;
     log.debug(`cell-click cell=${targetCellId} fightMode=${fightMode}`);
 
@@ -1845,6 +2052,30 @@ export class GameClient {
 
     this.queuedAfterInterrupt = null;
     queued();
+  }
+
+  /**
+   * Run the element action the player lined up during a harvest.
+   *
+   * A change of map in between abandons it: the cell it names belongs to
+   * the map it was clicked on, and every other one would resolve it to a
+   * different element.
+   */
+  private flushQueuedAfterHarvest(): void {
+    const queued = this.queuedAfterHarvest;
+
+    if (!queued) {
+      return;
+    }
+
+    this.queuedAfterHarvest = null;
+
+    if (queued.mapId !== this.mapHandler.getCurrentMapId()) {
+      log.debug("queued interactive dropped: the map changed underneath it");
+      return;
+    }
+
+    this.startInteractive(queued.cellId, queued.skillId);
   }
 
   // ── Fight actions (called by FightOverlay) ───────────────────────

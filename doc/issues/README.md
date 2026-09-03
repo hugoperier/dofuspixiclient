@@ -91,16 +91,16 @@ causes racines et les notes de méthode, mais plus le détail par entrée.
 
 _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 
-**128 entrées**, dont **124 encore ouvertes**.
+**151 entrées**, dont **147 encore ouvertes**.
 
 ## Par gravité
 
 | Gravité | Restantes | Total |
 |---|---|---|
 | P0 — bloque la session (crash, impossible d'avancer) | 4 | 4 |
-| P1 — fonctionnalité cassée ou absente sur un flux principal | 52 | 52 |
-| P2 — comportement divergent du 1.29 canonique, contournable | 48 | 48 |
-| P3 — finition, confort, cosmétique | 20 | 21 |
+| P1 — fonctionnalité cassée ou absente sur un flux principal | 62 | 62 |
+| P2 — comportement divergent du 1.29 canonique, contournable | 58 | 58 |
+| P3 — finition, confort, cosmétique | 23 | 24 |
 | Sans gravité — vérifications sans défaut | 0 | 3 |
 
 ## Par statut
@@ -108,9 +108,9 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | Statut | Entrées |
 |---|---|
 | `open` — observé, non reproduit méthodiquement | 45 |
-| `confirmed` — reproduit, preuve au dossier | 18 |
+| `confirmed` — reproduit, preuve au dossier | 17 |
 | `in-progress` — correctif engagé | 13 |
-| `fixed` — correctif livré, reste à revérifier manette en main | 48 |
+| `fixed` — correctif livré, reste à revérifier manette en main | 72 |
 | `closed` — vérifié, clos | 3 |
 | `wontfix` — écarté, avec la raison en fiche | 1 |
 
@@ -118,22 +118,22 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 
 | Domaine | Restantes | Total |
 |---|---|---|
-| [`audio/`](audio/) | 0 | 1 |
+| [`audio/`](audio/) | 1 | 2 |
 | [`auth/`](auth/) | 3 | 3 |
 | [`camera-zoom/`](camera-zoom/) | 3 | 3 |
 | [`chat/`](chat/) | 5 | 5 |
-| [`exchange/`](exchange/) | 17 | 17 |
+| [`exchange/`](exchange/) | 20 | 20 |
 | [`fight/`](fight/) | 14 | 14 |
 | [`hud-banner/`](hud-banner/) | 9 | 9 |
-| [`hud-panels/`](hud-panels/) | 15 | 16 |
+| [`hud-panels/`](hud-panels/) | 17 | 18 |
 | [`input/`](input/) | 4 | 5 |
 | [`inventory/`](inventory/) | 4 | 4 |
-| [`network/`](network/) | 7 | 7 |
-| [`progression/`](progression/) | 5 | 5 |
+| [`network/`](network/) | 9 | 9 |
+| [`progression/`](progression/) | 13 | 13 |
 | [`server-runtime/`](server-runtime/) | 8 | 8 |
 | [`session/`](session/) | 3 | 3 |
-| [`world-content/`](world-content/) | 9 | 9 |
-| [`world-render/`](world-render/) | 10 | 10 |
+| [`world-content/`](world-content/) | 11 | 11 |
+| [`world-render/`](world-render/) | 15 | 15 |
 | [`worldmap/`](worldmap/) | 8 | 9 |
 
 ## P0 — bloque la session (crash, impossible d'avancer)
@@ -198,9 +198,19 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [QA-116](exchange/QA-116-tableau-js-vers-jsonb.md) | P1 | exchange | bug | fixed | Un tableau JS passé à une colonne jsonb est encodé comme un tableau Postgres — les objets créés se dédoublent au lieu de se cumuler |
 | [QA-117](exchange/QA-117-kamas-de-coffre-de-maison.md) | P1 | exchange | bug | fixed | Les kamas d'un coffre de maison ne se transfèrent pas — seuls le joueur et la banque étaient reconnus |
 | [QA-118](exchange/QA-118-consulter-son-coffre-grise.md) | P1 | exchange | gap | fixed | « Consulter son coffre personnel » est grisé — une réponse ne pouvait porter qu'une navigation |
-| [QA-123](progression/QA-123-boucle-de-recolte-inexistante.md) | P1 | progression | gap | confirmed | La boucle de récolte n'existe pas de bout en bout |
+| [QA-123](progression/QA-123-boucle-de-recolte-inexistante.md) | P1 | progression | gap | fixed | La boucle de récolte n'existe pas de bout en bout |
 | [QA-126](auth/QA-126-api-admin-de-provisionnement-de-comptes-absente.md) | P1 | auth | feature | fixed | L'API admin ne permet pas de provisionner un compte et son premier personnage |
 | [QA-127](server-runtime/QA-127-planificateur-declenche-les-taches-lointaines-immediatement.md) | P1 | server-runtime | bug | fixed | Le planificateur déclenche immédiatement toute tâche à plus de 24,8 jours |
+| [QA-129](progression/QA-129-referentiel-des-metiers-jamais-importe.md) | P1 | progression | data | fixed | Le référentiel des métiers n'est jamais importé — cinq tables vides depuis la migration 0011 |
+| [QA-130](world-content/QA-130-aucun-pnj-n-enseigne-de-metier.md) | P1 | world-content | gap | fixed | Aucun PNJ n'enseigne de métier — l'action de réponse 6 n'a pas de branche |
+| [QA-131](network/QA-131-protocole-des-metiers-sans-producteur.md) | P1 | network | gap | fixed | Le protocole des métiers n'a aucun producteur, et JobSkillEntry se trompe de champs |
+| [QA-135](exchange/QA-135-aucun-atelier.md) | P1 | exchange | feature | fixed | Aucun atelier — l'échange de type 3 est refusé |
+| [QA-136](progression/QA-136-cases-taux-et-xp-d-artisanat.md) | P1 | progression | gap | fixed | Cases de craft, taux de réussite et expérience d'artisanat n'existent pas |
+| [QA-137](hud-panels/QA-137-pas-de-fenetre-d-atelier.md) | P1 | hud-panels | gap | fixed | Pas de fenêtre d'atelier |
+| [QA-143](progression/QA-143-recolte-sans-animation-adjacence-ni-souche.md) | P1 | progression | bug | fixed | La récolte se joue sur la ressource, sans animation ni souche, et reste annulable |
+| [QA-145](world-render/QA-145-etats-des-objets-interactifs-non-extraits.md) | P1 | world-render | bug | fixed | L'arbre coupé reste figé à mi-chute et ne laisse aucune souche |
+| [QA-146](progression/QA-146-approche-d-une-ressource-par-une-cellule-de-bord.md) | P1 | progression | bug | fixed | L'approche d'une ressource peut se faire par une cellule qui change de carte |
+| [QA-151](world-render/QA-151-sprites-recompiles-trois-fois-trop-vite.md) | P1 | world-render | bug | fixed | Un sprite recompilé joue toutes ses animations trois fois trop vite |
 
 ## P2 — comportement divergent du 1.29 canonique, contournable
 
@@ -254,6 +264,16 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [QA-124](worldmap/QA-124-manifeste-public-de-navigation-absent.md) | P2 | worldmap | feature | fixed | Aucun manifeste public ne décrit la topologie navigable du monde |
 | [QA-125](network/QA-125-contrats-typescript-non-publies.md) | P2 | network | feature | fixed | Les contrats TypeScript du client ne sont pas publiés |
 | [QA-128](hud-panels/QA-128-ascenseur-plus-haut-que-sa-glissiere.md) | P2 | hud-panels | bug | fixed | L'ascenseur dépasse sa glissière quand la liste est plus courte que sa fenêtre |
+| [QA-132](network/QA-132-gdf-jamais-emis.md) | P2 | network | gap | fixed | GDF n'est jamais émis — un objet interactif n'a aucun état |
+| [QA-133](progression/QA-133-pods-de-metier-non-comptes.md) | P2 | progression | bug | fixed | Les pods gagnés par les métiers ne sont jamais comptés |
+| [QA-134](hud-panels/QA-134-pas-de-panneau-metiers.md) | P2 | hud-panels | gap | fixed | Pas de panneau Métiers — le bouton de bannière est rendu et inerte |
+| [QA-138](exchange/QA-138-craft-cooperatif-et-securise.md) | P2 | exchange | feature | fixed | Ni craft coopératif ni craft sécurisé |
+| [QA-140](progression/QA-140-on-ne-peut-pas-oublier-un-metier.md) | P2 | progression | feature | fixed | On ne peut pas oublier un métier |
+| [QA-142](world-content/QA-142-branches-de-dialogue-non-affichables.md) | P2 | world-content | data | fixed | Des branches de dialogue mènent à des questions que le client 1.29 ne sait pas afficher |
+| [QA-144](world-render/QA-144-ressources-de-recolte-toutes-le-meme-sprite.md) | P2 | world-render | bug | fixed | Les ressources de récolte partagent un même sprite — la variante n'est jamais résolue à l'extraction |
+| [QA-148](world-render/QA-148-outil-jamais-visible-dans-la-main.md) | P2 | world-render | bug | fixed | L'outil équipé n'apparaît jamais dans la main du personnage |
+| [QA-149](world-render/QA-149-cheveux-perdus-des-la-deuxieme-frame.md) | P2 | world-render | bug | fixed | Les cheveux du Iop disparaissent dès la deuxième frame d'animation |
+| [QA-150](progression/QA-150-clic-de-recolte-perdu-pendant-une-recolte.md) | P2 | progression | bug | fixed | Un clic sur « Faucher » pendant une récolte est perdu sans un mot |
 
 ## P3 — finition, confort, cosmétique
 
@@ -280,6 +300,9 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [QA-110](exchange/QA-110-percepteur.md) | P3 | exchange | feature | open | Aucun ramassage de percepteur |
 | [QA-111](exchange/QA-111-inventaire-de-monture-et-enclos.md) | P3 | exchange | feature | open | Ni inventaire de monture, ni étable, ni enclos |
 | [QA-122](exchange/QA-122-pas-de-liste-noire.md) | P3 | exchange | feature | open | Pas de bouton « Ignorer » sur une proposition d'échange, faute de liste noire |
+| [QA-139](exchange/QA-139-livre-des-artisans-et-options-metier.md) | P3 | exchange | feature | fixed | Pas de livre des artisans ni d'options de métier |
+| [QA-141](progression/QA-141-le-metier-de-chasseur-n-existe-pas.md) | P3 | progression | feature | fixed | Le métier de Chasseur n'existe pas — et ses données non plus |
+| [QA-147](audio/QA-147-la-recolte-est-muette.md) | P3 | audio | feature | fixed | La récolte est muette |
 
 ## Sans gravité — vérifications sans défaut
 

@@ -1,5 +1,6 @@
 import { cellToCoord, cellToRowCol } from "./cell.ts";
 import { DIR_CHANGE_PENALTY, DIR_COSTS, getDirOffsets } from "./directions.ts";
+import { isMapChangeCell } from "./edge.ts";
 import { isValidDirection } from "./neighbors.ts";
 
 const MAX_PATH_LENGTH = 500;
@@ -26,6 +27,7 @@ interface PathNode {
  */
 export class DofusPathfinding {
   private mapWidth: number;
+  private mapHeight: number;
   private totalRows: number;
   private dirOffsets: number[];
   private walkableSet: Set<number>;
@@ -33,6 +35,7 @@ export class DofusPathfinding {
 
   constructor(mapWidth: number, mapHeight: number, walkableCellIds: number[]) {
     this.mapWidth = mapWidth;
+    this.mapHeight = mapHeight;
     this.totalRows = 2 * mapHeight - 1;
     this.dirOffsets = getDirOffsets(mapWidth);
     this.walkableSet = new Set(walkableCellIds);
@@ -73,7 +76,9 @@ export class DofusPathfinding {
     if (!this.walkableSet.has(startId) || !this.walkableSet.has(goalId)) {
       return null;
     }
-    if (startId === goalId) return [startId];
+    if (startId === goalId) {
+      return [startId];
+    }
 
     const openSet = new Map<number, PathNode>();
     const closedSet = new Map<number, number>();
@@ -101,7 +106,9 @@ export class DofusPathfinding {
         }
       }
 
-      if (!current) break;
+      if (!current) {
+        break;
+      }
 
       if (current.cellId === goalId) {
         return this.reconstructPath(current);
@@ -117,7 +124,9 @@ export class DofusPathfinding {
         // 7=NE) — the ones that move a full cell visually. The
         // half-step directions (0/2/4/6) are roleplay-only and fail
         // server-side path validation in combat.
-        if (orthogonalOnly && (dir & 1) === 0) continue;
+        if (orthogonalOnly && (dir & 1) === 0) {
+          continue;
+        }
         if (
           !isValidDirection(
             row,
@@ -127,13 +136,17 @@ export class DofusPathfinding {
             this.mapWidth,
             this.totalRows
           )
-        )
+        ) {
           continue;
+        }
 
         const neighborId = current.cellId + (this.dirOffsets[dir] as number);
-        if (!this.walkableSet.has(neighborId)) continue;
-        if (neighborId !== goalId && this.occupiedCells.has(neighborId))
+        if (!this.walkableSet.has(neighborId)) {
           continue;
+        }
+        if (neighborId !== goalId && this.occupiedCells.has(neighborId)) {
+          continue;
+        }
 
         const moveCost = DIR_COSTS[dir] as number;
         const dirChangeCost =
@@ -174,6 +187,46 @@ export class DofusPathfinding {
     }
 
     return null;
+  }
+
+  /**
+   * Find the shortest reachable path that stops beside `targetId`.
+   *
+   * Interactive resources occupy their own map cell visually; walking onto
+   * that cell puts the character inside the tree/vein. Each reachable
+   * neighbour is therefore tried as a destination and the shortest route is
+   * returned. A character already beside the resource stays put.
+   *
+   * Cells that hand the player to the next map are never chosen: the tree at
+   * the bottom of the map is often closest from the row below it, and landing
+   * there ends the walk on another map with the harvest silently dropped
+   * (QA-146). The start cell is exempt — no walk happens, so no transition
+   * can fire.
+   */
+  findAdjacentPath(startId: number, targetId: number): number[] | null {
+    let best: number[] | null = null;
+
+    for (const neighbor of this.getNeighbors(targetId)) {
+      if (!this.walkableSet.has(neighbor)) {
+        continue;
+      }
+      if (neighbor !== startId && this.occupiedCells.has(neighbor)) {
+        continue;
+      }
+      if (
+        neighbor !== startId &&
+        isMapChangeCell(neighbor, this.mapWidth, this.mapHeight)
+      ) {
+        continue;
+      }
+
+      const path = this.findPath(startId, neighbor);
+      if (path && (!best || path.length < best.length)) {
+        best = path;
+      }
+    }
+
+    return best;
   }
 
   /**
@@ -302,16 +355,24 @@ export class DofusPathfinding {
    * Validate that a path is walkable and connected.
    */
   validatePath(path: number[], currentCellId: number): boolean {
-    if (path.length < 2) return false;
-    if (path[0] !== currentCellId) return false;
+    if (path.length < 2) {
+      return false;
+    }
+    if (path[0] !== currentCellId) {
+      return false;
+    }
 
     for (let i = 0; i < path.length; i++) {
-      if (!this.walkableSet.has(path[i] as number)) return false;
+      if (!this.walkableSet.has(path[i] as number)) {
+        return false;
+      }
     }
 
     for (let i = 0; i < path.length - 1; i++) {
       const neighbors = this.getNeighbors(path[i] as number);
-      if (!neighbors.includes(path[i + 1] as number)) return false;
+      if (!neighbors.includes(path[i + 1] as number)) {
+        return false;
+      }
     }
 
     return true;
@@ -324,7 +385,9 @@ export class DofusPathfinding {
     const diff = toId - fromId;
 
     for (let dir = 7; dir >= 0; dir--) {
-      if (this.dirOffsets[dir] === diff) return dir;
+      if (this.dirOffsets[dir] === diff) {
+        return dir;
+      }
     }
 
     const from = cellToCoord(fromId, this.mapWidth);

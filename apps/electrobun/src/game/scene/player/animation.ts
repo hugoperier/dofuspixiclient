@@ -16,6 +16,7 @@ export const PlayerAnimation = {
   DEATH: "death",
   CAST: "cast",
   SIT: "sit",
+  HARVEST: "harvest",
 } as const;
 
 export type PlayerAnimationValue =
@@ -33,6 +34,7 @@ export const ANIM_TO_SPRITE_BASE: Record<string, string> = {
   [PlayerAnimation.DEATH]: "die",
   [PlayerAnimation.CAST]: "anim1",
   [PlayerAnimation.SIT]: "emoteStatic1",
+  [PlayerAnimation.HARVEST]: "anim3",
 };
 
 /**
@@ -295,6 +297,26 @@ export function updateFrameAnimation(
     }
     // When loop=false and we're already at the last frame, hold (no-op).
   }
+}
+
+/**
+ * The frame a looping animation rings its per-cycle hook on.
+ *
+ * `applyEnd` is the class metadata's own "the action lands here" frame — the
+ * one `GlobalSpriteHandler.applyEnd` fires the sequencer on — so a tool loop
+ * rings when the axe bites rather than when the windup starts. Two cases fall
+ * back to the last frame: no metadata for this animation, and an `applyEnd`
+ * of 0, which no cycle could ever wrap back below to re-arm.
+ */
+export function animCycleTriggerFrame(
+  frameCount: number,
+  applyEnd: number | null
+): number {
+  const lastFrame = Math.max(0, frameCount - 1);
+
+  return applyEnd !== null && applyEnd > 0
+    ? Math.min(applyEnd, lastFrame)
+    : lastFrame;
 }
 
 /**

@@ -19,6 +19,7 @@ import { playerZIndex } from "@/game/constants/z-index";
 import { projectCellPosition } from "@/game/datacenter/map";
 import { PlayerActor } from "@/game/scene/player/actor";
 import {
+  animCycleTriggerFrame,
   getAnimationBaseFromType,
   getCellPositionWithSlope,
   initFrameState,
@@ -126,6 +127,10 @@ const BUBBLE_OFFSET_Y = -50;
  * the React component renders them.
  */
 export class PlayerRenderer {
+  private readonly timedAnimationTimers = new Map<
+    number,
+    ReturnType<typeof setTimeout>
+  >();
   private container: Container;
   private players: Map<number, ActivePlayer> = new Map();
   private playerActors: Map<number, PlayerActor> = new Map();
@@ -403,6 +408,9 @@ export class PlayerRenderer {
     player.revertTo = null;
     player.onAnimComplete = null;
     player.onAnimLastFrame = null;
+    // The tool loop is over the moment anything else animates this sprite —
+    // walking away from a tree must take the axe blows with it.
+    player.onAnimCycle = null;
     player.animDataAtRequest = null;
     if (options?.revertTo && isOneShotAnimation(animation)) {
       player.revertTo = options.revertTo;
@@ -433,6 +441,40 @@ export class PlayerRenderer {
       player.animDataAtRequest = player.currentAnimData;
     }
     this.sprites.switch(player, baseAnim, player.direction);
+  }
+
+  /** Play an arbitrary tool animation in a loop, then restore idle exactly. */
+  setTimedLoopAnimation(
+    id: number,
+    baseAnim: string,
+    durationMs: number,
+    onCycle?: () => void
+  ): void {
+    const player = this.players.get(id);
+    if (!player) {
+      return;
+    }
+
+    const previous = this.timedAnimationTimers.get(id);
+    if (previous) {
+      clearTimeout(previous);
+    }
+
+    player.animation = PlayerAnimation.HARVEST;
+    player.frameIndex = 0;
+    player.frameTimer = 0;
+    player.revertTo = null;
+    player.onAnimComplete = null;
+    player.onAnimLastFrame = null;
+    player.onAnimCycle = onCycle ?? null;
+    player.animCycleArmed = true;
+    this.sprites.switch(player, baseAnim, player.direction);
+
+    const timer = setTimeout(() => {
+      this.timedAnimationTimers.delete(id);
+      this.setAnimation(id, PlayerAnimation.IDLE);
+    }, durationMs);
+    this.timedAnimationTimers.set(id, timer);
   }
 
   /**
@@ -526,6 +568,42 @@ export class PlayerRenderer {
       player.revertTo = null;
       player.animDataAtRequest = null;
       this.setAnimation(player.id, next);
+    }
+  }
+
+  /**
+   * Ring the per-cycle hook of a looping animation once per lap.
+   *
+   * The trigger is the applyEnd frame the one-shot hooks use — the class
+   * metadata's own "the action lands here" — so a harvest is heard when the
+   * axe bites rather than when the windup starts. `animCycleArmed` is what
+   * keeps one lap to one ring: the hook fires the first tick the animation
+   * reaches the trigger and re-arms once it has wrapped back below it.
+   *
+   * An animation whose applyEnd is frame 0 (or that has no metadata at all)
+   * rings on its last frame instead — there is nothing to wrap back below.
+   */
+  private checkAnimCycle(player: ActivePlayer): void {
+    if (!player.onAnimCycle || !player.currentAnimData) {
+      return;
+    }
+
+    const total =
+      player.currentAnimData.frameCount ??
+      player.currentAnimData.textures.length;
+    const trigger = animCycleTriggerFrame(
+      total,
+      this.spriteLoader.getApplyEndFrame(player.gfxId, player.currentAnimName)
+    );
+
+    if (player.frameIndex < trigger) {
+      player.animCycleArmed = true;
+      return;
+    }
+
+    if (player.animCycleArmed) {
+      player.animCycleArmed = false;
+      player.onAnimCycle();
     }
   }
 
@@ -634,6 +712,19 @@ export class PlayerRenderer {
       return;
     }
     hidePlayerNameplate(id);
+  }
+
+  /**
+   * Where a HUD overlay for this sprite should sit, in the same
+   * canvas-relative pixels the nameplate uses.
+   *
+   * Exposed for the harvest gauge, which needs the same anchor and has no
+   * business reaching into `players` to compute it.
+   */
+  getSpriteAnchor(id: number): { x: number; y: number } | null {
+    const player = this.players.get(id);
+
+    return player ? this.computeNameplateAnchor(player) : null;
   }
 
   private computeNameplateAnchor(player: ActivePlayer): {
@@ -865,6 +956,8 @@ export class PlayerRenderer {
       revertTo: null,
       onAnimComplete: null,
       onAnimLastFrame: null,
+      onAnimCycle: null,
+      animCycleArmed: true,
       animDataAtRequest: null,
       look: data.look,
       linkedChildren: [],
@@ -1004,7 +1097,9 @@ export class PlayerRenderer {
    */
   setHpBarVisible(id: number, visible: boolean): void {
     const player = this.players.get(id);
-    if (!player) return;
+    if (!player) {
+      return;
+    }
     if (visible) {
       player.overhead.setHp(player.hp, player.maxHp);
     }
@@ -1083,6 +1178,7 @@ export class PlayerRenderer {
         if (f) {
           this.sprites.tickFrame(f, dt / 1000);
           this.checkAnimRevert(f);
+          this.checkAnimCycle(f);
           this.movement.advance(f, dt);
         }
       },
@@ -1170,6 +1266,12 @@ export class PlayerRenderer {
 
     if (!player) {
       return;
+    }
+
+    const timedAnimation = this.timedAnimationTimers.get(id);
+    if (timedAnimation) {
+      clearTimeout(timedAnimation);
+      this.timedAnimationTimers.delete(id);
     }
 
     for (const childId of player.linkedChildren) {

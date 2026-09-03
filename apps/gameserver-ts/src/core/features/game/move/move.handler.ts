@@ -10,6 +10,7 @@ import {
 } from "@dofus/proto/game_pb";
 import { DofusMessageSchema } from "@dofus/proto/server_messages_pb";
 import { ExchangeService } from "@modules/exchange/exchange.service";
+import { HarvestService } from "@modules/harvest/harvest.service";
 import {
   type CachedMap,
   MapCacheService,
@@ -43,6 +44,7 @@ export class MoveHandler {
     private readonly presence: PlayerPresenceService,
     private readonly pending: PendingMovesService,
     private readonly exchange: ExchangeService,
+    private readonly harvest: HarvestService,
     private readonly sessions: SessionRegistry,
     private readonly frames: GatewayFrameService
   ) {}
@@ -66,6 +68,13 @@ export class MoveHandler {
     // off mid-deal. A bank or a chest does not block — see
     // `ExchangeService.blocksMovement`.
     if (this.exchange.blocksMovement(ctx.sessionId)) {
+      return;
+    }
+
+    // Harvest owns the character until the server's deadline. The client
+    // suppresses the click too, but this is the authority: a modified or
+    // lagging client still cannot move or cancel the action.
+    if (this.harvest.isRunning(session.characterId)) {
       return;
     }
 

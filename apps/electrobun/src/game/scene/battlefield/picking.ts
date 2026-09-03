@@ -1,15 +1,22 @@
 import type { MonsterGroupMember } from "@dofus/proto";
-import type { Application, Sprite } from "pixi.js";
+import { AnimatedSprite, type Application, type Sprite } from "pixi.js";
 
 import type { NpcLangData } from "@/game/lang/npc-lang";
 import type { PickingSystem } from "@/game/render/picking-system";
 import type { PlayerRenderer } from "@/game/scene/player/renderer";
-import type { InteractiveObjectData, PickResult } from "@/game/types";
+import type { ContextMenuOption } from "@/game/stores/context-menu-store";
+import type {
+  InteractiveObjectData,
+  PickResult,
+  TileState,
+} from "@/game/types";
+import { jobOfSkill, jobsLangSnapshot } from "@/game/lang/jobs-lang";
 import {
   hideContextMenu,
   showContextMenu,
 } from "@/game/stores/context-menu-store";
-import { IMPLEMENTED_INTERACTIVE_SKILLS } from "@/game/types";
+import { canUseJobSkill, getJobs, jobsStore } from "@/game/stores/jobs-store";
+import { UNCONDITIONAL_INTERACTIVE_SKILLS } from "@/game/types";
 import {
   clearMonsterGroupHover,
   setMonsterGroupHover,
@@ -25,6 +32,20 @@ const log = createLogger("BattlefieldPicking");
  * 5 and 6 are the two halves of an auction house, and the 56 NPCs that
  * carry them always carry both.
  */
+/** How much a spent element is dimmed, for want of a stump frame. */
+const DEPLETED_TILE_ALPHA = 0.45;
+
+/**
+ * The `GDF` frame numbers the server sends, mirroring `InteractiveFrame` in
+ * `apps/gameserver-ts/src/core/modules/harvest/harvest.constants.ts`.
+ */
+const InteractiveFrame = {
+  Ready: 0,
+  Locked: 2,
+  InUse: 3,
+  Readying: 5,
+} as const;
+
 const NPC_ACTION_TALK = 3;
 const NPC_ACTION_BIGSTORE_SELL = 5;
 const NPC_ACTION_BIGSTORE_BUY = 6;
@@ -70,6 +91,8 @@ export interface BattlefieldPickingDeps {
   localCharacterId?: () => number | null;
   /** Fired when the player picks "Echange" on another player. */
   onPlayerExchange?: (targetSpriteId: number) => void;
+  /** "Inviter à <métier>" — offer to craft for that player. */
+  onCraftInvite?: (targetSpriteId: number, skillId: number) => void;
 }
 
 interface InteractiveCallbacks {
@@ -119,6 +142,16 @@ export class BattlefieldPicking {
   // sibling would only tint that one sprite while the rest stayed
   // dark — exactly the bug the user reported.
   private readonly pickableIdToGroupSpriteIds = new Map<number, number[]>();
+  /** cellId → the layer-2 sprite standing on it, for `GDF`. */
+  private readonly cellIdToTileSprite = new Map<number, Sprite>();
+  /** cellId → the gfx standing on it, for anything keyed by the element. */
+  private readonly cellIdToGfxId = new Map<number, number>();
+  /** cellId → that element's `GDF` frame → frame-range table. */
+  private readonly cellIdToTileStates = new Map<number, TileState[]>();
+  /** Cells whose element is spent; a click on one falls through to a walk. */
+  private readonly depletedCells = new Set<number>();
+  /** Last `GDF` frame per cell, retained across an async map/zoom rebuild. */
+  private readonly cellFrames = new Map<number, number>();
   // pickableId → NPC *template* id, for SPRITE_TYPE_NPC actors. Keys the
   // `npc` lang bundle the click menu is built from, and — just as
   // important — marks the actor as an NPC: NPC sprite ids are negative,
@@ -229,8 +262,16 @@ export class BattlefieldPicking {
    * Register an interactive tile (zaap, door, chest…). The cell id is what the
    * server is told when the player picks an action — `GA;500;<cellId>;<skillId>`
    * names the cell, never the sprite — so it has to be kept here.
+   *
+   * `states` is the element's `GDF` frame → frame-range table, published with
+   * the tile; without it the sprite can only be dimmed.
    */
-  registerTile(sprite: Sprite, gfxId: number, cellId: number): number {
+  registerTile(
+    sprite: Sprite,
+    gfxId: number,
+    cellId: number,
+    states?: TileState[]
+  ): number {
     const pickableId = this.nextPickableId++;
     const pickingSystem = this.deps.pickingSystem();
 
@@ -241,8 +282,142 @@ export class BattlefieldPicking {
     pickingSystem.registerObject({ id: pickableId, sprite });
     this.pickableIdToGfxId.set(pickableId, gfxId);
     this.pickableIdToCellId.set(pickableId, cellId);
+    this.cellIdToTileSprite.set(cellId, sprite);
+    this.cellIdToGfxId.set(cellId, gfxId);
+    if (states?.length) {
+      this.cellIdToTileStates.set(cellId, states);
+    }
     this.tilePickableIds.add(pickableId);
+
+    // The map payload is the same for everyone and carries no state, so a
+    // cell that was already depleted when this map loaded is dressed here
+    // rather than waiting for a `GDF` that will not come again. It is dressed
+    // *still*, on the state's last frame: the tree was felled before we
+    // arrived, so its fall is not ours to watch.
+    const frame = this.cellFrames.get(cellId);
+    if (frame !== undefined) {
+      this.applyCellFrame(
+        cellId,
+        sprite,
+        frame,
+        !this.depletedCells.has(cellId),
+        false
+      );
+    } else if (this.depletedCells.has(cellId)) {
+      this.applyCellFrame(cellId, sprite, InteractiveFrame.InUse, false, false);
+    }
+
     return pickableId;
+  }
+
+  /**
+   * `GDF` — an element changed state.
+   *
+   * 1.29 answers this with `gotoAndStop(frame)` on the element's clip, and
+   * the clip does the rest: a state is either a resting image or a
+   * transition into one — the tree falling and leaving its stump, the crop
+   * growing back. The published tile carries those runs as `states`, so all
+   * that is left here is to hold a still or play a run once (QA-145).
+   */
+  setCellInteractive(
+    cellId: number,
+    frame: number,
+    interactive: boolean
+  ): void {
+    this.cellFrames.set(cellId, frame);
+
+    if (interactive) {
+      this.depletedCells.delete(cellId);
+    } else {
+      this.depletedCells.add(cellId);
+    }
+
+    const sprite = this.cellIdToTileSprite.get(cellId);
+
+    if (sprite) {
+      this.applyCellFrame(cellId, sprite, frame, interactive, true);
+    }
+  }
+
+  /**
+   * Dress the element's sprite for one state.
+   *
+   * `animate` separates the two ways a state is reached: a `GDF` that lands
+   * while we are watching plays the transition, and a state we walked in on
+   * is taken at its last frame — the resting image it leaves behind.
+   */
+  private applyCellFrame(
+    cellId: number,
+    sprite: Sprite,
+    frame: number,
+    interactive: boolean,
+    animate: boolean
+  ): void {
+    if (!(sprite instanceof AnimatedSprite)) {
+      sprite.alpha = interactive ? 1 : DEPLETED_TILE_ALPHA;
+      return;
+    }
+
+    const state = this.stateFor(cellId, frame);
+
+    if (!state) {
+      // No state table: a tile published before the states pass, or one
+      // whose clip is a single image. Dimming is all that is left.
+      sprite.alpha = interactive ? 1 : DEPLETED_TILE_ALPHA;
+      return;
+    }
+
+    sprite.alpha = 1;
+    sprite.loop = false;
+    sprite.onFrameChange = undefined;
+
+    // A tile published before its state table would leave the run pointing
+    // past the strip; clamping keeps a stale pair from throwing.
+    const start = Math.max(0, Math.min(state.start, sprite.totalFrames - 1));
+    const last = Math.max(
+      start,
+      Math.min(state.start + state.count - 1, sprite.totalFrames - 1)
+    );
+
+    if (state.count <= 1 || !animate || last === start) {
+      sprite.gotoAndStop(last);
+      return;
+    }
+
+    // Pixi plays to the end of the whole strip, so the run's own end has to
+    // stop it: the frames past it belong to the next state.
+    sprite.onFrameChange = (current) => {
+      if (current < last) {
+        return;
+      }
+
+      sprite.onFrameChange = undefined;
+      sprite.gotoAndStop(last);
+    };
+    sprite.gotoAndPlay(start);
+  }
+
+  /**
+   * The run of frames a `GDF` frame names on that cell.
+   *
+   * The server speaks 1.29's frame numbers, where 0 means "the resting
+   * state" — `gotoAndStop("0")` lands on frame 1 in Flash, the clip's first.
+   * Anything the tile does not publish a state for falls back to that one.
+   */
+  private stateFor(cellId: number, frame: number): TileState | undefined {
+    const states = this.cellIdToTileStates.get(cellId);
+
+    if (!states?.length) {
+      return undefined;
+    }
+
+    const wanted = Math.max(1, frame);
+
+    return (
+      states.find((state) => state.frame === wanted) ??
+      states.find((state) => state.frame === 1) ??
+      states[0]
+    );
   }
 
   /** Register a world actor's sprite so clicks/hovers route to it. */
@@ -488,6 +663,22 @@ export class BattlefieldPicking {
     this.tilePickableIds.clear();
     this.pickableIdToGfxId.clear();
     this.pickableIdToCellId.clear();
+    this.cellIdToTileSprite.clear();
+    this.cellIdToGfxId.clear();
+    this.cellIdToTileStates.clear();
+    // `depletedCells` and `cellFrames` deliberately survive: the server may
+    // send GDF while the async map/zoom rebuild has no tile sprite yet.
+  }
+
+  /** The layer-2 gfx standing on a cell, if this map put one there. */
+  getCellGfxId(cellId: number): number | undefined {
+    return this.cellIdToGfxId.get(cellId);
+  }
+
+  /** Drop resource state from the previous map before accepting new GDFs. */
+  clearCellStates(): void {
+    this.depletedCells.clear();
+    this.cellFrames.clear();
   }
 
   /**
@@ -549,6 +740,14 @@ export class BattlefieldPicking {
     const cellId = this.pickableIdToCellId.get(result.object.id);
 
     if (gfxId === undefined || cellId === undefined) {
+      return;
+    }
+
+    // A spent element is not an element. 1.29 says the same thing with
+    // `GDF`'s third field, and its client walks through the stump rather
+    // than offering a menu over it.
+    if (this.depletedCells.has(cellId)) {
+      this.deps.onCellPickThrough?.(cellId);
       return;
     }
 
@@ -643,7 +842,7 @@ export class BattlefieldPicking {
     const { x, y } = this.pixiToPageCoords(screenX, screenY);
     const options = objData.skills.map((skill) => ({
       label: skill.label,
-      disabled: !IMPLEMENTED_INTERACTIVE_SKILLS.has(skill.id),
+      disabled: !this.canUseSkill(skill.id),
       onClick: () => this.deps.onInteractiveUse?.(cellId, skill.id),
     }));
 
@@ -652,6 +851,23 @@ export class BattlefieldPicking {
     }
 
     showContextMenu(objData.name, options, x, y);
+  }
+
+  /**
+   * Whether this menu entry is live.
+   *
+   * A door, a chest and a zaap ask nothing of the character. Everything else
+   * is a job skill, and the answer is entirely the server's: the job, its
+   * level and the equipped tool all arrived on the `J` channel. The server
+   * re-checks every one of them, so a wrong answer here greys or offers an
+   * entry — it never lets anything through.
+   */
+  private canUseSkill(skillId: number): boolean {
+    if (UNCONDITIONAL_INTERACTIVE_SKILLS.has(skillId)) {
+      return true;
+    }
+
+    return canUseJobSkill(skillId, jobOfSkill(skillId));
   }
 
   onObjectHover(result: PickResult | null): void {
@@ -744,9 +960,52 @@ export class BattlefieldPicking {
             disabled: false,
             onClick: () => this.deps.onPlayerExchange?.(playerId),
           },
+          ...this.craftOffers(playerId),
           soon("Défier"),
         ];
 
     showContextMenu(name, options, x, y);
+  }
+
+  /**
+   * "Inviter à …" — one entry per craft job the local character holds, with
+   * the tool for it worn.
+   *
+   * 1.29 offers the mirror entry, "Demander à …", from the customer's side.
+   * Ours does not, and deliberately: the customer cannot see which jobs the
+   * other player has, so the entry would be a list of guesses that the
+   * server refuses one at a time. The artisan knows their own trade, so the
+   * invitation is the half that can be offered honestly.
+   */
+  private craftOffers(targetPlayerId: number): ContextMenuOption[] {
+    void targetPlayerId;
+
+    const jobs = jobsStore.getSnapshot();
+    const lang = jobsLangSnapshot();
+    const out: ContextMenuOption[] = [];
+
+    for (const job of getJobs(jobs)) {
+      // The tool has to be the one worn: an artisan cannot work with a job
+      // whose tool is in the bag, and the server checks it again anyway.
+      if (jobs.toolJobId !== job.id) {
+        continue;
+      }
+
+      for (const skill of job.skills) {
+        if (skill.slots <= 0) {
+          continue;
+        }
+
+        const label = lang?.skills.get(skill.id)?.label ?? `Métier ${job.id}`;
+
+        out.push({
+          label: `Inviter à ${label}`,
+          disabled: false,
+          onClick: () => this.deps.onCraftInvite?.(targetPlayerId, skill.id),
+        });
+      }
+    }
+
+    return out;
   }
 }

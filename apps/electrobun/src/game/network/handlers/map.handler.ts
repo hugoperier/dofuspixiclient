@@ -7,6 +7,7 @@ import type { MapData } from "@/game/datacenter/map";
 import type { Connection } from "@/game/network/connection";
 import type { MessageHandler } from "@/game/network/message-handler";
 import type { Battlefield } from "@/game/scene";
+import { harvestSoundsFor } from "@/game/audio/harvest-sounds";
 import { getMapTransitionDirection } from "@/game/input/map-coordinates";
 import {
   encodeClient,
@@ -19,6 +20,11 @@ import {
 } from "@/game/network/protocol";
 import { numericId } from "@/game/network/sprite-id";
 import { closeNpcDialog, hudStore } from "@/game/stores";
+import {
+  beginHarvest,
+  endHarvest,
+  harvestingCellId,
+} from "@/game/stores/jobs-store";
 import { createLogger } from "@/utils/logger";
 
 import type { CharacterHandler, CharacterInfo } from "./character.handler";
@@ -31,6 +37,32 @@ const log = createLogger("MapHandler");
  * ever reaches this — a validated one is echoed in the same round trip.
  */
 const SELF_MOVE_TIMEOUT_MS = 2_000;
+
+/** `GameActionType.ACTION_HARVEST` — `GA;501;<cellId>,<durationMs>`. */
+const ACTION_HARVEST = 501;
+
+/**
+ * `GDF` frame 3 — the resource has given and is spent (the stump, the empty
+ * vein). It is the only completion signal on the wire, and it reaches every
+ * witness, which is why the "it gave" sound hangs off it rather than off a
+ * client-side countdown that would drift.
+ */
+const INTERACTIVE_FRAME_IN_USE = 3;
+
+/**
+ * `GDF` frame 2 — the element is reserved for the harvest that just started.
+ * The server sends it in the same breath as `GA;501`, so it is part of the
+ * action rather than its end and must not cancel anything.
+ */
+const INTERACTIVE_FRAME_LOCKED = 2;
+
+/**
+ * How long past its announced duration a harvest still counts as ours to
+ * sound. The server owns the schedule; this only stops a `GDF` that arrives
+ * minutes later — a second player finishing the same tree, say — from
+ * ringing an action nobody is watching any more.
+ */
+const HARVEST_SOUND_GRACE_MS = 2_000;
 
 /**
  * Handles map + actor lifecycle over the new protobuf protocol.
@@ -89,6 +121,18 @@ export class MapHandler {
    * animation.
    */
   private selfMoveSentAt: number | null = null;
+
+  /**
+   * Harvests announced by `GA;501` and not yet resolved, keyed by cell.
+   *
+   * A cell is in here only between the action and the frame that ends it, so
+   * the completion sound never fires for the depleted resources the server
+   * dumps on us when we walk onto a map (`GDF` frame 3 for every one of them).
+   */
+  private readonly harvestsInFlight = new Map<
+    number,
+    { jobId: number; until: number }
+  >();
 
   // Messages that arrive before the Battlefield is ready are buffered and
   // replayed by `flushPending()` once the renderer attaches.
@@ -238,11 +282,38 @@ export class MapHandler {
       void this.handleMovement(payload.entries);
     });
 
+    // `GDF` — interactive elements changing state. Nothing else on the wire
+    // carries it: the map payload is immutable and identical for everyone,
+    // so a felled tree is only ever a frame like this one.
+    this.messageHandler.on("gameFrameObject2", (payload) => {
+      const battlefield = this.getBattlefield();
+
+      for (const entry of payload.entries) {
+        battlefield?.setCellInteractive(
+          entry.cellId,
+          entry.frame,
+          entry.interactive
+        );
+        this.playHarvestOutcome(entry.cellId, entry.frame);
+        this.endHarvestOn(entry.cellId, entry.frame);
+      }
+    });
+
     this.messageHandler.on("gameAction", (payload) => {
       if (payload.actionType === 1 && payload.actionData.case === "movement") {
         const spriteId = payload.spriteId;
         const path = payload.actionData.value.pathCells;
         void this.handleActorPath(spriteId, path, payload.sequenceId);
+      } else if (
+        payload.actionType === ACTION_HARVEST &&
+        payload.actionData.case === "harvest"
+      ) {
+        this.handleHarvestAction(
+          payload.spriteId,
+          payload.actionData.value.cellId,
+          payload.actionData.value.durationMs,
+          payload.actionData.value.animId
+        );
       } else if (payload.actionType === 2) {
         // ACTION_MAP_CHANGE — server moved us to a new map (edge transition,
         // waypoint, scripted cell). Re-enter the game so the server populates
@@ -258,6 +329,99 @@ export class MapHandler {
         );
       }
     });
+  }
+
+  /**
+   * `GA;501` — somebody on this map started harvesting.
+   *
+   * Only the local character's action drives the progress bar; every visible
+   * character plays the tool animation. The duration is
+   * the server's own and is not recomputed here — a client that shortened it
+   * would only be lying to its own player.
+   */
+  private handleHarvestAction(
+    spriteId: string,
+    cellId: number,
+    durationMs: number,
+    animId: number
+  ): void {
+    const battlefield = this.getBattlefield();
+    const jobId = battlefield?.getCellHarvestJob(cellId) ?? 0;
+    const sounds = harvestSoundsFor(jobId);
+
+    if (sounds) {
+      this.harvestsInFlight.set(cellId, {
+        jobId,
+        until: Date.now() + durationMs + HARVEST_SOUND_GRACE_MS,
+      });
+    }
+
+    battlefield?.playHarvest(
+      numericId(spriteId),
+      cellId,
+      `anim${animId > 0 ? animId : 3}`,
+      durationMs,
+      sounds ? () => this.audioManager.playSound(sounds.work) : undefined
+    );
+
+    const self = this.characterHandler.getCurrentCharacter();
+
+    if (!self || String(self.id) !== spriteId) {
+      return;
+    }
+
+    beginHarvest(
+      cellId,
+      durationMs,
+      this.getBattlefield()?.getSpriteAnchor(Number(self.id)) ?? null
+    );
+    globalThis.setTimeout(endHarvest, durationMs);
+  }
+
+  /**
+   * Release the character the moment the server says the action is over.
+   *
+   * The countdown armed in `handleHarvestAction` starts when `GA;501`
+   * arrives, so it always outlives the server's own deadline by a round
+   * trip; every input is refused in that window, and a player chaining
+   * resources clicks straight into it. `GDF` is the authoritative end —
+   * `InUse` when the resource gave, `Ready` when it was handed back — and
+   * only `Locked`, the reservation the action opens with, is not one.
+   * The timer stays as the fallback for a frame that never arrives.
+   */
+  private endHarvestOn(cellId: number, frame: number): void {
+    if (frame !== INTERACTIVE_FRAME_LOCKED && harvestingCellId() === cellId) {
+      endHarvest();
+    }
+  }
+
+  /**
+   * The sound a resource makes when it gives.
+   *
+   * Fires on the server's own completion frame, once, for whichever harvest
+   * on this map we saw start — a bystander hears the tree fall exactly as
+   * the feller does. Any other frame (the reservation, the respawn, an
+   * interrupted action returning the element to `Ready`) just drops the
+   * pending entry: nothing gave, so nothing sounds.
+   */
+  private playHarvestOutcome(cellId: number, frame: number): void {
+    const pending = this.harvestsInFlight.get(cellId);
+
+    if (!pending || frame === INTERACTIVE_FRAME_LOCKED) {
+      return;
+    }
+
+    this.harvestsInFlight.delete(cellId);
+
+    if (frame !== INTERACTIVE_FRAME_IN_USE || Date.now() > pending.until) {
+      return;
+    }
+
+    const sounds = harvestSoundsFor(pending.jobId);
+
+    if (sounds) {
+      this.audioManager.playSound(sounds.done);
+    }
   }
 
   private async handleMapData(payload: GameMapData): Promise<void> {
@@ -288,8 +452,8 @@ export class MapHandler {
 
     try {
       const mapData = mapDataFromPayload(payload);
-      this.buildPathfinding(mapData);
-      battlefield.setPathfinding(this.pathfinding!);
+      const pathfinding = this.buildPathfinding(mapData);
+      battlefield.setPathfinding(pathfinding);
 
       // A map change ends any move the old map still owed an ack for —
       // the server teleported us, so nothing is in flight any more.
@@ -326,7 +490,7 @@ export class MapHandler {
     }
   }
 
-  private buildPathfinding(mapData: MapData): void {
+  private buildPathfinding(mapData: MapData): DofusPathfinding {
     const walkableIds = mapData.cells
       .filter((c) => c.walkable)
       .map((c) => c.id);
@@ -336,6 +500,7 @@ export class MapHandler {
       walkableIds
     );
     log.debug(`Pathfinding built: ${walkableIds.length} walkable cells`);
+    return this.pathfinding;
   }
 
   private async handleMovement(entries: SpriteMovementEntry[]): Promise<void> {

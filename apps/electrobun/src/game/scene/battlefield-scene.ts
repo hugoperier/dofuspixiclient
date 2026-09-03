@@ -1,4 +1,4 @@
-import type { DofusPathfinding } from "@dofus/grid";
+import { type DofusPathfinding, getDirection } from "@dofus/grid";
 import { LayoutSystem } from "@pixi/layout";
 import {
   type Application,
@@ -142,6 +142,10 @@ export class Battlefield {
     exchangeType: number
   ) => void;
   private onPlayerExchangeCallback?: (targetSpriteId: number) => void;
+  private onCraftInviteCallback?: (
+    targetSpriteId: number,
+    skillId: number
+  ) => void;
   private onCellHoverCallback?: (cellId: number | null) => void;
   private lastHoveredCellId: number | null = null;
   private onResizeStartCallback?: () => void;
@@ -164,6 +168,8 @@ export class Battlefield {
     localCharacterId: () => characterStore.getSnapshot().id || null,
     onPlayerExchange: (targetSpriteId) =>
       this.onPlayerExchangeCallback?.(targetSpriteId),
+    onCraftInvite: (targetSpriteId, skillId) =>
+      this.onCraftInviteCallback?.(targetSpriteId, skillId),
   });
 
   private readonly worldActors = new BattlefieldWorldActors({
@@ -497,7 +503,13 @@ export class Battlefield {
         // Only layer 2 carries elements — the interactive bit is
         // `layerObject2Interactive`, there is no layer-1 equivalent.
         if (layer === 2 && this.isInteractiveTile(tileId, cellId)) {
-          this.picking.registerTile(sprite, tileId, cellId);
+          // The tile's own state table travels with it: `GDF` names a 1.29
+          // frame, and only the published tile knows which of its frames
+          // that state runs over.
+          const states = this.atlasLoader?.getTileManifestSync(
+            `objects_${tileId}`
+          )?.states;
+          this.picking.registerTile(sprite, tileId, cellId, states);
         }
 
         // Register sprite with debug overlay
@@ -553,6 +565,10 @@ export class Battlefield {
     this.mapContainer.x = 0;
     this.mapContainer.y = 0;
 
+    // Cell ids are map-local. Clear the previous map synchronously before
+    // renderMap's first await; GDFs received during the async render then
+    // remain available for tile registration below.
+    this.picking.clearCellStates();
     this.picking.clearTiles();
     this.debugOverlay?.clear();
     this.gridOverlay?.clear();
@@ -668,6 +684,66 @@ export class Battlefield {
   /** Set the player character ID (used for tracking). */
   setDebugPlayerId(_id: number): void {
     // Reserved for future use
+  }
+
+  /**
+   * `GDF` — an interactive element on this map changed state.
+   *
+   * Forwarded straight to the picking layer, which owns both the sprite and
+   * the clickability. Nothing here decides *why* an element is spent: the
+   * server said so, and a client that guessed would be the thing that lets
+   * two players harvest one tree.
+   */
+  setCellInteractive(
+    cellId: number,
+    frame: number,
+    interactive: boolean
+  ): void {
+    this.picking.setCellInteractive(cellId, frame, interactive);
+  }
+
+  /** Face the resource and loop the equipped tool's authored animation. */
+  playHarvest(
+    spriteId: number,
+    cellId: number,
+    animation: string,
+    durationMs: number,
+    onCycle?: () => void
+  ): void {
+    const renderer = this.worldActors.getRenderer();
+    if (!renderer) {
+      return;
+    }
+
+    const fromCell = renderer.getPlayerCell(spriteId);
+    const width = this.currentMapData?.width;
+    if (fromCell !== undefined && width) {
+      renderer.setDirection(spriteId, getDirection(fromCell, cellId, width));
+    }
+    renderer.setTimedLoopAnimation(spriteId, animation, durationMs, onCycle);
+  }
+
+  /**
+   * The job that harvests the element standing on `cellId`, `0` for a cell
+   * that carries none. Read off the element itself rather than the actor's
+   * tool, so it is known for every harvester on the map and not just ours.
+   */
+  getCellHarvestJob(cellId: number): number {
+    const gfxId = this.picking.getCellGfxId(cellId);
+
+    if (gfxId === undefined) {
+      return 0;
+    }
+
+    const skills = this.interactiveObjectsData.get(gfxId)?.skills ?? [];
+
+    // `1` is the "None" job every door and zaap skill carries.
+    return skills.find((skill) => skill.jobId > 1)?.jobId ?? 0;
+  }
+
+  /** Where a HUD overlay for this sprite belongs — see `getSpriteAnchor`. */
+  getSpriteAnchor(spriteId: number): { x: number; y: number } | null {
+    return this.worldActors.getRenderer()?.getSpriteAnchor(spriteId) ?? null;
   }
 
   setPathfinding(pathfinding: DofusPathfinding | null): void {
@@ -816,6 +892,13 @@ export class Battlefield {
 
   setOnPlayerExchange(callback: (targetSpriteId: number) => void): void {
     this.onPlayerExchangeCallback = callback;
+  }
+
+  /** "Inviter à <métier>" on another player. */
+  setOnCraftInvite(
+    callback: (targetSpriteId: number, skillId: number) => void
+  ): void {
+    this.onCraftInviteCallback = callback;
   }
 
   setOnCellClick(callback: (cellId: number) => void): void {
