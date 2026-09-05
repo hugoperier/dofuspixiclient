@@ -6,10 +6,12 @@ import {
   type AccountSelectCharacter,
   AccountSelectCharacterSchema,
 } from "@dofus/proto/account_pb";
+import { AdminCapabilitiesSchema } from "@dofus/proto/admin_pb";
 import {
   type DofusMessage,
   DofusMessageSchema,
 } from "@dofus/proto/server_messages_pb";
+import { AdminService } from "@features/game/admin/admin.service";
 import { SelectCharacterRepository } from "@features/game/select-character/select-character.repository";
 import { StatsService } from "@modules/stats/stats.service";
 import { Injectable, Logger } from "@nestjs/common";
@@ -34,7 +36,8 @@ export class SelectCharacterHandler {
     private readonly repo: SelectCharacterRepository,
     private readonly sessions: SessionRegistry,
     private readonly frames: GatewayFrameService,
-    private readonly stats: StatsService
+    private readonly stats: StatsService,
+    private readonly admin: AdminService
   ) {
     this.gameServerId = config.get("GAME_SERVER_ID", { infer: true });
   }
@@ -73,6 +76,17 @@ export class SelectCharacterHandler {
     );
 
     this.frames.broadcast([ctx.sessionId], buildSelected(player));
+
+    const capabilities = await this.admin.capabilities(ctx.sessionId);
+    this.frames.broadcast(
+      [ctx.sessionId],
+      create(DofusMessageSchema, {
+        payload: {
+          case: "adminCapabilities",
+          value: create(AdminCapabilitiesSchema, capabilities),
+        },
+      })
+    );
 
     // The As frame is StatsService's job, not ours. This slice used to
     // hand-roll a degraded one — no equipment bonuses, `lpMax = life`,

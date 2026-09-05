@@ -1,3 +1,4 @@
+import { AdminModule } from "@features/game/admin/admin.module";
 import { CharacterListModule } from "@features/game/character-list/character-list.module";
 import { ChatModule } from "@features/game/chat/chat.module";
 import { EnterGameModule } from "@features/game/enter-game/enter-game.module";
@@ -31,6 +32,7 @@ import { Module } from "@nestjs/common";
 
 @Module({
   imports: [
+    AdminModule,
     ExchangeSliceModule,
     FightModule,
     ExchangeTicketModule,

@@ -11,12 +11,14 @@ import type {
   TileState,
 } from "@/game/types";
 import { jobOfSkill, jobsLangSnapshot } from "@/game/lang/jobs-lang";
+import { adminStore } from "@/game/stores/admin-store";
 import {
   hideContextMenu,
   showContextMenu,
 } from "@/game/stores/context-menu-store";
 import { canUseJobSkill, getJobs, jobsStore } from "@/game/stores/jobs-store";
 import { UNCONDITIONAL_INTERACTIVE_SKILLS } from "@/game/types";
+import { targetPlayerInAdmin } from "@/hud/admin/events";
 import {
   clearMonsterGroupHover,
   setMonsterGroupHover,
@@ -948,6 +950,15 @@ export class BattlefieldPicking {
           soon("Changer son orientation"),
         ]
       : [
+          ...(adminStore.getSnapshot().enabled
+            ? [
+                {
+                  label: "Administrer ce joueur",
+                  disabled: false,
+                  onClick: () => targetPlayerInAdmin(playerId),
+                },
+              ]
+            : []),
           soon("Ignorer pour la session"),
           soon("Informations"),
           soon("Signaler le joueur"),

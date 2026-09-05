@@ -1,6 +1,7 @@
 // Barrel of every generated protobuf module so consumers do
 // `import { ClientMessage, ... } from "@dofus/proto"`.
 export * from "./account_pb.js";
+export * from "./admin_pb.js";
 export * from "./chat_pb.js";
 export * from "./client_messages_pb.js";
 export * from "./common_pb.js";

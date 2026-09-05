@@ -103,3 +103,14 @@ export function rollItemEffects(
     return { ...effect, param1: value, param2: value };
   });
 }
+
+/** Fix every genuine ranged jet to its template maximum. */
+export function perfectItemEffects(templateEffects: unknown): ItemEffect[] {
+  return parseItemEffects(templateEffects).map((effect) => {
+    if (effect.param2 <= effect.param1 || !DICE_NOTATION.test(effect.param3)) {
+      return effect;
+    }
+
+    return { ...effect, param1: effect.param2 };
+  });
+}

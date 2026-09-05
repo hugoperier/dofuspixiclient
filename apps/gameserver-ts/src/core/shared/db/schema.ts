@@ -53,6 +53,24 @@ export type AccountRow = Selectable<AccountsTable>;
 export type NewAccount = Insertable<AccountsTable>;
 export type AccountUpdate = Updateable<AccountsTable>;
 
+export interface AdminCommandAuditTable {
+  requestId: string;
+  actorAccountId: string;
+  actorPlayerId: string | null;
+  targetPlayerId: string | null;
+  source: "drawer" | "chat";
+  command: string;
+  parameters: Json;
+  beforeState: Json | null;
+  afterState: Json | null;
+  result: "confirmation_required" | "success" | "error" | "forbidden";
+  error: string | null;
+  createdAt: Generated<TimestampTz>;
+  updatedAt: Generated<TimestampTz>;
+}
+
+export type AdminCommandAuditRow = Selectable<AdminCommandAuditTable>;
+
 export interface GameServersTable {
   id: number;
   name: string;
@@ -1932,6 +1950,7 @@ export type NewProvisioningRequest = Insertable<ProvisioningRequestsTable>;
 export type ProvisioningRequestUpdate = Updateable<ProvisioningRequestsTable>;
 
 export type DB = {
+  adminCommandAudit: AdminCommandAuditTable;
   accounts: AccountsTable;
   gameServers: GameServersTable;
   accountServers: AccountServersTable;

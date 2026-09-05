@@ -13,6 +13,7 @@ import "chat.proto";
 import "world.proto";
 import "misc.proto";
 import "mount.proto";
+import "admin.proto";
 
 // ============================================================================
 // SERVER -> CLIENT MESSAGE WRAPPER
@@ -116,6 +117,9 @@ message DofusMessage {
     BasicsPing                   basics_ping                    = 216; // Bp
     BasicsAdminResponse          basics_admin_response          = 217; // BA
     BasicsReportInfos            basics_report_infos            = 218; // Br
+    AdminCapabilities            admin_capabilities             = 219;
+    AdminPlayerSearchResponse    admin_player_search            = 220;
+    AdminCommandResponse         admin_command                  = 221;
 
     // --- Spells (S) ---
     SpellList                    spell_list                     = 300; // SL

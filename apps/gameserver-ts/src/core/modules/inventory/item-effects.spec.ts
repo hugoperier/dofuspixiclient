@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   parseItemEffects,
+  perfectItemEffects,
   rollItemEffects,
 } from "@modules/inventory/item-effects";
 
@@ -93,5 +94,19 @@ describe("rollItemEffects", () => {
 
     expect(effect?.param1).toBe(1);
     expect(effect?.param2).toBe(1);
+  });
+});
+
+describe("perfectItemEffects", () => {
+  test("uses the maximum for ranged jets and preserves fixed metadata", () => {
+    expect(
+      perfectItemEffects([
+        { id: 125, param1: 10, param2: 20, param3: "1d11-1" },
+        { id: 983, param1: 600, param2: 1, param3: "ca" },
+      ])
+    ).toEqual([
+      { id: 125, param1: 20, param2: 20, param3: "1d11-1" },
+      { id: 983, param1: 600, param2: 1, param3: "ca" },
+    ]);
   });
 });

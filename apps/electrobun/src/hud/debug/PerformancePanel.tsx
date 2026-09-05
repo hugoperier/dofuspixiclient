@@ -30,12 +30,12 @@ const SPARK_SAMPLES = 48;
  */
 const TOP_INSET = 44;
 
-export interface AdminPanelProps {
+export interface PerformancePanelProps {
   /** The gutter to draw in, in `.map-renderer`-relative px. */
   gutter: { left: number; top: number; width: number; height: number };
 }
 
-export function AdminPanel({ gutter }: AdminPanelProps) {
+export function PerformancePanel({ gutter }: PerformancePanelProps) {
   const { fps, sampledAt, scene } = useSyncExternalStore(
     perfStore.subscribe,
     perfStore.getSnapshot
@@ -68,7 +68,7 @@ export function AdminPanel({ gutter }: AdminPanelProps) {
     >
       <header className="flex items-baseline justify-between">
         <span className="font-sans text-[10px] font-semibold tracking-[0.18em] text-neutral-500 uppercase">
-          Admin
+          Performance
         </span>
         <span className="text-[10px] text-neutral-600">dev build</span>
       </header>

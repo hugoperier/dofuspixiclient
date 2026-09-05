@@ -1,0 +1,150 @@
+syntax = "proto3";
+
+package dofus;
+
+enum AdminCommandSource {
+  ADMIN_COMMAND_SOURCE_UNSPECIFIED = 0;
+  ADMIN_COMMAND_SOURCE_DRAWER = 1;
+  ADMIN_COMMAND_SOURCE_CHAT = 2;
+}
+
+enum AdminCommandStatus {
+  ADMIN_COMMAND_STATUS_UNSPECIFIED = 0;
+  ADMIN_COMMAND_STATUS_SUCCESS = 1;
+  ADMIN_COMMAND_STATUS_ERROR = 2;
+  ADMIN_COMMAND_STATUS_FORBIDDEN = 3;
+  ADMIN_COMMAND_STATUS_CONFIRMATION_REQUIRED = 4;
+}
+
+enum AdminTeleportMode {
+  ADMIN_TELEPORT_MODE_UNSPECIFIED = 0;
+  ADMIN_TELEPORT_MODE_SELF_TO_TARGET = 1;
+  ADMIN_TELEPORT_MODE_TARGET_TO_SELF = 2;
+  ADMIN_TELEPORT_MODE_TARGET_TO_MAP = 3;
+}
+
+enum AdminResourceKind {
+  ADMIN_RESOURCE_KIND_UNSPECIFIED = 0;
+  ADMIN_RESOURCE_KIND_KAMAS = 1;
+  ADMIN_RESOURCE_KIND_XP = 2;
+  ADMIN_RESOURCE_KIND_STAT_POINTS = 3;
+  ADMIN_RESOURCE_KIND_SPELL_POINTS = 4;
+}
+
+enum AdminResourceMode {
+  ADMIN_RESOURCE_MODE_UNSPECIFIED = 0;
+  ADMIN_RESOURCE_MODE_ADD = 1;
+  ADMIN_RESOURCE_MODE_REMOVE = 2;
+  ADMIN_RESOURCE_MODE_SET = 3;
+}
+
+enum AdminItemRoll {
+  ADMIN_ITEM_ROLL_UNSPECIFIED = 0;
+  ADMIN_ITEM_ROLL_NORMAL = 1;
+  ADMIN_ITEM_ROLL_PERFECT = 2;
+  ADMIN_ITEM_ROLL_EMPTY = 3;
+}
+
+enum AdminRestoreKind {
+  ADMIN_RESTORE_KIND_UNSPECIFIED = 0;
+  ADMIN_RESTORE_KIND_LIFE = 1;
+  ADMIN_RESTORE_KIND_ENERGY = 2;
+  ADMIN_RESTORE_KIND_ALL = 3;
+}
+
+message AdminTargetRef {
+  oneof identifier {
+    bool self = 1;
+    string player_id = 2;
+    string player_name = 3;
+  }
+}
+
+message AdminTeleportCommand {
+  AdminTeleportMode mode = 1;
+  int32 map_id = 2;
+  int32 cell_id = 3;
+}
+
+message AdminGrantItemCommand {
+  int32 item_id = 1;
+  int32 quantity = 2;
+  AdminItemRoll roll = 3;
+}
+
+message AdminChangeResourceCommand {
+  AdminResourceKind resource = 1;
+  AdminResourceMode mode = 2;
+  // Decimal string: avoids losing bigint precision in JavaScript clients.
+  string amount = 3;
+}
+
+message AdminSetLevelCommand {
+  int32 level = 1;
+}
+
+message AdminRestoreCommand {
+  AdminRestoreKind kind = 1;
+}
+
+message AdminCommandRequest {
+  string request_id = 1;
+  AdminCommandSource source = 2;
+  bool confirmed = 3;
+  AdminTargetRef target = 4;
+  oneof command {
+    AdminTeleportCommand teleport = 10;
+    AdminGrantItemCommand grant_item = 11;
+    AdminChangeResourceCommand change_resource = 12;
+    AdminSetLevelCommand set_level = 13;
+    AdminRestoreCommand restore = 14;
+  }
+}
+
+message AdminPlayerSummary {
+  string player_id = 1;
+  string player_name = 2;
+  string account_id = 3;
+  string account_pseudo = 4;
+  bool online = 5;
+  int32 level = 6;
+  string experience = 7;
+  string kamas = 8;
+  int32 life = 9;
+  int32 energy = 10;
+  int32 stat_points = 11;
+  int32 spell_points = 12;
+  int32 map_id = 13;
+  int32 cell_id = 14;
+  bool self = 15;
+}
+
+message AdminCapabilities {
+  bool enabled = 1;
+  string self_player_id = 2;
+}
+
+message AdminPlayerSearchRequest {
+  string request_id = 1;
+  string query = 2;
+  int32 limit = 3;
+  AdminCommandSource source = 4;
+}
+
+message AdminPlayerSearchResponse {
+  string request_id = 1;
+  AdminCommandStatus status = 2;
+  string message = 3;
+  repeated AdminPlayerSummary players = 4;
+}
+
+message AdminCommandResponse {
+  string request_id = 1;
+  AdminCommandSource source = 2;
+  AdminCommandStatus status = 3;
+  string command = 4;
+  string message = 5;
+  string before = 6;
+  string after = 7;
+  AdminPlayerSummary target = 8;
+}
