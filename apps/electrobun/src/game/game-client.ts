@@ -1,6 +1,8 @@
+import type { AdminCommandRequest } from "@dofus/proto/admin_pb";
 import { create } from "@bufbuild/protobuf";
 import { AreaKind, cellsInArea, hasLineOfSight } from "@dofus/grid";
 import { ExchangeType } from "@dofus/proto";
+import { AdminCommandSource } from "@dofus/proto/admin_pb";
 import { match } from "ts-pattern";
 
 import type { Battlefield } from "@/game/scene";
@@ -16,6 +18,7 @@ import {
   WS_CLOSE_CORE_GONE,
 } from "@/game/network/close-codes";
 import { Connection, type ConnectionEvent } from "@/game/network/connection";
+import { AdminHandler } from "@/game/network/handlers/admin.handler";
 import { AuthHandler } from "@/game/network/handlers/auth.handler";
 import { BigStoreHandler } from "@/game/network/handlers/bigstore.handler";
 import {
@@ -125,6 +128,7 @@ export class GameClient {
   private readonly audioManager: AudioManager;
 
   private readonly authHandler: AuthHandler;
+  private readonly adminHandler: AdminHandler;
   private readonly chatHandler: ChatHandler;
   private readonly characterHandler: CharacterHandler;
   private readonly fightHandler: FightHandler;
@@ -223,6 +227,7 @@ export class GameClient {
       onIncompatible: (reason) =>
         this.setContractIncompatible(new Error(reason)),
     });
+    this.adminHandler = new AdminHandler(this.messageHandler, this.connection);
     this.characterHandler = new CharacterHandler(this.messageHandler, {
       onCharacterSelected: (character) => {
         this.battlefield?.setDebugPlayerId(character.id);
@@ -1895,6 +1900,17 @@ export class GameClient {
    */
   sendChat(destination: string, message: string): void {
     this.chatHandler.send(destination, message);
+  }
+
+  searchAdminPlayers(
+    query: string,
+    source: AdminCommandSource = AdminCommandSource.DRAWER
+  ): void {
+    this.adminHandler.search(query, source);
+  }
+
+  executeAdminCommand(request: AdminCommandRequest): void {
+    this.adminHandler.execute(request);
   }
 
   private handleCellClick(targetCellId: number): void {

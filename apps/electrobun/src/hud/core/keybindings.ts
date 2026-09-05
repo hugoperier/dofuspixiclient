@@ -34,7 +34,9 @@ export type Shortcut =
   // ── Debug tooling (not in legacy) ────────────────────────
   | "DEBUG_TOGGLE"
   | "DEBUG_GRID"
-  | "DEBUG_TRANSPARENCY";
+  | "DEBUG_TRANSPARENCY"
+  // ── Administration (server capability-gated) ──────────────
+  | "ADMIN";
 
 /**
  * `SH1`..`SH14` — one per cell of the shortcut bar. The legacy client
@@ -114,6 +116,7 @@ const DEFAULT_BINDINGS: Record<Shortcut, ChordKey> = {
   DEBUG_TOGGLE: { key: "d" },
   DEBUG_GRID: { key: "g", shift: true },
   DEBUG_TRANSPARENCY: { key: "v" },
+  ADMIN: { key: "a", ctrl: true, shift: true },
 };
 
 const STORAGE_KEY = "dofus.keybindings.v1";

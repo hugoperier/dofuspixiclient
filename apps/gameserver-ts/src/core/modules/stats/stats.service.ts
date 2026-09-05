@@ -163,7 +163,10 @@ export class StatsService {
 
       let effects = rolled;
 
-      if (effects.length === 0) {
+      const hasExplicitEffectPayload =
+        Array.isArray(item.effects) && item.effects.length > 0;
+
+      if (effects.length === 0 && !hasExplicitEffectPayload) {
         const template = await this.templateCache.load(item.templateId);
 
         if (!template) {

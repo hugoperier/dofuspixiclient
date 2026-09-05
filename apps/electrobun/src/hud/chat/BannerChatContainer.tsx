@@ -1,5 +1,6 @@
 "use client";
 
+import { AdminCommandSource } from "@dofus/proto/admin_pb";
 import { ChatChannel } from "@dofus/proto/common_pb";
 import {
   useCallback,
@@ -28,7 +29,9 @@ import {
   styleFor,
 } from "@/game/chat/chat-channels";
 import { parseChatInput } from "@/game/chat/chat-commands";
+import { adminStore, openAdminDrawer } from "@/game/stores/admin-store";
 import {
+  appendChatMessage,
   appendErrorMessage,
   armCooldown,
   chatStore,
@@ -99,6 +102,34 @@ export function BannerChatContainer() {
         appendErrorMessage(parsed.text);
         setDraft("");
 
+        return;
+      }
+
+      if (parsed.kind === "admin") {
+        if (
+          (parsed.action.type === "open" || parsed.action.type === "help") &&
+          !adminStore.getSnapshot().enabled
+        ) {
+          appendErrorMessage("Accès administrateur refusé.");
+          setDraft("");
+          return;
+        }
+        if (parsed.action.type === "open") {
+          openAdminDrawer();
+        } else if (parsed.action.type === "help") {
+          appendChatMessage({
+            color: "#b7e45d",
+            text: "[Admin] /tp, /give, /kamas, /xp, /level, /capital, /restore, /heal — /admin find <nom|#ID>",
+          });
+        } else if (parsed.action.type === "find") {
+          gameClient?.searchAdminPlayers(
+            parsed.action.query,
+            AdminCommandSource.CHAT
+          );
+        } else {
+          gameClient?.executeAdminCommand(parsed.action.request);
+        }
+        setDraft("");
         return;
       }
 

@@ -13,6 +13,7 @@ import "chat.proto";
 import "world.proto";
 import "misc.proto";
 import "mount.proto";
+import "admin.proto";
 
 // ============================================================================
 // CLIENT -> SERVER MESSAGE WRAPPER
@@ -134,6 +135,8 @@ message ClientMessage {
     DialogLeaveRequest             dialog_leave                    = 517; // DV
     DialogCreateRequest            dialog_create                   = 518; // DC
     DialogResponseRequest          dialog_response                 = 519; // DR
+    AdminPlayerSearchRequest       admin_player_search             = 520;
+    AdminCommandRequest            admin_command                   = 521;
 
     // --- Friends (F) ---
     FriendAddRequest               friend_add                      = 600; // FA

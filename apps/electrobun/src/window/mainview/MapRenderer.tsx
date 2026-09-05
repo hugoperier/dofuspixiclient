@@ -21,15 +21,17 @@ import {
   type ConnectionStatus,
   connectionStore,
 } from "@/game/stores/connection-store";
+import { AdminDrawer } from "@/hud/admin/AdminDrawer";
+import { toggleAdmin } from "@/hud/admin/events";
 import { activateSlot } from "@/hud/banner/hotbar-actions";
 import { GameClientContext } from "@/hud/contexts/GameClientContext";
 import { PixiAppContext } from "@/hud/contexts/PixiAppContext";
 import { HOTBAR_SHORTCUTS, Keybindings } from "@/hud/core/keybindings";
 import {
-  AdminPanel,
   MIN_GUTTER_HEIGHT,
   MIN_GUTTER_WIDTH,
-} from "@/hud/debug/AdminPanel";
+  PerformancePanel,
+} from "@/hud/debug/PerformancePanel";
 import { HudOverlay } from "@/hud/HudOverlay";
 import { IS_DEV_BUILD } from "@/utils/build-env";
 
@@ -221,6 +223,8 @@ export function MapRenderer({ client, onReady, onProgress }: MapRendererProps) {
           battlefield?.toggleTransparency();
         });
 
+        keybindings.on("ADMIN", toggleAdmin);
+
         keybindings.on("ESCAPE", () => {
           const { activePanel, isWorldMapOpen } = hudStore.getSnapshot();
 
@@ -355,7 +359,9 @@ export function MapRenderer({ client, onReady, onProgress }: MapRendererProps) {
           {/* Dev-only, and only when the window is wide enough to leave a
               real gutter beside the canvas — the panel never overlaps the
               play area, so it can't cost the game a pixel or a click. */}
-          {adminGutter && <AdminPanel gutter={adminGutter} />}
+          {adminGutter && <PerformancePanel gutter={adminGutter} />}
+
+          <AdminDrawer />
 
           <style>{`
         .map-renderer {

@@ -5,7 +5,7 @@ import { ExternalStore } from "./game-store";
  *
  * This is the data the old green `position:fixed` overlay printed as a single
  * line of text; it now feeds the admin panel in the letterbox gutter
- * (`hud/debug/AdminPanel.tsx`). The cadence is deliberately 1 Hz — the sample
+ * (`hud/debug/PerformancePanel.tsx`). The cadence is deliberately 1 Hz — the sample
  * is taken inside the FPS accumulator that already ran once a second, so
  * nothing new happens per frame and React never re-renders on the hot path.
  */
