@@ -4,6 +4,7 @@ import { FightModule } from "@modules/fight/fight.module";
 import { JobsModule } from "@modules/jobs/jobs.module";
 import { NpcsModule } from "@modules/npcs/npcs.module";
 import { PlayerPresenceModule } from "@modules/player-presence/player-presence.module";
+import { StatsModule } from "@modules/stats/stats.module";
 import { Module } from "@nestjs/common";
 
 @Module({
@@ -13,6 +14,7 @@ import { Module } from "@nestjs/common";
     PlayerPresenceModule,
     ExchangeModule,
     JobsModule,
+    StatsModule,
   ],
   providers: [NpcDialogHandler],
 })

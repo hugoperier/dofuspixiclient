@@ -2,6 +2,8 @@ import type { SkillEntry } from "@modules/jobs/jobs.catalog.service";
 import type { OnModuleInit } from "@nestjs/common";
 import type { TransactionalAdapterKysely } from "@nestjs-cls/transactional-adapter-kysely";
 import type { DB } from "@shared/db/schema";
+import type { Serializable } from "@shared/handoff/handoff.coordinator";
+import { getNeighbors } from "@dofus/grid";
 import { FightRegistryService } from "@modules/fight/registry/fight.registry";
 import { GatherableStateRepository } from "@modules/harvest/gatherable-state.repository";
 import {
@@ -25,6 +27,7 @@ import { jobPodsBonus } from "@modules/jobs/jobs.pods";
 import { JobsRepository } from "@modules/jobs/jobs.repository";
 import { BASE_JOB_ID } from "@modules/jobs/jobs.rules";
 import { JobsService } from "@modules/jobs/jobs.service";
+import { MapCacheService } from "@modules/maps/maps.cache.service";
 import { PlayerPresenceService } from "@modules/player-presence/player-presence.service";
 import { PlayersRepository } from "@modules/players/players.repository";
 import { SchedulerService } from "@modules/scheduler/scheduler.service";
@@ -32,6 +35,7 @@ import { StatsService } from "@modules/stats/stats.service";
 import { Injectable, Logger } from "@nestjs/common";
 import { OnEvent } from "@nestjs/event-emitter";
 import { TransactionHost } from "@nestjs-cls/transactional";
+import { HandoffPart } from "@shared/handoff/handoff-part.decorator";
 
 /** Why a harvest was refused. Every branch names one; none is silent. */
 export type HarvestDenialReason =
@@ -39,6 +43,7 @@ export type HarvestDenialReason =
   | "in-fight"
   | "already-harvesting"
   | "no-resource-here"
+  | "too-far"
   | "skill-not-runnable"
   | "job-not-learned"
   | "job-level-too-low"
@@ -59,8 +64,15 @@ interface RunningHarvest {
   cellId: number;
   skillId: number;
   jobId: number;
+  /** Wall-clock instant the action is due to pay out. */
+  dueAt: number;
+  /** Carried so a restored action can deplete without re-reading the row. */
+  respawnSeconds: number;
   timer: ReturnType<typeof setTimeout>;
 }
+
+/** A running harvest as it crosses a blue/green handoff — no timer handle. */
+type HarvestSnapshot = Omit<RunningHarvest, "timer">;
 
 /**
  * The harvest loop — QA-123, end to end.
@@ -80,13 +92,23 @@ interface RunningHarvest {
  * checked at the start is checked again at the end and the whole credit —
  * items and experience — happens in one transaction.
  *
- * In-flight actions are held in memory, and deliberately not in the handoff:
- * a restart mid-action loses at most one harvest, and the reservation it left
- * behind expires on its own (`RESERVATION_GRACE_MS`). What *is* persisted is
- * the respawn instant, which is the thing a player would notice.
+ * In-flight actions are in memory and **cross the handoff** as part
+ * `harvest.running`: the deadline is absolute, so the new core re-arms what
+ * is left of the timer and the action pays out on time. They used to be left
+ * out on the grounds that "a restart mid-action loses at most one harvest,
+ * and its reservation expires on its own" — true while a core restart also
+ * hung the client up (QA-046). Since QA-156 made a restart invisible, that
+ * trade shows up as a gauge that runs out and pays nothing, over a tree
+ * nobody can touch for a minute. What is *persisted* is still only the
+ * respawn instant; this is memory, handed over.
  */
 @Injectable()
-export class HarvestService implements OnModuleInit {
+@HandoffPart()
+export class HarvestService
+  implements OnModuleInit, Serializable<HarvestSnapshot[]>
+{
+  readonly name = "harvest.running";
+
   private readonly logger = new Logger(HarvestService.name);
   private readonly running = new Map<string, RunningHarvest>();
 
@@ -103,6 +125,7 @@ export class HarvestService implements OnModuleInit {
     private readonly inventoryFrames: InventoryFramesService,
     private readonly stats: StatsService,
     private readonly scheduler: SchedulerService,
+    private readonly maps: MapCacheService,
     private readonly frames: HarvestFramesService
   ) {}
 
@@ -183,12 +206,23 @@ export class HarvestService implements OnModuleInit {
       return this.refuse(sessionId, characterId, "skill-not-runnable");
     }
 
-    const gatherable = await this.jobsRepo.findGatherable(placed.mapId, cellId);
+    const gatherable = await this.jobsRepo.findGatherable(
+      placed.mapId,
+      cellId,
+      skillId
+    );
 
-    // The import decides what stands where; a client naming a cell the scan
-    // never recorded is naming a decorative copy of the same sprite.
-    if (!gatherable || gatherable.skillId !== skillId) {
+    // The import decides what stands where, and which jobs it serves: an
+    // occurrence accepts a *set* of skills (QA-154), so the lookup carries
+    // the requested one and comes back empty for a cell the scan never
+    // recorded — a decorative copy of the same sprite — or for one that
+    // does not serve this job.
+    if (!gatherable) {
       return this.refuse(sessionId, characterId, "no-resource-here");
+    }
+
+    if (!(await this.isAdjacent(placed.mapId, placed.cellId, cellId))) {
+      return this.refuse(sessionId, characterId, "too-far");
     }
 
     // `-Base-` is not a job. It carries the actions anyone can perform —
@@ -264,19 +298,108 @@ export class HarvestService implements OnModuleInit {
     );
     this.frames.sendFrame(witnesses, cellId, InteractiveFrame.Locked);
 
-    this.running.set(characterId, {
+    this.arm({
       sessionId,
       characterId,
       mapId: placed.mapId,
       cellId,
       skillId,
       jobId: skill.jobId,
-      timer: setTimeout(() => {
-        void this.finish(characterId, skill, gatherable.respawnSeconds);
-      }, durationMs),
+      dueAt: Date.now() + durationMs,
+      respawnSeconds: gatherable.respawnSeconds,
     });
 
     return { ok: true, durationMs };
+  }
+
+  /**
+   * Start the payout timer for a running action, and remember it.
+   *
+   * `dueAt` is absolute so a restored action re-arms against what is *left*
+   * of its duration, never the whole of it; one already past its deadline
+   * fires on the next tick, which is the same rule the scheduler uses for a
+   * job that fell due while the process was down.
+   */
+  private arm(entry: Omit<RunningHarvest, "timer">): void {
+    const skill = this.catalog.runnableHarvestSkill(entry.skillId);
+
+    if (!skill) {
+      // The referential lost the skill between the two cores — a re-import
+      // in the window. Free the resource rather than hold it for the grace.
+      void this.state.release(entry.mapId, entry.cellId, entry.characterId);
+      return;
+    }
+
+    const delay = Math.max(0, entry.dueAt - Date.now());
+
+    this.running.set(entry.characterId, {
+      ...entry,
+      timer: setTimeout(() => {
+        void this.finish(entry.characterId, skill, entry.respawnSeconds);
+      }, delay),
+    });
+  }
+
+  /** Everything in flight, timers dropped — see `HandoffCoordinator`. */
+  serialize(): HarvestSnapshot[] {
+    return [...this.running.values()].map(({ timer: _timer, ...rest }) => rest);
+  }
+
+  restore(state: HarvestSnapshot[]): void {
+    for (const entry of state) {
+      this.arm(entry);
+    }
+
+    this.logger.log(`restored ${state.length} running harvest(s)`);
+  }
+
+  /**
+   * Stop the clocks before the snapshot is taken.
+   *
+   * Without this the retiring core would keep its timers for the few hundred
+   * ms it has left and could pay a harvest out twice — once here, once in the
+   * core that restored it.
+   */
+  onDrain(): void {
+    for (const running of this.running.values()) {
+      clearTimeout(running.timer);
+    }
+  }
+
+  /**
+   * Is the character standing beside the element?
+   *
+   * `GA;500` is only honoured from a cell adjacent to the resource. The
+   * canonical client walks there before it emits and this re-tests it,
+   * because a client is not an authority: without the test,
+   * `sendInteractiveUse(<any cell>, <skill>)` from the console harvested
+   * the whole map from a chair — an instant gathering bot in three lines
+   * (QA-153).
+   *
+   * Adjacency here is the **walking** neighbourhood — the eight directions
+   * of `getNeighbors`, offsets built from the map's width — and not the
+   * diamond one `fightDistance` uses. The two disagree, and the difference
+   * is the trap CLAUDE.md names from the other side: `+1` is the cell due
+   * east and is walkable-adjacent, while in the fight metric the same pair
+   * is two steps apart. The right set is whichever one the client can
+   * actually walk to, because it is `findAdjacentPath` — the same function,
+   * over the same offsets — that chose where to stand.
+   *
+   * A map that will not load refuses rather than allows: an unknown grid
+   * is not a licence.
+   */
+  private async isAdjacent(
+    mapId: number,
+    from: number,
+    to: number
+  ): Promise<boolean> {
+    const map = await this.maps.load(mapId);
+
+    if (!map) {
+      return false;
+    }
+
+    return getNeighbors(to, map.width, map.height).includes(from);
   }
 
   /**

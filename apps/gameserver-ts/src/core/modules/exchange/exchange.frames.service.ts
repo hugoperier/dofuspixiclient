@@ -1,6 +1,7 @@
 import type { ExchangeSession } from "@modules/exchange/exchange.types";
 import type { ItemRow } from "@shared/db/schema";
 import { create } from "@bufbuild/protobuf";
+import { InfoMessageSchema } from "@dofus/proto/chat_pb";
 import {
   ExchangeCoopMovementSchema,
   ExchangeCraftLoopEndSchema,
@@ -19,6 +20,7 @@ import {
   ExchangeStorageMovementSchema,
 } from "@dofus/proto/exchange_pb";
 import { DofusMessageSchema } from "@dofus/proto/server_messages_pb";
+import { EXCHANGE_DENIAL_MESSAGES } from "@modules/exchange/exchange.denials";
 import { toItemData } from "@modules/inventory/inventory.frames.service";
 import { Injectable } from "@nestjs/common";
 import { GatewayFrameService } from "@shared/gateway-adapter/gateway-frame.service";
@@ -104,6 +106,40 @@ export class ExchangeFramesService {
   }
 
   /**
+   * `EC` for a co-operative bench, which needs three more things than a
+   * solo one.
+   *
+   * A solo bench reads its skill off the click that opened it. Only one of
+   * these two windows was opened by a click, so the parameters travel on
+   * the frame — see `ExchangeCreate`'s note. `maxSlots` is the artisan's,
+   * for both windows: the grid the customer sees is the one the artisan's
+   * level allows, not their own.
+   */
+  openCoopCraft(
+    sessionId: string,
+    kind: number,
+    skillId: number,
+    maxSlots: number,
+    partnerName: string
+  ): void {
+    this.frames.broadcast(
+      [sessionId],
+      create(DofusMessageSchema, {
+        payload: {
+          case: "exchangeCreate",
+          value: create(ExchangeCreateSchema, {
+            success: true,
+            exchangeType: kind,
+            skillId,
+            maxSlots,
+            partnerName,
+          }),
+        },
+      })
+    );
+  }
+
+  /**
    * `EM` — one stack changed on the bench.
    *
    * The craft window is one-sided, so only the local case goes out; a trade
@@ -135,25 +171,26 @@ export class ExchangeFramesService {
   /**
    * `Er` — an ingredient moved on a co-operative bench.
    *
-   * Both sides see it, and both see the *same* case: unlike a trade, where
-   * each reader has a "mine" and a "theirs" pile, a co-operative craft has
-   * one bench that belongs to the customer and is watched by the artisan.
-   * `Exchange.as:onCoopMovement` writes it into the shared pile for either
-   * reader, which is why one frame goes to two sockets.
+   * Both sides see it, and both see the *same* case — one frame to two
+   * sockets, unlike a trade, where the mover gets `EM` and the watcher
+   * `Em`. What tells the two contributions apart is `ownerId` inside the
+   * frame rather than which frame arrived, so a reader that joins late or
+   * replays the pile cannot get the two halves the wrong way round.
    */
   coopItem(
-    customerSessionId: string,
-    artisanSessionId: string,
+    sessionIds: readonly string[],
+    ownerId: string,
     add: boolean,
     item: ItemRow
   ): void {
     this.frames.broadcast(
-      [customerSessionId, artisanSessionId],
+      sessionIds,
       create(DofusMessageSchema, {
         payload: {
           case: "exchangeCoopMovement",
           value: create(ExchangeCoopMovementSchema, {
             success: true,
+            ownerId,
             movement: {
               case: "item",
               value: create(ExchangeItemMovementSchema, {
@@ -168,14 +205,9 @@ export class ExchangeFramesService {
   }
 
   /** `Ep` — the customer's payment changed. Same shape, other pile. */
-  payItem(
-    customerSessionId: string,
-    artisanSessionId: string,
-    add: boolean,
-    item: ItemRow
-  ): void {
+  payItem(sessionIds: readonly string[], add: boolean, item: ItemRow): void {
     this.frames.broadcast(
-      [customerSessionId, artisanSessionId],
+      sessionIds,
       create(DofusMessageSchema, {
         payload: {
           case: "exchangePayMovement",
@@ -194,19 +226,22 @@ export class ExchangeFramesService {
     );
   }
 
-  /** `Ep` for kamas. Absolute, like every other offer in this file. */
-  payKamas(
-    customerSessionId: string,
-    artisanSessionId: string,
-    kamas: bigint
-  ): void {
+  /**
+   * `Ep` for kamas. Absolute, like every other offer in this file.
+   *
+   * `bonus` says which of the two purses this is — the fee owed whatever
+   * happens, or the premium owed only on a success. They are two amounts,
+   * so a frame carrying one has to name it.
+   */
+  payKamas(sessionIds: readonly string[], kamas: bigint, bonus: boolean): void {
     this.frames.broadcast(
-      [customerSessionId, artisanSessionId],
+      sessionIds,
       create(DofusMessageSchema, {
         payload: {
           case: "exchangePayMovement",
           value: create(ExchangePayMovementSchema, {
             success: true,
+            bonus,
             movement: {
               case: "kama",
               value: create(ExchangeKamaMovementSchema, { quantity: kamas }),
@@ -262,6 +297,33 @@ export class ExchangeFramesService {
             totalCrafted,
             itemId,
           }),
+        },
+      })
+    );
+  }
+
+  /**
+   * `Im` — why the gesture did nothing.
+   *
+   * The same channel and the same shape as the harvest's own refusal
+   * (`HarvestFramesService.sendRefusal`), for the same reason: a button that
+   * produces neither an effect nor a sentence is indistinguishable from a
+   * broken game. A reason absent from the table sends nothing — see
+   * `EXCHANGE_DENIAL_MESSAGES`.
+   */
+  denial(sessionId: string, reason: string): void {
+    const message = EXCHANGE_DENIAL_MESSAGES[reason];
+
+    if (!message) {
+      return;
+    }
+
+    this.frames.broadcast(
+      [sessionId],
+      create(DofusMessageSchema, {
+        payload: {
+          case: "infoMessage",
+          value: create(InfoMessageSchema, { message }),
         },
       })
     );

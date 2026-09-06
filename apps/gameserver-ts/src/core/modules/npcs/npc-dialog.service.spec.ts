@@ -82,6 +82,25 @@ describe("classify", () => {
     ).toEqual({ kind: "blocked" });
   });
 
+  it("teaches a job even beside an effect it cannot perform", () => {
+    // Contremaître Ikul's four offers, `[1, 6, 234]` — the first job
+    // master a character meets. Type 234 (`8539;10302`) is not
+    // implemented and is dropped; blocking on it left the whole of
+    // Incarnam unable to take up a job (QA-158).
+    expect(
+      classify([
+        { type: 1, args: "DV" },
+        { type: 6, args: "2,898,335,1489" },
+        { type: 234, args: "8539;10302" },
+      ])
+    ).toEqual({
+      kind: "learn-job",
+      jobId: 2,
+      onSuccess: 335,
+      onFailure: 1489,
+    });
+  });
+
   it("teaches a job, and carries both branches of the outcome", () => {
     // `(280, 6, '2,898,335,1489')` — "Apprendre le métier de Bûcheron".
     expect(classify([{ type: 6, args: "2,898,335,1489" }])).toEqual({

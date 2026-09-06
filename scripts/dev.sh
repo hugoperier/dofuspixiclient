@@ -5,9 +5,11 @@
 #   postgres (docker) → gateway :8080 → gamed + authd (watch) → client Vite :5173
 #
 # Les logs des quatre processus sont préfixés et colorés, et un Ctrl-C tue tout
-# le monde. gamed et authd tournent en `bun --watch` : éditer une slice ne
-# redémarre que ce core, le gateway garde les WebSockets ouvertes (c'est tout
-# l'intérêt du split, cf. doc/architecture.md).
+# le monde. gamed et authd tournent sous `scripts/dev-core.ts` : éditer une
+# slice démarre un second core sur l'autre socket et demande la bascule au
+# gateway, qui déplace l'état et retire l'ancien. Les WebSockets restent
+# ouvertes et les clients ne voient aucune coupure (c'est tout l'intérêt du
+# split, cf. doc/architecture.md ; QA-156 pour ce qui manquait).
 #
 # Usage: scripts/dev.sh [options]
 #   --migrate           joue `just db-migrate` avant de démarrer
@@ -119,7 +121,7 @@ fi
 # socket UDS et continue de tourner dans le vide pendant que le nouveau prend
 # la main. À ce stade du script on n'a encore rien démarré, donc tout core qui
 # tourne vient forcément d'ailleurs.
-stale_cores="$(pgrep -f "bun --watch run src/core/main.ts" 2>/dev/null || true)"
+stale_cores="$(pgrep -f "src/core/main.ts|scripts/dev-core.ts" 2>/dev/null || true)"
 if [ -n "$stale_cores" ]; then
   warn "cores orphelins d'un run précédent (pid $(echo $stale_cores | tr '\n' ' ')) — je les remplace"
   for pid in $stale_cores; do
@@ -131,7 +133,10 @@ fi
 
 # Sockets UDS laissées par un run précédent : Bun.listen refuse de binder si le
 # fichier existe encore. On ne supprime que ce que personne n'écoute.
-for sock in /tmp/dofus-gamed.sock /tmp/dofus-authd.sock; do
+# Deux sockets par core : le bleu/vert alterne entre les deux, et une bascule
+# interrompue peut laisser la seconde derrière elle.
+for sock in /tmp/dofus-gamed.sock /tmp/dofus-gamed-b.sock \
+            /tmp/dofus-authd.sock /tmp/dofus-authd-b.sock; do
   if [ -S "$sock" ] && ! lsof -n "$sock" >/dev/null 2>&1; then
     rm -f "$sock"
   fi
@@ -195,8 +200,14 @@ if [ "$WITH_GATEWAY" = "1" ]; then
     start gateway "$GREEN" apps/gameserver-ts bun run src/gateway/main.ts
   fi
 fi
-start gamed "$BLUE"    apps/gameserver-ts env MODE=game bun --watch run src/core/main.ts
-start authd "$MAGENTA" apps/gameserver-ts env MODE=auth bun --watch run src/core/main.ts
+# Pas `bun --watch` : il tue et relance le même process sur la même socket,
+# ce qui n'est pas un handoff — le gateway voyait son lien mourir et raccrochait
+# toutes les sessions (QA-046, à dessein). `scripts/dev-core.ts` fait du vrai
+# bleu/vert : il démarre un second core sur l'autre socket, demande la bascule
+# au gateway, et laisse celui-ci déplacer l'état. Les clients ne voient rien
+# passer — c'est l'invariant que CLAUDE.md annonce et que QA-156 a démenti.
+start gamed "$BLUE"    apps/gameserver-ts bun ../../scripts/dev-core.ts --role game
+start authd "$MAGENTA" apps/gameserver-ts bun ../../scripts/dev-core.ts --role auth
 if [ "$WITH_CLIENT" = "1" ]; then
   start client "$YELLOW" apps/electrobun bun run hmr
 fi

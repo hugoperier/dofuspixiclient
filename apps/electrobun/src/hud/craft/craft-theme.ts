@@ -129,5 +129,36 @@ export const CRAFT_RECIPES = {
   ingredientIconSize: 14,
 } as const;
 
+/**
+ * The natural size of the **co-operative** assembly, in base units.
+ *
+ * Unlike the solo bench, which is one right-hand column plus a small box
+ * on the far side, this one spans the play area: a 319-wide column in each
+ * bottom corner with the result box between them. That comes to more than
+ * 800 base units of width, and `baseZoom` is calibrated for a single panel
+ * — it says how big *one* window should look, and knows nothing about an
+ * assembly that has to fit three side by side.
+ *
+ * `SecureCraftWindow` divides the play area by these to get a factor that
+ * makes the whole thing fit, and never scales past `baseZoom`. Both
+ * numbers are the sum of the pieces, so changing a piece changes them.
+ */
+export const COOP_NATURAL = {
+  width:
+    CRAFT_LAYOUT.edge * 2 +
+    CRAFT_COLUMN.width * 2 +
+    CRAFT_OBTAINED.box.width +
+    /** Breathing room either side of the result box. */
+    12 * 2,
+  height:
+    CRAFT_LAYOUT.edge * 2 +
+    CRAFT_COLUMN.bannerHeight +
+    CRAFT_COLUMN.bannerGap +
+    CRAFT_COLUMN.windowHeight +
+    CRAFT_COLUMN.benchGap +
+    CRAFT_BENCH.height +
+    CRAFT_BENCH.buttons.height,
+} as const;
+
 /** The quantities the "Qté" button cycles through. */
 export const CRAFT_QUANTITIES = [1, 10, 50, 100] as const;

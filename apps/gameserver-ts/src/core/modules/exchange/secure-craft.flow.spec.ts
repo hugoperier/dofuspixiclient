@@ -43,18 +43,34 @@ function harness(options: HarnessOptions = {}) {
   const originalRandom = Math.random;
   Math.random = () => rolls.shift() ?? 0;
 
-  const customerBag: ItemRow[] = [
-    { id: "wood", templateId: ASH_WOOD, quantity: 40, position: -1 },
-    { id: "gift", templateId: 1, quantity: 1, position: -1 },
-  ].map((row) => row as unknown as ItemRow);
+  // Two bags, because the bench is shared: the artisan bringing part of
+  // the recipe is the ordinary case of the mechanism, and a harness with
+  // one bag cannot tell "consumed from the right player" from "consumed".
+  const bags: Record<string, ItemRow[]> = {
+    [CUSTOMER.characterId]: [
+      { id: "wood", templateId: ASH_WOOD, quantity: 40 },
+      { id: "gift", templateId: 1, quantity: 1 },
+    ].map((row) => ({
+      ...row,
+      position: -1,
+      ownerId: CUSTOMER.characterId,
+    })) as unknown as ItemRow[],
+    [ARTISAN.characterId]: [
+      { id: "art-wood", templateId: ASH_WOOD, quantity: 15 },
+    ].map((row) => ({
+      ...row,
+      position: -1,
+      ownerId: ARTISAN.characterId,
+    })) as unknown as ItemRow[],
+  };
 
   const artisanTool =
     options.artisanTool === undefined ? AXE : options.artisanTool;
 
   const inventory = {
-    findOwned: async (_p: string, id: string) =>
-      customerBag.find((r) => r.id === id),
-    findByPlayer: async () => customerBag,
+    findOwned: async (playerId: string, id: string) =>
+      (bags[playerId] ?? []).find((r) => r.id === id),
+    findByPlayer: async (playerId: string) => bags[playerId] ?? [],
     findEquipped: async () =>
       artisanTool === null ? [] : [{ position: 1, templateId: artisanTool }],
     findTemplate: async (id: number) => ({ id, weight: 1, effects: [] }),
@@ -82,7 +98,10 @@ function harness(options: HarnessOptions = {}) {
     slots: {},
     payItems: {},
     payKamas: options.payKamas ?? "0",
+    payBonusKamas: "0",
     accepted: options.accepted ?? true,
+    customerReady: false,
+    artisanReady: false,
     crafted: 0,
   };
 
@@ -100,6 +119,8 @@ function harness(options: HarnessOptions = {}) {
       craftResult: () => {},
       leave: () => {},
       openCraft: () => {},
+      openCoopCraft: () => {},
+      ready: () => {},
       request: () => {},
     } as never,
     { getByCharacter: () => ({ mapId: 7411, name: "x" }) } as never,
@@ -212,31 +233,86 @@ function harness(options: HarnessOptions = {}) {
   };
 }
 
+/** Both sides press "Combiner"; the second one is what crafts. */
+async function bothConfirm(h: {
+  flow: SecureCraftFlow;
+  customerSession: ExchangeSession;
+  artisanSession: ExchangeSession;
+}) {
+  await h.flow.setReady(h.customerSession);
+  return h.flow.setReady(h.artisanSession);
+}
+
 describe("SecureCraftFlow — who may do what", () => {
-  test("only the customer lays ingredients", async () => {
+  test("either party lays ingredients, each out of their own bag", async () => {
     const h = harness();
 
-    expect(await h.flow.moveItem(h.artisanSession, true, "wood", 20)).toEqual({
-      ok: false,
-      reason: "not-the-customer",
-    });
-
-    expect(await h.flow.moveItem(h.customerSession, true, "wood", 20)).toEqual({
+    expect(await h.flow.moveItem(h.customerSession, true, "wood", 5)).toEqual({
       ok: true,
+    });
+    expect(
+      await h.flow.moveItem(h.artisanSession, true, "art-wood", 15)
+    ).toEqual({ ok: true });
+
+    expect(h.craft.slots).toEqual({
+      wood: { characterId: CUSTOMER.characterId, quantity: 5 },
+      "art-wood": { characterId: ARTISAN.characterId, quantity: 15 },
     });
 
     h.restore();
   });
 
-  test("only the artisan crafts", async () => {
+  test("neither may lay a stack out of the other's bag", async () => {
+    const h = harness();
+
+    // "wood" exists, but not in the artisan's inventory — `findOwned` is
+    // asked about the mover, so this is a miss and not a theft.
+    expect(await h.flow.moveItem(h.artisanSession, true, "wood", 20)).toEqual({
+      ok: false,
+      reason: "not-found",
+    });
+
+    h.restore();
+  });
+
+  test("neither may take back what the other laid", async () => {
     const h = harness();
 
     await h.flow.moveItem(h.customerSession, true, "wood", 20);
 
-    expect(await h.flow.craft(h.customerSession)).toEqual({
+    expect(await h.flow.moveItem(h.artisanSession, false, "wood", 0)).toEqual({
       ok: false,
-      reason: "not-the-artisan",
+      reason: "not-a-party",
     });
+    expect(h.craft.slots.wood).toBeDefined();
+
+    h.restore();
+  });
+
+  test("one confirmation is not enough", async () => {
+    const h = harness({ rolls: [0] });
+
+    await h.flow.moveItem(h.customerSession, true, "wood", 20);
+
+    expect(await h.flow.setReady(h.artisanSession)).toEqual({ ok: true });
+    expect(h.craft.artisanReady).toBe(true);
+    expect(h.recorded.given).toEqual([]);
+
+    h.restore();
+  });
+
+  test("pressing Combiner again takes the confirmation back", async () => {
+    const h = harness({ rolls: [0] });
+
+    await h.flow.moveItem(h.customerSession, true, "wood", 20);
+    await h.flow.setReady(h.artisanSession);
+    await h.flow.setReady(h.artisanSession);
+
+    expect(h.craft.artisanReady).toBe(false);
+
+    // And the customer's own confirmation therefore does not commit.
+    await h.flow.setReady(h.customerSession);
+    expect(h.recorded.given).toEqual([]);
 
     h.restore();
   });
@@ -246,7 +322,7 @@ describe("SecureCraftFlow — who may do what", () => {
 
     await h.flow.moveItem(h.customerSession, true, "wood", 20);
 
-    expect(await h.flow.craft(h.artisanSession)).toEqual({
+    expect(await h.flow.setReady(h.artisanSession)).toEqual({
       ok: false,
       reason: "pending",
     });
@@ -261,10 +337,58 @@ describe("SecureCraftFlow — who may do what", () => {
 
     await h.flow.moveItem(h.customerSession, true, "wood", 20);
 
-    expect(await h.flow.craft(h.artisanSession)).toEqual({
-      ok: false,
-      reason: "no-tool",
-    });
+    expect(await bothConfirm(h)).toEqual({ ok: false, reason: "no-tool" });
+
+    h.restore();
+  });
+
+  test("a refused craft leaves neither confirmation standing", async () => {
+    const h = harness({ artisanTool: null });
+
+    await h.flow.moveItem(h.customerSession, true, "wood", 20);
+    await bothConfirm(h);
+
+    expect(h.craft.customerReady).toBe(false);
+    expect(h.craft.artisanReady).toBe(false);
+
+    h.restore();
+  });
+});
+
+describe("SecureCraftFlow — a confirmation covers one particular deal", () => {
+  test("laying an ingredient clears both", async () => {
+    const h = harness();
+
+    await h.flow.moveItem(h.customerSession, true, "wood", 20);
+    await h.flow.setReady(h.customerSession);
+    await h.flow.moveItem(h.artisanSession, true, "art-wood", 1);
+
+    expect(h.craft.customerReady).toBe(false);
+
+    h.restore();
+  });
+
+  test("changing the payment clears both", async () => {
+    const h = harness();
+
+    await h.flow.moveItem(h.customerSession, true, "wood", 20);
+    await h.flow.setReady(h.artisanSession);
+    await h.flow.movePayKamas(h.customerSession, 250n, false);
+
+    expect(h.craft.artisanReady).toBe(false);
+
+    h.restore();
+  });
+
+  test("a completed craft clears both", async () => {
+    const h = harness({ rolls: [0] });
+
+    await h.flow.moveItem(h.customerSession, true, "wood", 20);
+    await bothConfirm(h);
+
+    expect(h.craft.customerReady).toBe(false);
+    expect(h.craft.artisanReady).toBe(false);
+    expect(h.craft.slots).toEqual({});
 
     h.restore();
   });
@@ -275,7 +399,7 @@ describe("SecureCraftFlow — the split that is the whole point", () => {
     const h = harness({ rolls: [0] });
 
     await h.flow.moveItem(h.customerSession, true, "wood", 20);
-    await h.flow.craft(h.artisanSession);
+    await bothConfirm(h);
 
     expect(h.recorded.given).toHaveLength(1);
     expect(h.recorded.given[0]).toMatchObject({
@@ -290,7 +414,7 @@ describe("SecureCraftFlow — the split that is the whole point", () => {
     const h = harness({ rolls: [0] });
 
     await h.flow.moveItem(h.customerSession, true, "wood", 20);
-    await h.flow.craft(h.artisanSession);
+    await bothConfirm(h);
 
     expect(h.recorded.experience).toEqual([
       { characterId: ARTISAN.characterId, jobId: JOB_LUMBERJACK, amount: 1 },
@@ -299,13 +423,19 @@ describe("SecureCraftFlow — the split that is the whole point", () => {
     h.restore();
   });
 
-  test("the ingredients come out of the customer's bag", async () => {
+  test("each contribution comes out of its own owner's bag", async () => {
     const h = harness({ rolls: [0] });
 
-    await h.flow.moveItem(h.customerSession, true, "wood", 20);
-    await h.flow.craft(h.artisanSession);
+    // The recipe wants 20 Ash Wood; between them they have it.
+    await h.flow.moveItem(h.customerSession, true, "wood", 5);
+    await h.flow.moveItem(h.artisanSession, true, "art-wood", 15);
+    await bothConfirm(h);
 
-    expect(h.recorded.quantities).toEqual([{ id: "wood", left: 20 }]);
+    expect(h.recorded.given).toHaveLength(1);
+    expect(h.recorded.quantities).toEqual([{ id: "wood", left: 35 }]);
+    // The artisan's fifteen were the whole stack, so it is gone rather
+    // than shrunk.
+    expect(h.recorded.removed).toEqual(["art-wood"]);
 
     h.restore();
   });
@@ -314,7 +444,7 @@ describe("SecureCraftFlow — the split that is the whole point", () => {
     const h = harness({ rolls: [0.99] });
 
     await h.flow.moveItem(h.customerSession, true, "wood", 20);
-    await h.flow.craft(h.artisanSession);
+    await bothConfirm(h);
 
     expect(h.recorded.given).toEqual([]);
     expect(h.recorded.quantities).toEqual([{ id: "wood", left: 20 }]);
@@ -330,13 +460,13 @@ describe("SecureCraftFlow — the payment", () => {
 
     await h.flow.moveItem(h.customerSession, true, "wood", 20);
     await h.flow.movePayItem(h.customerSession, true, "gift", 1);
-    await h.flow.movePayKamas(h.customerSession, 250n);
+    await h.flow.movePayKamas(h.customerSession, 250n, false);
 
     // Nothing has moved yet: an offer is a proposal.
     expect(h.recorded.transfers).toEqual([]);
     expect(h.recorded.kamas).toEqual([]);
 
-    await h.flow.craft(h.artisanSession);
+    await bothConfirm(h);
 
     expect(h.recorded.transfers).toEqual([
       { from: CUSTOMER.characterId, to: ARTISAN.characterId, itemId: "gift" },
@@ -348,12 +478,56 @@ describe("SecureCraftFlow — the payment", () => {
     h.restore();
   });
 
+  test("the premium is paid on a success, on top of the fee", async () => {
+    const h = harness({ rolls: [0] });
+
+    await h.flow.moveItem(h.customerSession, true, "wood", 20);
+    await h.flow.movePayKamas(h.customerSession, 100n, false);
+    await h.flow.movePayKamas(h.customerSession, 400n, true);
+    await bothConfirm(h);
+
+    expect(h.recorded.kamas).toEqual([
+      { from: CUSTOMER.characterId, to: ARTISAN.characterId, amount: 500n },
+    ]);
+
+    h.restore();
+  });
+
+  test("the premium is withheld on a failure; the fee is not", async () => {
+    const h = harness({ rolls: [0.99] });
+
+    await h.flow.moveItem(h.customerSession, true, "wood", 20);
+    await h.flow.movePayKamas(h.customerSession, 100n, false);
+    await h.flow.movePayKamas(h.customerSession, 400n, true);
+    await bothConfirm(h);
+
+    expect(h.recorded.given).toEqual([]);
+    expect(h.recorded.kamas).toEqual([
+      { from: CUSTOMER.characterId, to: ARTISAN.characterId, amount: 100n },
+    ]);
+
+    h.restore();
+  });
+
   test("is clamped to the purse rather than refused", async () => {
     const h = harness({ customerKamas: 100 });
 
-    await h.flow.movePayKamas(h.customerSession, 9999n);
+    await h.flow.movePayKamas(h.customerSession, 9999n, false);
 
     expect(h.craft.payKamas).toBe("100");
+
+    h.restore();
+  });
+
+  test("the two purses are clamped against each other, not separately", async () => {
+    // Both are owed together on a success, so a fee that only fits when
+    // the premium is ignored does not fit.
+    const h = harness({ customerKamas: 100 });
+
+    await h.flow.movePayKamas(h.customerSession, 80n, false);
+    await h.flow.movePayKamas(h.customerSession, 9999n, true);
+
+    expect(h.craft.payBonusKamas).toBe("20");
 
     h.restore();
   });
@@ -361,7 +535,7 @@ describe("SecureCraftFlow — the payment", () => {
   test("a negative offer is refused outright", async () => {
     const h = harness();
 
-    expect(await h.flow.movePayKamas(h.customerSession, -1n)).toEqual({
+    expect(await h.flow.movePayKamas(h.customerSession, -1n, false)).toEqual({
       ok: false,
       reason: "invalid-quantity",
     });

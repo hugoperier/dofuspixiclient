@@ -31,6 +31,7 @@ import {
   applyCoopItem,
   applyPayItem,
   applyPayKamas,
+  applySecureCraftReady,
   applySecureCraftResult,
   closeSecureCraft,
   openSecureCraft,
@@ -90,6 +91,14 @@ export class ExchangeHandler {
 
     this.messageHandler.on("exchangeReady", (payload) => {
       const me = String(characterStore.getSnapshot().id);
+
+      // `EK` is a validation flag in a trade and in a co-operative craft
+      // alike, and only one of the two windows is ever open.
+      if (secureCraftStore.getSnapshot().open) {
+        applySecureCraftReady(payload.playerId === me, payload.isReady);
+        return;
+      }
+
       applyTradeReady(
         payload.playerId === me ? "mine" : "theirs",
         payload.isReady
@@ -132,6 +141,15 @@ export class ExchangeHandler {
         return;
       }
 
+      // Every other window ends the negotiation too, and only the trade's
+      // own `openTradeWindow` used to say so. A co-operative craft is
+      // proposed on the same `ER` and accepted with the same `EA`, so both
+      // ends kept their yes/no box up over a window that was already open
+      // and usable — the artisan could not reach "Créer", the customer
+      // could not reach their bag (QA-155). `EC` is what closes the
+      // proposal, whichever window it opens.
+      closeTrade();
+
       // The auction house is two exchange types, one per mode, and its
       // parameters arrive in the `EHK` that always follows.
       if (payload.exchangeType === ExchangeType.EXCHANGE_BIGSTORE_SELL) {
@@ -144,13 +162,26 @@ export class ExchangeHandler {
         return;
       }
 
+      // A co-operative bench carries its own parameters, unlike the solo
+      // one: only one of the two windows was opened by a click, so the
+      // other has no `lastRequestedSkill()` to read. See `ExchangeCreate`.
       if (payload.exchangeType === ExchangeType.EXCHANGE_SECURE_CRAFT_CLIENT) {
-        openSecureCraft("customer");
+        openSecureCraft(
+          "customer",
+          payload.skillId,
+          payload.maxSlots,
+          payload.partnerName
+        );
         return;
       }
 
       if (payload.exchangeType === ExchangeType.EXCHANGE_SECURE_CRAFT_ARTISAN) {
-        openSecureCraft("artisan");
+        openSecureCraft(
+          "artisan",
+          payload.skillId,
+          payload.maxSlots,
+          payload.partnerName
+        );
         return;
       }
 
@@ -193,17 +224,23 @@ export class ExchangeHandler {
     // --- The workbench ------------------------------------------------
 
     this.messageHandler.on("exchangeCoopMovement", (payload) => {
+      if (payload.movement.case !== "item") {
+        return;
+      }
+
+      // `ownerId` against our own id, the same reading `EK` gets: the
+      // window draws each contribution under its owner's name, and both
+      // sides receive the same frame.
       applyCoopItem(
-        payload.movement.case === "item" ? payload.movement.value.add : false,
-        payload.movement.case === "item"
-          ? payload.movement.value.item
-          : undefined
+        payload.ownerId === String(characterStore.getSnapshot().id),
+        payload.movement.value.add,
+        payload.movement.value.item
       );
     });
 
     this.messageHandler.on("exchangePayMovement", (payload) => {
       if (payload.movement.case === "kama") {
-        applyPayKamas(Number(payload.movement.value.quantity));
+        applyPayKamas(Number(payload.movement.value.quantity), payload.bonus);
         return;
       }
 

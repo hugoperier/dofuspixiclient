@@ -91,16 +91,16 @@ causes racines et les notes de méthode, mais plus le détail par entrée.
 
 _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 
-**151 entrées**, dont **147 encore ouvertes**.
+**165 entrées**, dont **161 encore ouvertes**.
 
 ## Par gravité
 
 | Gravité | Restantes | Total |
 |---|---|---|
 | P0 — bloque la session (crash, impossible d'avancer) | 4 | 4 |
-| P1 — fonctionnalité cassée ou absente sur un flux principal | 62 | 62 |
-| P2 — comportement divergent du 1.29 canonique, contournable | 58 | 58 |
-| P3 — finition, confort, cosmétique | 23 | 24 |
+| P1 — fonctionnalité cassée ou absente sur un flux principal | 67 | 67 |
+| P2 — comportement divergent du 1.29 canonique, contournable | 62 | 62 |
+| P3 — finition, confort, cosmétique | 28 | 29 |
 | Sans gravité — vérifications sans défaut | 0 | 3 |
 
 ## Par statut
@@ -110,7 +110,7 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | `open` — observé, non reproduit méthodiquement | 45 |
 | `confirmed` — reproduit, preuve au dossier | 17 |
 | `in-progress` — correctif engagé | 13 |
-| `fixed` — correctif livré, reste à revérifier manette en main | 72 |
+| `fixed` — correctif livré, reste à revérifier manette en main | 86 |
 | `closed` — vérifié, clos | 3 |
 | `wontfix` — écarté, avec la raison en fiche | 1 |
 
@@ -122,17 +122,17 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [`auth/`](auth/) | 3 | 3 |
 | [`camera-zoom/`](camera-zoom/) | 3 | 3 |
 | [`chat/`](chat/) | 5 | 5 |
-| [`exchange/`](exchange/) | 20 | 20 |
+| [`exchange/`](exchange/) | 23 | 23 |
 | [`fight/`](fight/) | 14 | 14 |
 | [`hud-banner/`](hud-banner/) | 9 | 9 |
-| [`hud-panels/`](hud-panels/) | 17 | 18 |
+| [`hud-panels/`](hud-panels/) | 19 | 20 |
 | [`input/`](input/) | 4 | 5 |
 | [`inventory/`](inventory/) | 4 | 4 |
 | [`network/`](network/) | 9 | 9 |
-| [`progression/`](progression/) | 13 | 13 |
-| [`server-runtime/`](server-runtime/) | 8 | 8 |
+| [`progression/`](progression/) | 18 | 18 |
+| [`server-runtime/`](server-runtime/) | 9 | 9 |
 | [`session/`](session/) | 3 | 3 |
-| [`world-content/`](world-content/) | 11 | 11 |
+| [`world-content/`](world-content/) | 14 | 14 |
 | [`world-render/`](world-render/) | 15 | 15 |
 | [`worldmap/`](worldmap/) | 8 | 9 |
 
@@ -211,6 +211,11 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [QA-145](world-render/QA-145-etats-des-objets-interactifs-non-extraits.md) | P1 | world-render | bug | fixed | L'arbre coupé reste figé à mi-chute et ne laisse aucune souche |
 | [QA-146](progression/QA-146-approche-d-une-ressource-par-une-cellule-de-bord.md) | P1 | progression | bug | fixed | L'approche d'une ressource peut se faire par une cellule qui change de carte |
 | [QA-151](world-render/QA-151-sprites-recompiles-trois-fois-trop-vite.md) | P1 | world-render | bug | fixed | Un sprite recompilé joue toutes ses animations trois fois trop vite |
+| [QA-152](exchange/QA-152-depots-successifs-d-ingredients-s-ecrasent.md) | P1 | exchange | bug | fixed | Les dépôts successifs d'un ingrédient s'écrasent — 820 recettes sont infabricables |
+| [QA-153](progression/QA-153-recolte-sans-controle-de-proximite.md) | P1 | progression | gap | fixed | La récolte ne vérifie jamais la distance — on récolte à l'autre bout de la carte |
+| [QA-154](progression/QA-154-lin-et-chanvre-du-paysan-inaccessibles.md) | P1 | progression | data | fixed | Le Lin et le Chanvre du Paysan n'existent sur aucune cellule du monde |
+| [QA-155](exchange/QA-155-boites-de-confirmation-du-craft-cooperatif-jamais-fermees.md) | P1 | exchange | bug | fixed | Les boîtes de confirmation du craft coopératif ne se ferment jamais et bloquent la fenêtre |
+| [QA-156](server-runtime/QA-156-redemarrage-de-gamed-deconnecte-les-clients.md) | P1 | server-runtime | bug | fixed | Un redémarrage de gamed déconnecte les clients, alors que le handoff existe pour l'éviter |
 
 ## P2 — comportement divergent du 1.29 canonique, contournable
 
@@ -274,6 +279,10 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [QA-148](world-render/QA-148-outil-jamais-visible-dans-la-main.md) | P2 | world-render | bug | fixed | L'outil équipé n'apparaît jamais dans la main du personnage |
 | [QA-149](world-render/QA-149-cheveux-perdus-des-la-deuxieme-frame.md) | P2 | world-render | bug | fixed | Les cheveux du Iop disparaissent dès la deuxième frame d'animation |
 | [QA-150](progression/QA-150-clic-de-recolte-perdu-pendant-une-recolte.md) | P2 | progression | bug | fixed | Un clic sur « Faucher » pendant une récolte est perdu sans un mot |
+| [QA-157](world-content/QA-157-chasseur-et-bricoleur-inapprenables.md) | P2 | world-content | gap | fixed | Le Chasseur et le Bricoleur ne s'apprennent nulle part |
+| [QA-158](world-content/QA-158-contremaitre-ikul-n-enseigne-rien.md) | P2 | world-content | data | fixed | Contremaître Ikul grise ses quatre offres de métier — un effet non implémenté les accompagne |
+| [QA-159](exchange/QA-159-refus-de-fabrication-silencieux.md) | P2 | exchange | gap | fixed | Tout refus de fabrication est silencieux — « Combiner » ne produit rien du tout |
+| [QA-160](progression/QA-160-pods-non-rafraichis-a-l-apprentissage.md) | P2 | progression | bug | fixed | Apprendre un métier ne renvoie pas la trame de poids — les pods maximum restent en arrière |
 
 ## P3 — finition, confort, cosmétique
 
@@ -303,6 +312,11 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [QA-139](exchange/QA-139-livre-des-artisans-et-options-metier.md) | P3 | exchange | feature | fixed | Pas de livre des artisans ni d'options de métier |
 | [QA-141](progression/QA-141-le-metier-de-chasseur-n-existe-pas.md) | P3 | progression | feature | fixed | Le métier de Chasseur n'existe pas — et ses données non plus |
 | [QA-147](audio/QA-147-la-recolte-est-muette.md) | P3 | audio | feature | fixed | La récolte est muette |
+| [QA-161](progression/QA-161-runbook-s04-decrit-une-recolte-annulable.md) | P3 | progression | bug | fixed | Le runbook S04 §8 décrit une récolte annulable au déplacement, que QA-143 a supprimée |
+| [QA-162](hud-panels/QA-162-panneau-metiers-competences-indiscernables.md) | P3 | hud-panels | bug | fixed | Le panneau Métiers affiche seize fois « Couper », sans nom de ressource ni tri |
+| [QA-163](hud-panels/QA-163-aucun-affichage-numerique-des-pods.md) | P3 | hud-panels | gap | fixed | Les pods n'ont aucune valeur chiffrée — la recette QA-133 n'est pas exécutable à la main |
+| [QA-164](world-content/QA-164-carte-de-reference-des-ressources-impraticable.md) | P3 | world-content | data | fixed | La carte de référence des ressources n'a pas de sol, et le panneau admin ne sait pas y aller |
+| [QA-165](progression/QA-165-ecarts-de-volumetrie-du-referentiel.md) | P3 | progression | data | fixed | Le référentiel importé ne fait pas les comptes annoncés par le runbook S04 |
 
 ## Sans gravité — vérifications sans défaut
 

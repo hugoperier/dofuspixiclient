@@ -1599,6 +1599,18 @@ export class GameClient {
     this.exchangeSetReady();
   }
 
+  /**
+   * EK on a co-operative bench — "Combiner".
+   *
+   * The same frame, read as a validation rather than a trigger: it toggles
+   * this player's own confirmation, and the craft runs when the second one
+   * arrives. Named apart from `craftOnce` because pressing it twice at a
+   * solo bench crafts twice, and here it agrees and then un-agrees.
+   */
+  toggleSecureCraftReady(): void {
+    this.exchangeSetReady();
+  }
+
   /** EMR — craft the same recipe up to `count` times. */
   craftSeries(count: number): void {
     this.connection.send(
@@ -1660,12 +1672,20 @@ export class GameClient {
     );
   }
 
-  /** EPG — offer kamas. Absolute, like every other offer. */
-  movePayKamas(quantity: number): void {
+  /**
+   * EPG — offer kamas. Absolute, like every other offer.
+   *
+   * `bonus` picks which of the two purses: the fee, owed whatever the roll
+   * says, or the premium, owed only on a success.
+   */
+  movePayKamas(quantity: number, bonus = false): void {
     this.connection.send(
       encodeClient(
         "exchangeMovePayKama",
-        create(ExchangeMovePayKamaSchema, { quantity: BigInt(quantity) })
+        create(ExchangeMovePayKamaSchema, {
+          quantity: BigInt(quantity),
+          bonus,
+        })
       )
     );
   }

@@ -47,6 +47,22 @@ message ExchangeCreate {
   bool   success = 1;
   int32  exchange_type = 2;   // Populated on success.
   string error_code = 3;      // Populated on failure.
+  // The three fields below are the co-operative craft's (types 12 and 13)
+  // and are zero everywhere else.
+  //
+  // A solo bench learns its skill from the click that opened it
+  // (`lastRequestedSkill()`), which works because the player who opened it
+  // is the one who chose it. A co-operative craft has a second window,
+  // opened on somebody else's click, and that side has no way to know
+  // which skill it is looking at — nor how wide the bench is, since the
+  // grid is frozen from the *artisan's* level. Both travel here rather
+  // than in a frame of their own, for the same reason `ExchangeList` rides
+  // behind `EC`: they are the window's opening parameters and are useless
+  // apart from it.
+  int32  skill_id = 4;
+  int32  max_slots = 5;
+  // The other party's name, for the caption over their half of the window.
+  string partner_name = 6;
 }
 
 // Ec - Craft result. StarLoco SocketManager.java:1484 sends "Ec"+<str>;
@@ -97,22 +113,37 @@ message ExchangeDistantMovement {
   }
 }
 
-// Er - Cooperative craft movement
+// Er - Cooperative craft movement.
+//
+// `owner_id` is **who laid it**, and it is the whole reason this message
+// is not `EM`/`Em`. 1.29's co-operative bench is one shared pile and its
+// `onCoopMovement` writes every frame into the same array; ours has two,
+// because both participants may contribute and the window has to draw
+// each contribution under its owner's name. The reader compares this with
+// its own character id, exactly as `ExchangeReady.player_id` is read.
 message ExchangeCoopMovement {
   bool   success = 1;
   oneof movement {
     ExchangeItemMovement item = 2;
     ExchangeKamaMovement kama = 3;
   }
+  string owner_id = 4;
 }
 
-// Ep - Pay movement
+// Ep - Pay movement.
+//
+// `bonus` splits the kama form in two. A co-operative craft is paid in
+// two parts — a fee owed whatever happens and a premium owed only on a
+// success — and they are two independent amounts, not one with a flag, so
+// a frame carrying one must say which. Meaningless on the item form:
+// goods are always part of the guaranteed half.
 message ExchangePayMovement {
   bool   success = 1;
   oneof movement {
     ExchangeItemMovement item = 2;
     ExchangeKamaMovement kama = 3;
   }
+  bool   bonus = 4;
 }
 
 // Es - Storage movement
@@ -470,8 +501,12 @@ message ExchangeMovePayItem {
 }
 
 // Client sends EP<garbage>G<quantity>
+//
+// `bonus` names which of the two purses this sets — see
+// `ExchangePayMovement`. Absolute, like every other offer.
 message ExchangeMovePayKama {
   int64 quantity = 1;
+  bool  bonus = 2;
 }
 
 // Client sends ES<itemId>|<quantity>

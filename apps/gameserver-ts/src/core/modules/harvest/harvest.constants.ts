@@ -55,6 +55,7 @@ export const HARVEST_DENIAL_MESSAGES: Record<string, string> = {
   "in-fight": "Impossible de récolter pendant un combat.",
   "already-harvesting": "Vous êtes déjà en train de récolter.",
   "no-resource-here": "Il n'y a rien à récolter ici.",
+  "too-far": "Vous êtes trop loin de cette ressource.",
   "skill-not-runnable": "Cette action n'est pas encore disponible.",
   "job-not-learned": "Vous ne connaissez pas le métier nécessaire.",
   "job-level-too-low":

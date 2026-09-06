@@ -76,6 +76,30 @@ const IMPLEMENTED_EFFECTS = new Set<number>([
   ACTION_LEARN_JOB,
 ]);
 
+/**
+ * The effects that win over anything unimplemented travelling with them.
+ *
+ * The general rule greys an answer carrying *any* effect this server cannot
+ * perform, and it is the right rule: an answer that both opens the bank and
+ * starts a quest would silently skip the quest, and a greyed answer is the
+ * lesser wrong. It has one bad case, and Contremaître Ikul at Incarnam
+ * [3,3] is it — the **first** job master a character meets. His four offers
+ * each carry `[1, 6, 234]`: navigate, learn the job, and a type 234
+ * (`8539;10302`) that most likely hands over the job's tool. Greying them
+ * sacrificed the whole point of the answer for its garnish and left four
+ * dead offers in front of a player following the tutorial (QA-158).
+ *
+ * Learning a job is therefore dominant, and it is the **only** effect that
+ * is: it is irreversible in the player's favour, it is what the answer says
+ * it does, and the worst a dropped companion effect costs is an item the
+ * player can be given another way. The bank stays under the general rule —
+ * it wins over the *navigation* beside it, which is not the same thing.
+ *
+ * The cost is counted rather than hidden: `doLoad` logs how many answers
+ * are played with something dropped, so that number cannot quietly grow.
+ */
+const DOMINANT_EFFECTS = new Set<number>([ACTION_LEARN_JOB]);
+
 /** `npc_reponses_actions.args` for a navigate action that ends the dialog. */
 const ARGS_LEAVE = "DV";
 
@@ -161,13 +185,22 @@ export class NpcDialogService {
       }
     }
 
+    let dominated = 0;
+
     for (const [responseId, list] of byResponse) {
       this.outcomes.set(responseId, classify(list));
+
+      if (droppedEffects(list).length > 0) {
+        dominated++;
+      }
     }
 
     this.logger.log(
       `dialog graph: ${this.questions.size} questions, ` +
-        `${this.outcomes.size} answers`
+        `${this.outcomes.size} answers` +
+        (dominated > 0
+          ? `, ${dominated} played with an unimplemented effect dropped`
+          : "")
     );
   }
 }
@@ -206,7 +239,12 @@ export function classify(
       !(a.type === ACTION_NONE && a.args.trim() === "")
   );
 
-  if (effects.some((effect) => !IMPLEMENTED_EFFECTS.has(effect.type))) {
+  const dominant = effects.some((effect) => DOMINANT_EFFECTS.has(effect.type));
+
+  if (
+    !dominant &&
+    effects.some((effect) => !IMPLEMENTED_EFFECTS.has(effect.type))
+  ) {
     return { kind: "blocked" };
   }
 
@@ -273,4 +311,26 @@ function toStrings(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((v): v is string => typeof v === "string")
     : [];
+}
+
+/**
+ * The effects an answer will silently skip because a dominant one carries
+ * it through — the price of `DOMINANT_EFFECTS`, made countable.
+ */
+export function droppedEffects(
+  actions: readonly { type: number; args: string }[]
+): number[] {
+  const effects = actions.filter(
+    (a) =>
+      a.type !== ACTION_NAVIGATE &&
+      !(a.type === ACTION_NONE && a.args.trim() === "")
+  );
+
+  if (!effects.some((effect) => DOMINANT_EFFECTS.has(effect.type))) {
+    return [];
+  }
+
+  return effects
+    .filter((effect) => !IMPLEMENTED_EFFECTS.has(effect.type))
+    .map((effect) => effect.type);
 }

@@ -152,6 +152,26 @@ export function AdminDrawer() {
       .slice(0, 8);
   }, [item, itemQuery, items]);
 
+  /**
+   * The map id the teleport will actually use.
+   *
+   * A picked entry wins; failing that, a bare number typed into the field is
+   * taken at face value. QA-164: the reference map 8335 sits at `[0, 0]` and
+   * is absent from the navigation manifest, so no index entry can ever be
+   * picked for it — and the index is not what makes this command safe. The
+   * command is marked `sensitive`, goes through the admin channel and is
+   * audited server-side; refusing an unindexed id only stopped the operator
+   * from reaching exactly the maps the index forgot.
+   */
+  const typedMapId = useMemo(() => {
+    const raw = mapQuery.trim().replace(/^#/, "");
+    if (!/^\d+$/.test(raw)) {
+      return null;
+    }
+    const parsed = Number.parseInt(raw, 10);
+    return parsed > 0 ? parsed : null;
+  }, [mapQuery]);
+
   const mapResults = useMemo(() => {
     const needle = mapQuery.trim().toLocaleLowerCase("fr");
     if (!needle || map) {
@@ -464,6 +484,7 @@ export function AdminDrawer() {
       );
     }
     if (commandId === "tp-map") {
+      const targetMapId = map?.id ?? typedMapId;
       return (
         <>
           <input
@@ -472,7 +493,7 @@ export function AdminDrawer() {
               setMapQuery(event.target.value);
               setMap(null);
             }}
-            placeholder="Carte ou #ID"
+            placeholder="Carte, #ID, ou identifiant brut"
             className={inputClass}
           />
           {mapResults.length > 0 && (
@@ -502,14 +523,14 @@ export function AdminDrawer() {
           />
           <ActionButton
             sensitive
-            disabled={disabled || !map}
+            disabled={disabled || targetMapId === null}
             onClick={() =>
-              map &&
+              targetMapId !== null &&
               send({
                 case: "teleport",
                 value: create(AdminTeleportCommandSchema, {
                   mode: AdminTeleportMode.TARGET_TO_MAP,
-                  mapId: map.id,
+                  mapId: targetMapId,
                   cellId,
                 }),
               })

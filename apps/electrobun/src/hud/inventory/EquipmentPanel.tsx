@@ -43,8 +43,13 @@ export function EquipmentPanel({
   onUnequip,
 }: EquipmentPanelProps) {
   const p = (n: number) => Math.round(n * zoom);
+  const tooltip = useTooltip();
   const podsPct =
     weight.max > 0 ? Math.min(100, (weight.current / weight.max) * 100) : 0;
+  // QA-163: five pods per job level move the fill by a tenth of a pixel, so
+  // the gauge alone cannot be read by hand. The numbers are what the recipe
+  // asks for; the bar keeps the reference look.
+  const podsText = `${weight.current} / ${weight.max}`;
 
   return (
     <div
@@ -140,7 +145,14 @@ export function EquipmentPanel({
         Pods
       </div>
       <div
-        title={`${weight.current} / ${weight.max}`}
+        data-testid="pods-gauge"
+        role="img"
+        aria-label={`Pods ${podsText}`}
+        title={podsText}
+        onMouseEnter={(e) =>
+          tooltip.show(`${podsText} pods`, e.clientX, e.clientY)
+        }
+        onMouseLeave={tooltip.hide}
         style={{
           position: "absolute",
           left: p(EQUIP_FOOTER.podsBar.x),
@@ -159,6 +171,23 @@ export function EquipmentPanel({
             background: C.podsFill,
           }}
         />
+      </div>
+      <div
+        style={{
+          position: "absolute",
+          left: p(EQUIP_FOOTER.podsText.x),
+          top: p(EQUIP_FOOTER.podsText.y),
+          width: p(EQUIP_FOOTER.podsText.width),
+          textAlign: "right",
+          color: "#ffffff",
+          fontSize: p(9),
+          fontWeight: "bold",
+          fontFamily: "Verdana, sans-serif",
+          whiteSpace: "nowrap",
+          pointerEvents: "none",
+        }}
+      >
+        {podsText}
       </div>
     </div>
   );

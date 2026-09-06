@@ -4,6 +4,7 @@ import { HarvestFramesService } from "@modules/harvest/harvest.frames.service";
 import { HarvestService } from "@modules/harvest/harvest.service";
 import { InventoryModule } from "@modules/inventory/inventory.module";
 import { JobsModule } from "@modules/jobs/jobs.module";
+import { MapsModule } from "@modules/maps/maps.module";
 import { PlayerPresenceModule } from "@modules/player-presence/player-presence.module";
 import { PlayersModule } from "@modules/players/players.module";
 import { SchedulerModule } from "@modules/scheduler/scheduler.module";
@@ -20,6 +21,7 @@ import { Module } from "@nestjs/common";
     JobsModule,
     InventoryModule,
     PlayersModule,
+    MapsModule,
     PlayerPresenceModule,
     StatsModule,
     FightModule,
