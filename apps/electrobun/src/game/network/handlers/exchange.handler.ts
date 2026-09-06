@@ -132,6 +132,15 @@ export class ExchangeHandler {
         return;
       }
 
+      // Every other window ends the negotiation too, and only the trade's
+      // own `openTradeWindow` used to say so. A co-operative craft is
+      // proposed on the same `ER` and accepted with the same `EA`, so both
+      // ends kept their yes/no box up over a window that was already open
+      // and usable — the artisan could not reach "Créer", the customer
+      // could not reach their bag (QA-155). `EC` is what closes the
+      // proposal, whichever window it opens.
+      closeTrade();
+
       // The auction house is two exchange types, one per mode, and its
       // parameters arrive in the `EHK` that always follows.
       if (payload.exchangeType === ExchangeType.EXCHANGE_BIGSTORE_SELL) {

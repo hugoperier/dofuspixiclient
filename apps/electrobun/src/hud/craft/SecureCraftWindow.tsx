@@ -56,23 +56,60 @@ export function SecureCraftWindow({
 
   const p = (n: number) => Math.round(n * zoom);
   const isCustomer = craft.role === "customer";
-  const onBench = new Set([...craft.slots.keys(), ...craft.payItems.keys()]);
-  const bag = getBagItems(inventory).filter(
-    (item) => !onBench.has(item.unicId)
-  );
+  /**
+   * The strip shows what is left of a stack, and laying is cumulative —
+   * the same two rules as the solo bench, and for the same reason
+   * (QA-152). A window that can only lay a whole stack cannot serve a
+   * recipe asking for twenty when the customer carries sixty.
+   */
+  const laidFrom = (unicId: number) =>
+    (craft.slots.get(unicId)?.quantity ?? 0) +
+    (craft.payItems.get(unicId)?.quantity ?? 0);
+  const bag = getBagItems(inventory)
+    .map((item) => ({
+      ...item,
+      quantity: item.quantity - laidFrom(item.unicId),
+    }))
+    .filter((item) => item.quantity > 0);
+
+  /** `EMO`/`EPO` carry the slot's absolute total, never a delta. */
+  const lay = (item: ItemData, amount: number) => {
+    const added = Math.min(amount, item.quantity);
+
+    if (added > 0) {
+      gameClient?.exchangeMoveItem(
+        item.unicId,
+        true,
+        (craft.slots.get(item.unicId)?.quantity ?? 0) + added
+      );
+    }
+  };
 
   const bagActions = [
     {
       label: "Poser sur l'établi",
       enabled: () => isCustomer,
-      run: (item: ItemData) =>
-        gameClient?.exchangeMoveItem(item.unicId, true, item.quantity),
+      run: (item: ItemData) => lay(item, 1),
+    },
+    {
+      label: "Poser 10",
+      enabled: (item: ItemData) => isCustomer && item.quantity > 1,
+      run: (item: ItemData) => lay(item, 10),
+    },
+    {
+      label: "Tout poser",
+      enabled: (item: ItemData) => isCustomer && item.quantity > 1,
+      run: (item: ItemData) => lay(item, item.quantity),
     },
     {
       label: "Offrir en paiement",
       enabled: () => isCustomer,
       run: (item: ItemData) =>
-        gameClient?.movePayItem(item.unicId, true, item.quantity),
+        gameClient?.movePayItem(
+          item.unicId,
+          true,
+          (craft.payItems.get(item.unicId)?.quantity ?? 0) + item.quantity
+        ),
     },
   ];
 

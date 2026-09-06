@@ -35,6 +35,16 @@ const SKILL: SkillEntry = {
 
 const MAP_ID = 7411;
 const CELL_ID = 170;
+/** One of `getNeighbors(170, 15, 17)` — where the client's walk lands. */
+const BESIDE_CELL = 185;
+/**
+ * Far from 170 on the same map.
+ *
+ * Not `171`: that is the cell due east, and walking adjacency is the eight
+ * directions, not the fight's diamond. `getNeighbors(170, 15, 17)` is
+ * `[171, 185, 199, 184, 169, 155, 141, 156]`.
+ */
+const FAR_CELL = 1;
 const SESSION = "s-1";
 const CHARACTER = "char-1";
 /** The Hache de Bûcheron, from `jobs_data.tools`. */
@@ -50,6 +60,8 @@ interface HarnessOptions {
   reserveSucceeds?: boolean;
   carriedPods?: number;
   runnable?: boolean;
+  /** Where the character stands. Beside the resource unless a case says so. */
+  standingCell?: number;
   /** Overrides on the referential row, for the level and duration cases. */
   skill?: Partial<SkillEntry>;
 }
@@ -100,13 +112,19 @@ function harness(options: HarnessOptions = {}) {
   };
 
   const jobsRepo = {
-    findGatherable: async () =>
-      (options.gatherable ?? true)
+    // The requested skill is part of the lookup since QA-154: an occurrence
+    // that does not serve it comes back empty, exactly like an unimported
+    // cell, and both are `no-resource-here`.
+    findGatherable: async (
+      _mapId: number,
+      _cellId: number,
+      askedFor: number
+    ) =>
+      (options.gatherable ?? true) && askedFor === skill.id
         ? {
             mapId: MAP_ID,
             cellId: CELL_ID,
             skillId: skill.id,
-            resourceItemId: skill.harvestItemId,
             respawnSeconds: 300,
             jobId: skill.jobId,
             minLevel: skill.minLevel,
@@ -144,8 +162,16 @@ function harness(options: HarnessOptions = {}) {
 
   const presence = {
     getByCharacter: () =>
-      (options.onMap ?? true) ? { mapId: MAP_ID, cellId: 1 } : undefined,
+      (options.onMap ?? true)
+        ? { mapId: MAP_ID, cellId: options.standingCell ?? BESIDE_CELL }
+        : undefined,
     sessionsOnMap: () => [SESSION],
+  };
+
+  // 15 × 17, the only shape 1.29 ships. Only the dimensions are read: the
+  // adjacency test is pure grid arithmetic (QA-153).
+  const maps = {
+    load: async () => ({ id: MAP_ID, width: 15, height: 17, cells: [] }),
   };
 
   const players = {
@@ -214,6 +240,7 @@ function harness(options: HarnessOptions = {}) {
     inventoryFrames as never,
     stats as never,
     scheduler as never,
+    maps as never,
     frames
   );
 
@@ -254,6 +281,12 @@ describe("HarvestService.start — the refusals", () => {
       { gatherable: false },
       "no-resource-here",
     ],
+    [
+      "the character is not standing beside the resource",
+      { standingCell: FAR_CELL },
+      "too-far",
+    ],
+
     ["the job is not learned", { playerJob: null }, "job-not-learned"],
     [
       "the job level is below the skill's minimum",
@@ -526,7 +559,8 @@ describe("HarvestService — completion", () => {
     (
       service as unknown as { presence: { getByCharacter: () => unknown } }
     ).presence = {
-      getByCharacter: () => (onMap ? { mapId: MAP_ID, cellId: 1 } : undefined),
+      getByCharacter: () =>
+        onMap ? { mapId: MAP_ID, cellId: BESIDE_CELL } : undefined,
       sessionsOnMap: () => [SESSION],
     } as never;
 
@@ -568,6 +602,62 @@ describe("HarvestService — completion", () => {
     expect(recorded.depleted).toEqual([
       { mapId: MAP_ID, cellId: CELL_ID, respawnSeconds: 300 },
     ]);
+  });
+});
+
+describe("HarvestService — the blue/green handoff", () => {
+  test("a running action crosses to the new core and still pays out", async () => {
+    // A slow action, so it is still in flight when the snapshot is taken.
+    const old = harness({ skill: { fixedDurationMs: 400 } });
+
+    await old.service.start(SESSION, CHARACTER, CELL_ID, SKILL.id);
+
+    const snapshot = old.service.serialize();
+    old.service.onDrain();
+
+    expect(snapshot).toHaveLength(1);
+    expect(snapshot[0]).toMatchObject({
+      characterId: CHARACTER,
+      mapId: MAP_ID,
+      cellId: CELL_ID,
+      skillId: SKILL.id,
+    });
+
+    // The retiring core must not pay it out as well — that is what `onDrain`
+    // is for, and a double credit is the failure this asserts against.
+    await settle();
+    expect(old.recorded.given).toHaveLength(0);
+
+    const fresh = harness({ skill: { fixedDurationMs: 400 } });
+    fresh.service.restore(snapshot);
+
+    // Long enough for what is left of the 400 ms, and no longer.
+    await new Promise((resolve) => setTimeout(resolve, 450));
+
+    expect(fresh.recorded.given).toHaveLength(1);
+    expect(fresh.recorded.experience).toEqual([{ jobId: 2, amount: 10 }]);
+  });
+
+  test("re-arms against what is left of the delay, not the whole of it", async () => {
+    const fresh = harness({ skill: { fixedDurationMs: 400 } });
+
+    // Already overdue: it fires on the next tick rather than 400 ms later.
+    fresh.service.restore([
+      {
+        sessionId: SESSION,
+        characterId: CHARACTER,
+        mapId: MAP_ID,
+        cellId: CELL_ID,
+        skillId: SKILL.id,
+        jobId: SKILL.jobId,
+        dueAt: Date.now() - 1_000,
+        respawnSeconds: 300,
+      },
+    ]);
+
+    await settle();
+
+    expect(fresh.recorded.given).toHaveLength(1);
   });
 });
 

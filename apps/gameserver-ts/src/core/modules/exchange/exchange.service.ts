@@ -460,6 +460,16 @@ export class ExchangeService {
     this.frames.refuseRequest(sessionId, reason);
   }
 
+  /**
+   * `Im` — say out loud why a gesture did nothing (QA-159).
+   *
+   * Exposed for the slice, which is where every refusal already lands: the
+   * handler holds the reason string and, until now, only logged it.
+   */
+  notifyDenial(sessionId: string, reason: string): void {
+    this.frames.denial(sessionId, reason);
+  }
+
   /** `EA` — accept a proposal. Only the target may. */
   accept(sessionId: string): Promise<MoveResult> {
     return this.onSession(sessionId, (session) =>

@@ -117,38 +117,68 @@ export function CraftWindow({
   const skill = jobsLang?.skills.get(craft.skillId);
   const skillName = skill?.label ?? "Atelier";
 
-  // A stack already on the bench is drawn in the strip, not twice.
-  const onBench = new Set(craft.slots.keys());
-  const bag = getBagItems(inventory).filter(
-    (item) => !onBench.has(item.unicId)
-  );
+  /** How much of a stack is already laid on the bench. */
+  const laidFrom = (unicId: number) => craft.slots.get(unicId)?.quantity ?? 0;
+
+  /**
+   * The strip shows what is **left** of each stack, not the whole of it and
+   * not nothing at all.
+   *
+   * It used to drop a stack from the strip the moment any part of it was
+   * laid, which left the player with no way to come back for a second
+   * "Poser 10" — the other half of QA-152. A stack is only gone from the
+   * bag once all of it is on the bench.
+   */
+  const bag = getBagItems(inventory)
+    .map((item) => ({
+      ...item,
+      quantity: item.quantity - laidFrom(item.unicId),
+    }))
+    .filter((item) => item.quantity > 0);
 
   const full = craft.slots.size >= craft.maxSlots;
   const running = craft.seriesRemaining > 0;
   const quantity = CRAFT_QUANTITIES[quantityIndex] ?? 1;
 
+  /**
+   * Lay `amount` more of a stack — `item.quantity` is what is left of it.
+   *
+   * `EMO` carries the slot's **absolute** total, not a delta:
+   * `CraftFlow.moveItem` writes `bench.slots[itemId] = quantity`. Sending
+   * the increment made a second "Poser 10" rewrite 10 over 10, so every
+   * recipe asking for more than ten of one ingredient was unreachable as
+   * soon as the player held more than the recipe wanted — 820 of the 2 296
+   * (QA-152). What goes on the fil is therefore the new total.
+   */
   const lay = (item: ItemData, amount: number) => {
-    gameClient?.exchangeMoveItem(
-      item.unicId,
-      true,
-      Math.min(amount, item.quantity)
-    );
+    const already = laidFrom(item.unicId);
+    const added = Math.min(amount, item.quantity);
+
+    if (added <= 0) {
+      return;
+    }
+
+    gameClient?.exchangeMoveItem(item.unicId, true, already + added);
   };
+
+  // A full bench still accepts more of a stack it already holds: that
+  // takes no new slot, and the server's own `wouldOccupy` says the same.
+  const fitsOn = (item: ItemData) => !full || laidFrom(item.unicId) > 0;
 
   const bagActions = [
     {
       label: "Poser",
-      enabled: () => !full,
+      enabled: (item: ItemData) => fitsOn(item),
       run: (item: ItemData) => lay(item, 1),
     },
     {
       label: "Poser 10",
-      enabled: (item: ItemData) => !full && item.quantity > 1,
+      enabled: (item: ItemData) => fitsOn(item) && item.quantity > 1,
       run: (item: ItemData) => lay(item, 10),
     },
     {
       label: "Tout poser",
-      enabled: (item: ItemData) => !full && item.quantity > 1,
+      enabled: (item: ItemData) => fitsOn(item) && item.quantity > 1,
       run: (item: ItemData) => lay(item, item.quantity),
     },
   ];

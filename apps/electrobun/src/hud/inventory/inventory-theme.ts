@@ -124,6 +124,13 @@ export const EQUIP_FOOTER = {
   kamasTextCenter: { x: 90, y: 173.4 },
   podsLabel: { x: 237, y: 160.7 },
   podsBar: { x: 190, y: 173, width: 75, height: 9 },
+  /**
+   * `courant / maximum`, right-aligned against the left end of the bar
+   * (QA-163). Retail leaves this strip empty, but five pods per job level
+   * move the fill by a tenth of a pixel: without the numbers the gauge
+   * cannot be read by hand, which is what the S04 §9 recipe asks for.
+   */
+  podsText: { x: 118, y: 172.5, width: 68 },
 } as const;
 
 /** Item detail card, local to `DETAIL_BOX`. */

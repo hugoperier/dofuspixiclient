@@ -18,6 +18,7 @@ entre lots, le hors-périmètre, et la recette.
 | [S04](S04-metiers-recolte.md) | Les métiers : le référentiel, prouvé par la récolte | terminé |
 | [S05](S05-metiers-artisanat.md) | L'artisanat : l'atelier, par-dessus deux socles déjà posés | terminé |
 | [S06](S06-metiers-cooperation-et-cycle.md) | Les métiers : la coopération, et fermer le cycle | terminé |
+| [S07](S07-metiers-rendre-le-chantier-traversable.md) | Les métiers : rendre traversable ce qui est déjà écrit | livré, recette §12 partielle |
 
 ## Écrire un sprint
 

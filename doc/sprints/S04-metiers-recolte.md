@@ -5,7 +5,7 @@ forgemagie réutiliseront, et le faire porter par le flux le plus court :
 apprendre un métier, équiper un outil, couper un arbre.
 
 **Pourquoi maintenant** — le monde est posé depuis S01 et S02 : 9 358 cartes,
-**16 523 cellules interactives dont 12 226 ressources**, et pas une seule n'est
+**16 523 cellules interactives dont 12 216 ressources**, et pas une seule n'est
 récoltable. Le joueur n'a aujourd'hui qu'une source de revenus, le combat. Tant
 que la récolte ne tourne pas, l'économie n'a qu'un robinet, l'hôtel de vente
 livré en S03 n'a rien à vendre, et l'artisanat n'a pas d'ingrédients.
@@ -26,7 +26,7 @@ c'est le signal que ce sprint est fait pour donner.
 - **Tout l'artisanat** : QA-135 (l'atelier), QA-136 (cases, taux, expérience),
   QA-137 (la fenêtre). Ils ont chacun leur fiche et attendent ce sprint ; en
   faire entrer un seul ferait échouer les deux. Le référentiel importé ici
-  contient déjà leurs 2 298 recettes et leurs 34 compétences de craft — c'est
+  contient déjà leurs 2 296 recettes et leurs 33 compétences de craft — c'est
   précisément ce qui rendra S05 petit.
 - **La coopération et le livre des artisans** : QA-138, QA-139.
 - **L'oubli d'un métier** (QA-140). La règle des trois slots est écrite et
@@ -140,19 +140,31 @@ Se connecter (`dev` / `dev`), choisir le personnage.
 ```bash
 just import-jobs game.sql
 just import-jobs game.sql          # une seconde fois, exprès
-docker exec dofuspixiclient-postgres-1 psql -U dofus -d dofus -tAc \
-  "select (select count(*) from jobs),
-          (select count(*) from job_skills),
-          (select count(*) from job_skills where kind = 1),
-          (select count(*) from job_tools),
-          (select count(*) from recipes),
-          (select count(*) from job_gatherable_cells);"
 ```
 
-**Attendu** — les deux exécutions impriment le même décompte, ligne à ligne, et
-la requête donne ~39 métiers, 147 compétences dont **57 de récolte**,
-~2 298 recettes et ~12 226 cellules récoltables. Le script imprime ses comptes
-par source, importé, rejeté et raison.
+**Attendu** — les deux exécutions impriment le **même récapitulatif**, et
+c'est celui-ci, à l'unité près :
+
+```
+récapitulatif :
+  métiers                         34
+  compétences                    144
+  dont récolte (avec XP)          54
+  outils                          70
+  recettes                      2296
+  cellules récoltables         12216
+  couples cellule/compétence   13696
+```
+
+Les six premières lignes remplacent les « ~39 métiers, 147 compétences,
+~2 298 recettes, ~12 226 cellules » que ce runbook portait jusqu'à QA-165 : des
+nombres approximatifs ne détectent aucune régression d'import. La septième est
+née avec QA-154 — 1 480 cellules du monde portent deux compétences de récolte,
+et `13 696 = 12 216 + 1 480`.
+
+Les 54 compétences de récolte ne contredisent pas les 57 de `kind = 1` : trois
+(« Ramasser », « Jouer », « Pêcher KoinKoin ») n'ont ni niveau ni XP en amont et
+restent inutilisables. Le script le dit en toutes lettres à chaque passage.
 
 **Échec si** — le second passage change une seule ligne, ou si un rejet est
 imprimé sans sa raison. Un import qui n'explique pas ce qu'il jette est un
@@ -302,14 +314,28 @@ Aucune réservation ne doit survivre à la fin de son action.
 
 ### 8 · Les interruptions — C2
 
-Quatre gestes, un par branche, tous pendant l'action :
+Quatre gestes, tous pendant l'action. **Le premier n'interrompt rien**, et
+c'est le comportement voulu :
 
-1. cliquer ailleurs pour se déplacer ;
+1. **cliquer ailleurs pour se déplacer.** QA-143 a rendu la récolte
+   inannulable par une entrée de jeu : le déplacement est refusé par
+   `MoveHandler`, la garde `why === "moved"` de `HarvestService` le refuse une
+   seconde fois, et l'action va à son terme.
+
+   **Attendu** — le personnage **ne bouge pas**, la jauge continue, la récolte
+   aboutit et crédite normalement.
+
+   **Échec si** — le personnage se déplace, ou la ressource est libérée sans
+   récompense. C'est ce que ce runbook attendait avant QA-161, et c'était le
+   runbook qui avait tort.
+
+Les trois autres interrompent :
+
 2. changer de carte ;
 3. se faire agresser (ou lancer un combat) ;
 4. fermer brutalement l'onglet (`bun run cli kill --id <bot_id> --json`).
 
-**Attendu** — dans les quatre cas : aucune récompense, aucune expérience, et la
+**Attendu** — dans ces trois cas : aucune récompense, aucune expérience, et la
 ressource redevient disponible immédiatement. Après le quatrième, se
 reconnecter et récolter le même arbre doit marcher du premier coup.
 
@@ -321,15 +347,19 @@ déjà l'échange.
 
 ### 9 · Les pods — B2
 
-> Couvre QA-133.
+> Couvre QA-133, et QA-163 pour la lecture.
 
-**Gestes** — relever les pods maximum dans la bannière, monter d'un niveau de
-métier, les relever.
+**Gestes** — ouvrir l'inventaire, lire `courant / maximum` sous la jauge de
+pods, monter d'un niveau de métier, relire.
 
 **Attendu** — exactement 5 pods de plus par niveau. Un métier 100 vaut 1 500.
 
 **Échec si** — le total ne bouge qu'au prochain changement de carte. La trame de
 statistiques doit être renvoyée après le passage de niveau.
+
+**Ne pas lire la jauge à l'œil** : 5 pods sur 1 130 déplacent le remplissage
+d'un dixième de pixel. C'est le nombre qui fait foi, et c'est QA-163 qui l'a
+mis là.
 
 ---
 
@@ -385,5 +415,5 @@ franchir.
 (QA-131), et `doc/contracts.md` le classe comme tel.
 
 Le sprint suivant est S05 — l'artisanat : QA-135 (l'atelier), QA-136 (cases,
-taux, expérience) et QA-137 (la fenêtre). Ses 2 298 recettes et ses
-34 compétences de craft sont déjà en base à la fin de celui-ci.
+taux, expérience) et QA-137 (la fenêtre). Ses 2 296 recettes et ses
+33 compétences de craft sont déjà en base à la fin de celui-ci.

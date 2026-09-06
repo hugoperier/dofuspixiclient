@@ -1000,15 +1000,33 @@ function appendResponse(
   }
 }
 
-// StarLoco 1.39 orphaned two 1.29 learning actions. Incarnam's own NPCs are
+// StarLoco 1.39 orphaned four 1.29 learning actions. Incarnam's own NPCs are
 // stable, reachable roots and the response labels already exist in the retail
-// 1.29 bundle, so attach the two missing professions there rather than invent
+// 1.29 bundle, so attach the missing professions there rather than invent
 // dialog text. Contremaitre Ikul teaches Alchimiste; Pecheur d'Incarnam,
 // Pecheur. A missing success/failure branch means the dialog simply closes.
 appendResponse(dialogQuestions, 3596, 10217);
 dialogActions.push({ responseId: 10217, type: 6, args: "26" });
 appendResponse(dialogQuestions, 3745, 10219);
 dialogActions.push({ responseId: 10219, type: 6, args: "36" });
+
+// The same two-line graft for the last two jobs nobody could take up
+// (QA-157). The dump carries `type 6` for nineteen professions and neither
+// of these is among them, so Chasseur's thirty meat tiers and Bricoleur's
+// 157 recipes were shipped, tested, and unreachable.
+//
+// Chasseur d'Incarnam (npc 882, map 10282 [2,1]) opens question 3697 with
+// **no answers at all** — the sibling of the Bucheron, Paysan and Pecheur of
+// the same place, and the only one of the four that teaches nothing.
+// "Apprendre le metier de Chasseur" is response 10220 in the 1.29 bundle.
+//
+// Bricoleur has no Incarnam master, so it goes where 1.29 puts it: Anik Mech
+// (npc 220, question 978), Quartier des Bricoleurs de Bonta, map 4232
+// [-27,-59], who also opens on an empty answer list.
+appendResponse(dialogQuestions, 3697, 10220);
+dialogActions.push({ responseId: 10220, type: 6, args: "41" });
+appendResponse(dialogQuestions, 978, 10211);
+dialogActions.push({ responseId: 10211, type: 6, args: "65" });
 
 const filteredDialog = filterDialogGraph({
   questions: dialogQuestions,

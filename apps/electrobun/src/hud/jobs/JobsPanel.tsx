@@ -1,7 +1,9 @@
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 import type { GameClient } from "@/game/game-client";
-import type { PlayerJob } from "@/game/stores/jobs-store";
+import type { CraftsLang } from "@/game/lang/crafts-lang";
+import type { JobSkill, PlayerJob } from "@/game/stores/jobs-store";
+import { loadCraftsLang } from "@/game/lang/crafts-lang";
 import { jobsLangSnapshot } from "@/game/lang/jobs-lang";
 import { getJobs, JobOptionBit, jobsStore } from "@/game/stores/jobs-store";
 
@@ -56,6 +58,16 @@ export function JobsPanel({
   const p = (n: number) => Math.round(n * zoom);
   const rowH = p(38);
   const [openOptions, setOpenOptions] = useState<number | null>(null);
+
+  // The item table, for the resource a harvest skill yields. `SK[id].d` is
+  // the *verb* — sixteen of a Bûcheron's skills are called "Couper" and
+  // nothing else — so the panel read as sixteen identical lines and told a
+  // player nothing about what they could cut (QA-162). The interactive
+  // menu already names the tree; this is the same lookup.
+  const [craftsLang, setCraftsLang] = useState<CraftsLang | null>(null);
+  useEffect(() => {
+    void loadCraftsLang().then(setCraftsLang);
+  }, []);
 
   return (
     <Panel
@@ -144,10 +156,15 @@ export function JobsPanel({
                   opacity: 0.82,
                 }}
               >
-                {job.skills.map((skill) => {
-                  const label =
-                    lang?.skills.get(skill.id)?.label ??
-                    `Compétence ${skill.id}`;
+                {orderSkills(job.skills).map((skill) => {
+                  const text = lang?.skills.get(skill.id);
+                  const verb = text?.label ?? `Compétence ${skill.id}`;
+                  const resource =
+                    text?.harvestItemId == null
+                      ? null
+                      : (craftsLang?.items.get(text.harvestItemId)?.name ??
+                        null);
+                  const label = resource ? `${verb} — ${resource}` : verb;
                   const detail =
                     skill.slots > 0
                       ? `${skill.slots} case${skill.slots > 1 ? "s" : ""}`
@@ -186,6 +203,26 @@ export function JobsPanel({
       </div>
     </Panel>
   );
+}
+
+/**
+ * Harvest skills by required level, craft skills after them (QA-162).
+ *
+ * `JS` sends them in the referential's own order, which is neither: a
+ * Bûcheron's list read 1, 30, 50, 70, 90, 40, 80, 10, 20, 60, then the
+ * workbench, then 35, 35, 50, 80, 100, 75. Ordering by level is what makes
+ * the list say "here is what you can cut now, and here is what is next".
+ * A craft skill's `minLevel` is not comparable — its gate is the number of
+ * slots — so the two groups are sorted apart rather than interleaved.
+ */
+function orderSkills(skills: readonly JobSkill[]): JobSkill[] {
+  const harvest = skills.filter((skill) => skill.slots <= 0);
+  const craft = skills.filter((skill) => skill.slots > 0);
+
+  return [
+    ...[...harvest].sort((a, b) => a.minLevel - b.minLevel || a.id - b.id),
+    ...[...craft].sort((a, b) => a.slots - b.slots || a.id - b.id),
+  ];
 }
 
 /**

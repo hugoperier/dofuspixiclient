@@ -22,6 +22,7 @@ import { MapNpcService } from "@modules/npcs/map-npc.service";
 import { NpcDialogService } from "@modules/npcs/npc-dialog.service";
 import { NpcDialogSessionService } from "@modules/npcs/npc-dialog.session";
 import { PlayerPresenceService } from "@modules/player-presence/player-presence.service";
+import { StatsService } from "@modules/stats/stats.service";
 import { Injectable, Logger } from "@nestjs/common";
 import { OnEvent } from "@nestjs/event-emitter";
 import { GatewayFrameService } from "@shared/gateway-adapter/gateway-frame.service";
@@ -60,6 +61,7 @@ export class NpcDialogHandler {
     private readonly open: NpcDialogSessionService,
     private readonly exchange: ExchangeService,
     private readonly jobs: JobsService,
+    private readonly stats: StatsService,
     private readonly frames: GatewayFrameService
   ) {}
 
@@ -270,6 +272,16 @@ export class NpcDialogHandler {
       session.characterId,
       outcome.jobId
     );
+
+    if (result.ok) {
+      // A job is worth five pods the instant it is learned (QA-133), and
+      // `Ow` is the only frame that says so. `JobsService.learn` cannot
+      // send it itself — `StatsModule` imports `JobsModule`, so the
+      // reverse would cycle — and the potion path already gets it from
+      // `item-use.handler`. This is the last way in that did not: the
+      // maximum stayed put until something else happened to refresh it.
+      await this.stats.sendStats(sessionId, session.characterId);
+    }
 
     const next = result.ok ? outcome.onSuccess : outcome.onFailure;
 

@@ -1,6 +1,7 @@
 import type { ExchangeSession } from "@modules/exchange/exchange.types";
 import type { ItemRow } from "@shared/db/schema";
 import { create } from "@bufbuild/protobuf";
+import { InfoMessageSchema } from "@dofus/proto/chat_pb";
 import {
   ExchangeCoopMovementSchema,
   ExchangeCraftLoopEndSchema,
@@ -19,6 +20,7 @@ import {
   ExchangeStorageMovementSchema,
 } from "@dofus/proto/exchange_pb";
 import { DofusMessageSchema } from "@dofus/proto/server_messages_pb";
+import { EXCHANGE_DENIAL_MESSAGES } from "@modules/exchange/exchange.denials";
 import { toItemData } from "@modules/inventory/inventory.frames.service";
 import { Injectable } from "@nestjs/common";
 import { GatewayFrameService } from "@shared/gateway-adapter/gateway-frame.service";
@@ -262,6 +264,33 @@ export class ExchangeFramesService {
             totalCrafted,
             itemId,
           }),
+        },
+      })
+    );
+  }
+
+  /**
+   * `Im` — why the gesture did nothing.
+   *
+   * The same channel and the same shape as the harvest's own refusal
+   * (`HarvestFramesService.sendRefusal`), for the same reason: a button that
+   * produces neither an effect nor a sentence is indistinguishable from a
+   * broken game. A reason absent from the table sends nothing — see
+   * `EXCHANGE_DENIAL_MESSAGES`.
+   */
+  denial(sessionId: string, reason: string): void {
+    const message = EXCHANGE_DENIAL_MESSAGES[reason];
+
+    if (!message) {
+      return;
+    }
+
+    this.frames.broadcast(
+      [sessionId],
+      create(DofusMessageSchema, {
+        payload: {
+          case: "infoMessage",
+          value: create(InfoMessageSchema, { message }),
         },
       })
     );

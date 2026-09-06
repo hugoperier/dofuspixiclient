@@ -200,16 +200,37 @@ export class JobsRepository {
       .execute();
   }
 
-  /** The placed resource on this cell, if the import found one there. */
-  findGatherable(mapId: number, cellId: number) {
+  /**
+   * The placed resource on this cell **as `skillId` sees it**.
+   *
+   * The skill is part of the question, not part of the answer: one
+   * occurrence accepts several (QA-154), so "what stands here" has no
+   * single reading and "does this cell accept this skill" has exactly one.
+   * A cell with no row, or a cell whose row does not accept the skill, are
+   * the same refusal — the client named a decorative copy of the sprite, or
+   * a job the plant does not serve.
+   */
+  findGatherable(mapId: number, cellId: number, skillId: number) {
     return this.txHost.tx
       .selectFrom("jobGatherableCells")
-      .innerJoin("jobSkills", "jobSkills.id", "jobGatherableCells.skillId")
+      .innerJoin("jobGatherableCellSkills", (join) =>
+        join
+          .onRef(
+            "jobGatherableCellSkills.mapId",
+            "=",
+            "jobGatherableCells.mapId"
+          )
+          .onRef(
+            "jobGatherableCellSkills.cellId",
+            "=",
+            "jobGatherableCells.cellId"
+          )
+      )
+      .innerJoin("jobSkills", "jobSkills.id", "jobGatherableCellSkills.skillId")
       .select([
         "jobGatherableCells.mapId",
         "jobGatherableCells.cellId",
-        "jobGatherableCells.skillId",
-        "jobGatherableCells.resourceItemId",
+        "jobGatherableCellSkills.skillId",
         "jobGatherableCells.respawnSeconds",
         "jobSkills.jobId",
         "jobSkills.minLevel",
@@ -220,6 +241,7 @@ export class JobsRepository {
       ])
       .where("jobGatherableCells.mapId", "=", mapId)
       .where("jobGatherableCells.cellId", "=", cellId)
+      .where("jobGatherableCellSkills.skillId", "=", skillId)
       .where("jobSkills.kind", "=", JobSkillKind.Harvest)
       .executeTakeFirst();
   }

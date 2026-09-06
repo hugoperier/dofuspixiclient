@@ -494,6 +494,7 @@ const harvestSkillIds = new Set(
 const mapRows = await db.selectFrom("maps").select(["id", "cells"]).execute();
 
 const gatherable: Record<string, unknown>[] = [];
+const gatherableSkills: Record<string, unknown>[] = [];
 let interactiveCells = 0;
 
 for (const map of mapRows as { id: number; cells: Uint8Array | null }[]) {
@@ -523,17 +524,24 @@ for (const map of mapRows as { id: number; cells: Uint8Array | null }[]) {
       continue;
     }
 
-    // A resource model offers exactly one harvest skill in 1.29; take the
-    // first one the server can actually run.
-    const skillId = (entry.sk ?? []).find((s) => harvestSkillIds.has(s));
+    // A resource model offers **every** harvest skill its `sk` list names,
+    // not one. A flax plant offers 68 (Alchimiste, the flower) and 50
+    // (Paysan, the stalk); taking only the first left the Paysan with no
+    // Lin and no Chanvre anywhere in the world — QA-154.
+    const offered = (entry.sk ?? []).filter((s) => harvestSkillIds.has(s));
 
-    if (skillId === undefined) {
+    if (offered.length === 0) {
       reject("gatherable: resource model offers no usable harvest skill");
       continue;
     }
 
-    const skill = skills.find((s) => s.id === skillId);
-    const respawnMs = templateBySkill.get(skillId)?.respawnMs ?? 0;
+    // One occurrence, one respawn, shared by whichever jobs serve it. The
+    // models that offer two skills give both the same delay; where they
+    // ever disagreed, the longest is the safe reading — a resource that
+    // came back early would be one two players could take twice.
+    const respawnMs = Math.max(
+      ...offered.map((s) => templateBySkill.get(s)?.respawnMs ?? 0)
+    );
 
     if (respawnMs <= 0) {
       reject("gatherable: template carries no respawn delay");
@@ -543,21 +551,31 @@ for (const map of mapRows as { id: number; cells: Uint8Array | null }[]) {
     gatherable.push({
       mapId: map.id,
       cellId: cell.id,
-      resourceItemId: skill?.harvestItemId ?? null,
-      skillId,
       respawnSeconds: Math.round(respawnMs / 1000),
     });
+
+    for (const skillId of offered) {
+      gatherableSkills.push({
+        mapId: map.id,
+        cellId: cell.id,
+        skillId,
+      });
+    }
   }
 }
 
 // A referential, rebuilt wholesale. `gatherable_cell_states` is not touched:
 // a re-import must not wipe a respawn in flight.
-await sql`TRUNCATE job_gatherable_cells`.execute(db);
+await sql`TRUNCATE job_gatherable_cells, job_gatherable_cell_skills`.execute(
+  db
+);
 await insertAll("job_gatherable_cells", gatherable);
+await insertAll("job_gatherable_cell_skills", gatherableSkills);
 
 console.log(
   `gatherable cells: ${gatherable.length} imported of ${interactiveCells} ` +
-    `interactive cells across ${mapRows.length} maps`
+    `interactive cells across ${mapRows.length} maps, ` +
+    `${gatherableSkills.length} cell/skill pairs`
 );
 
 // ---------------------------------------------------------------------------
@@ -577,15 +595,36 @@ const counts = await sql<Record<string, number>>`
                                                        AS "harvestSkills",
     (SELECT count(*)::int FROM job_tools)              AS "jobTools",
     (SELECT count(*)::int FROM recipes)                AS "recipes",
-    (SELECT count(*)::int FROM job_gatherable_cells)   AS "gatherableCells"
+    (SELECT count(*)::int FROM job_gatherable_cells)   AS "gatherableCells",
+    (SELECT count(*)::int FROM job_gatherable_cell_skills)
+                                                       AS "gatherableSkills"
 `
   .execute(db)
   .then((r) => r.rows[0]);
 
-console.log(
-  `done — ${Object.entries(counts ?? {})
-    .map(([k, v]) => `${k}=${v}`)
-    .join(" ")}`
-);
+/**
+ * The recap — QA-165.
+ *
+ * One line per quantity, aligned, so two consecutive imports can be diffed
+ * by eye or by `diff`. The runbook of S04 §1 asks for exactly that and used
+ * approximate numbers ("~39 métiers") to check it against, which made it
+ * unusable as the import-regression detector it was written to be. These are
+ * the names the sprint quotes; changing one means changing S04 §1 too.
+ */
+const RECAP_LABELS: Record<string, string> = {
+  jobs: "métiers",
+  jobSkills: "compétences",
+  harvestSkills: "dont récolte (avec XP)",
+  jobTools: "outils",
+  recipes: "recettes",
+  gatherableCells: "cellules récoltables",
+  gatherableSkills: "couples cellule/compétence",
+};
+
+console.log("récapitulatif :");
+for (const [key, label] of Object.entries(RECAP_LABELS)) {
+  const value = counts?.[key] ?? 0;
+  console.log(`  ${label.padEnd(26)} ${String(value).padStart(7)}`);
+}
 
 await db.destroy();

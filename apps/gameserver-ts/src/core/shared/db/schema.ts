@@ -1182,17 +1182,34 @@ export type JobSkillRow = Selectable<JobSkillsTable>;
 export type NewJobSkill = Insertable<JobSkillsTable>;
 export type JobSkillUpdate = Updateable<JobSkillsTable>;
 
+/**
+ * One placed resource: where it stands and how long it takes to come back.
+ *
+ * *Which* jobs may take it lives in `job_gatherable_cell_skills`, not here —
+ * 1 480 cells of the world offer two harvest skills at once, and a column
+ * could only name one of them (QA-154).
+ */
 export interface JobGatherableCellsTable {
   mapId: number;
   cellId: number;
-  resourceItemId: number;
-  skillId: number;
   respawnSeconds: number;
 }
 
 export type JobGatherableCellRow = Selectable<JobGatherableCellsTable>;
 export type NewJobGatherableCell = Insertable<JobGatherableCellsTable>;
 export type JobGatherableCellUpdate = Updateable<JobGatherableCellsTable>;
+
+/** Every harvest skill one placed resource accepts. */
+export interface JobGatherableCellSkillsTable {
+  mapId: number;
+  cellId: number;
+  skillId: number;
+}
+
+export type JobGatherableCellSkillRow =
+  Selectable<JobGatherableCellSkillsTable>;
+export type NewJobGatherableCellSkill =
+  Insertable<JobGatherableCellSkillsTable>;
 
 export interface QuestsTable {
   id: number;
@@ -2023,6 +2040,7 @@ export type DB = {
   playerJobs: PlayerJobsTable;
   jobSkills: JobSkillsTable;
   jobGatherableCells: JobGatherableCellsTable;
+  jobGatherableCellSkills: JobGatherableCellSkillsTable;
   quests: QuestsTable;
   questSteps: QuestStepsTable;
   playerQuests: PlayerQuestsTable;

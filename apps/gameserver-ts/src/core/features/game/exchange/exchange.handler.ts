@@ -57,10 +57,14 @@ import { SessionRegistry } from "@shared/gateway-adapter/session-registry";
  * rather than assuming — the NPC shop (QA-106) adds a branch there and
  * nothing else.
  *
- * A refusal is otherwise silent, as everywhere else in this server: the
- * client simply does not see the move happen, and its own state is
- * unchanged because it only ever moves an item when the server says it
- * did.
+ * A refusal used to be silent here: the client simply did not see the move
+ * happen, and its own state stayed right because it only ever moves an item
+ * when the server says it did. That reasoning holds for the *state* and fails
+ * for the *player* — "Combiner" on a quantity no recipe wants produced
+ * neither an item nor a sentence, which is indistinguishable from a broken
+ * button (QA-159). Every refusal now also goes through `notifyDenial`, which
+ * sends an `Im` for the reasons `EXCHANGE_DENIAL_MESSAGES` has words for and
+ * stays quiet for the ones it does not.
  */
 @Injectable()
 export class ExchangeHandler {
@@ -118,6 +122,7 @@ export class ExchangeHandler {
           `ER${msg.exchangeType} refused (${result.reason}) ` +
             `session=${ctx.sessionId}`
         );
+        this.exchange.notifyDenial(ctx.sessionId, result.reason);
       }
 
       return;
@@ -137,6 +142,7 @@ export class ExchangeHandler {
       this.logger.debug(
         `ER refused (${result.reason}) session=${ctx.sessionId}`
       );
+      this.exchange.notifyDenial(ctx.sessionId, result.reason);
     }
   }
 
@@ -241,6 +247,7 @@ export class ExchangeHandler {
       this.logger.debug(
         `EHB refused (${result.reason}) session=${ctx.sessionId}`
       );
+      this.exchange.notifyDenial(ctx.sessionId, result.reason);
     }
   }
 
@@ -270,6 +277,7 @@ export class ExchangeHandler {
       this.logger.debug(
         `EA refused (${result.reason}) session=${ctx.sessionId}`
       );
+      this.exchange.notifyDenial(ctx.sessionId, result.reason);
     }
   }
 
@@ -281,6 +289,7 @@ export class ExchangeHandler {
       this.logger.debug(
         `EK refused (${result.reason}) session=${ctx.sessionId}`
       );
+      this.exchange.notifyDenial(ctx.sessionId, result.reason);
     }
   }
 
@@ -302,6 +311,7 @@ export class ExchangeHandler {
       this.logger.debug(
         `EMO refused (${result.reason}) session=${ctx.sessionId}`
       );
+      this.exchange.notifyDenial(ctx.sessionId, result.reason);
     }
   }
 
@@ -317,6 +327,7 @@ export class ExchangeHandler {
       this.logger.debug(
         `EMG refused (${result.reason}) session=${ctx.sessionId}`
       );
+      this.exchange.notifyDenial(ctx.sessionId, result.reason);
     }
   }
 
@@ -342,6 +353,7 @@ export class ExchangeHandler {
       this.logger.debug(
         `EMR refused (${result.reason}) session=${ctx.sessionId}`
       );
+      this.exchange.notifyDenial(ctx.sessionId, result.reason);
     }
   }
 
@@ -367,6 +379,7 @@ export class ExchangeHandler {
       this.logger.debug(
         `EL refused (${result.reason}) session=${ctx.sessionId}`
       );
+      this.exchange.notifyDenial(ctx.sessionId, result.reason);
     }
   }
 
@@ -391,6 +404,7 @@ export class ExchangeHandler {
       this.logger.debug(
         `EPO refused (${result.reason}) session=${ctx.sessionId}`
       );
+      this.exchange.notifyDenial(ctx.sessionId, result.reason);
     }
   }
 
@@ -413,6 +427,7 @@ export class ExchangeHandler {
       this.logger.debug(
         `EPG refused (${result.reason}) session=${ctx.sessionId}`
       );
+      this.exchange.notifyDenial(ctx.sessionId, result.reason);
     }
   }
 

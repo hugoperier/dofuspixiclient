@@ -19,6 +19,7 @@ import { ExchangeService } from "@modules/exchange/exchange.service";
 import { OwnerKind } from "@modules/items/item-owner";
 import { JobsService } from "@modules/jobs/jobs.service";
 import { NpcDialogSessionService } from "@modules/npcs/npc-dialog.session";
+import { StatsService } from "@modules/stats/stats.service";
 import { EventEmitter2 } from "@nestjs/event-emitter";
 import { SessionRegistry } from "@shared/gateway-adapter/session-registry";
 
@@ -85,6 +86,7 @@ let handler: NpcDialogHandler;
 let inFight: boolean;
 let banksOpened: { accountId: string; ownerKind: number; kind: number }[];
 let jobsLearned: { characterId: string; jobId: number }[];
+let statsSent: string[];
 let learnSucceeds: boolean;
 
 const ctx = { sessionId: SESSION } as HandlerContext;
@@ -94,6 +96,7 @@ beforeEach(() => {
   inFight = false;
   banksOpened = [];
   jobsLearned = [];
+  statsSent = [];
   learnSucceeds = true;
   open = new NpcDialogSessionService();
 
@@ -174,6 +177,13 @@ beforeEach(() => {
     },
   } as unknown as JobsService;
 
+  // Learning a job buys five pods, and `Ow` rides on `sendStats` (QA-160).
+  const stats = {
+    sendStats: async (_sessionId: string, characterId: string) => {
+      statsSent.push(characterId);
+    },
+  } as unknown as StatsService;
+
   handler = new NpcDialogHandler(
     registry,
     presence,
@@ -183,6 +193,7 @@ beforeEach(() => {
     open,
     exchange,
     jobs,
+    stats,
     frames
   );
 });
@@ -314,6 +325,8 @@ describe("DR", () => {
     );
 
     expect(jobsLearned).toEqual([{ characterId: "char-1", jobId: 2 }]);
+    // The five pods the job is worth reach the client on `Ow` (QA-160).
+    expect(statsSent).toEqual(["char-1"]);
     expect(cases()).toEqual(["dialogQuestion"]);
     expect(open.get(SESSION)?.questionId).toBe(JOB_ON_SUCCESS);
   });

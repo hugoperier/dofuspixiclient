@@ -2,6 +2,7 @@ import { ChatChannel } from "@dofus/proto/common_pb";
 
 import {
   SIDE_CHAT_CHANNEL,
+  SIDE_CHAT_CHANNEL_COLORS,
   SIDE_CHAT_FILTER_CHANNELS,
   type SideChatChannel,
 } from "@/components/ui/side-chat-panel.channels";
@@ -86,14 +87,28 @@ export function appendChatMessage(entry: Omit<ChatEntry, "id">): void {
   });
 }
 
+/**
+ * `Im` — the server saying why nothing happened.
+ *
+ * It lands in **both** buckets, and the main log is the one that matters:
+ * `infos` was only ever read by `SideChatPanel`, which no screen mounts, so
+ * every refusal the server took the trouble to word — the harvest's eleven
+ * (QA-123), the workbench's (QA-159) — reached the client and was shown to
+ * nobody. A message the player cannot see is the silence those tables exist
+ * to end. The `infos` entry is kept so the side panel needs no second call
+ * site the day it comes back.
+ */
 export function appendInfoMessage(text: string): void {
   const { infos } = chatStore.getSnapshot();
+  const entry = { filter: SIDE_CHAT_CHANNEL.INFOS, text };
 
   chatStore.setState({
-    infos: tail(
-      [...infos, { id: makeId(), filter: SIDE_CHAT_CHANNEL.INFOS, text }],
-      MAX_INFOS
-    ),
+    infos: tail([...infos, { id: makeId(), ...entry }], MAX_INFOS),
+  });
+
+  appendChatMessage({
+    ...entry,
+    color: SIDE_CHAT_CHANNEL_COLORS[SIDE_CHAT_CHANNEL.INFOS],
   });
 }
 
