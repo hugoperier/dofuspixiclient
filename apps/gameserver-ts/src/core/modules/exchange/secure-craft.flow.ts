@@ -2,7 +2,10 @@ import { randomUUID } from "node:crypto";
 
 import type { Recipe } from "@modules/exchange/craft.repository";
 import type { ExchangeSession } from "@modules/exchange/exchange.types";
-import type { SecureCraftState } from "@modules/exchange/secure-craft.registry";
+import type {
+  SecureCraftSide,
+  SecureCraftState,
+} from "@modules/exchange/secure-craft.registry";
 import type { TransactionalAdapterKysely } from "@nestjs-cls/transactional-adapter-kysely";
 import type { DB, ItemRow } from "@shared/db/schema";
 import { ExchangeType } from "@dofus/proto/common_pb";
@@ -46,6 +49,7 @@ export type SecureCraftDenial =
   | "not-target"
   | "not-the-customer"
   | "not-the-artisan"
+  | "not-a-party"
   | "no-job"
   | "no-tool"
   | "skill-locked"
@@ -70,11 +74,21 @@ const WEAPON_POSITION = 1;
 /**
  * Crafting for somebody else — exchange types 12 and 13.
  *
- * Two windows, one deal. The customer supplies the ingredients and gets the
- * object; the artisan supplies the skill and gets the **experience**. That
- * split is the whole point of the mechanism, and it is the one thing here
- * that would be invisible if it were wrong — an artisan who received the
- * object as well would look like a working feature to anyone not counting.
+ * Two windows, one deal. **Either** party may put ingredients on the bench —
+ * the artisan covering the part of the recipe the customer could not find is
+ * the ordinary case, and a customer holding every ingredient would have had
+ * no reason to hire anybody. What is not symmetric is the outcome: the object
+ * goes to the customer, the **experience** to the artisan, and the payment
+ * the other way. That split is the whole point of the mechanism, and it is
+ * the one thing here that would be invisible if it were wrong — an artisan
+ * who received the object as well would look like a working feature to
+ * anyone not counting.
+ *
+ * Both sides confirm. "Combiner" is a flag, not a trigger: it sets the
+ * presser's own, and only the second one to arrive runs the craft. Any
+ * change to either pile afterwards clears both, so nobody can agree to one
+ * recipe and commit to another — the same rule a trade's `EK` follows, and
+ * for the same reason.
  *
  * The shape is `TradeFlow`'s, not `CraftFlow`'s: one shared `lockKey` rather
  * than two locks, so the artisan's `EK` can never interleave with the
@@ -207,7 +221,10 @@ export class SecureCraftFlow {
       slots: {},
       payItems: {},
       payKamas: "0",
+      payBonusKamas: "0",
       accepted: false,
+      customerReady: false,
+      artisanReady: false,
       crafted: 0,
     });
 
@@ -274,18 +291,27 @@ export class SecureCraftFlow {
         open.phase = "open";
       }
 
-      this.frames.openCraft(side.sessionId, kind);
+      this.frames.openCoopCraft(
+        side.sessionId,
+        kind,
+        craft.skillId,
+        craft.maxSlots,
+        side.characterId === craft.artisan.characterId
+          ? craft.customer.name
+          : craft.artisan.name
+      );
     }
 
     return { ok: true };
   }
 
   /**
-   * `EMO` — the customer lays an ingredient.
+   * `EMO` — a party lays an ingredient.
    *
-   * Only the customer may: the ingredients are theirs, and an artisan able
-   * to put their own stock on the bench would be doing a solo craft with
-   * somebody else's experience.
+   * Either of them, and each out of their own bag. The stack is recorded
+   * against whoever laid it, which is what lets the commit take it back out
+   * of the right inventory and the window draw it under the right name; a
+   * player can only ever take back what they laid themselves.
    */
   async moveItem(
     session: ExchangeSession,
@@ -299,19 +325,13 @@ export class SecureCraftFlow {
       return { ok: false, reason: "no-session" };
     }
 
-    if (session.sessionId !== craft.customer.sessionId) {
-      return { ok: false, reason: "not-the-customer" };
+    const side = sideOf(craft, session.sessionId);
+
+    if (!side) {
+      return { ok: false, reason: "not-a-party" };
     }
 
-    return this.lay(
-      craft,
-      craft.slots,
-      craft.maxSlots,
-      add,
-      itemId,
-      quantity,
-      false
-    );
+    return this.lay(craft, side, add, itemId, quantity);
   }
 
   /** `EPO` — the customer offers an item in payment. */
@@ -332,21 +352,23 @@ export class SecureCraftFlow {
     }
 
     // The payment pile has no grid: it is not a recipe.
-    return this.lay(
-      craft,
-      craft.payItems,
-      Number.POSITIVE_INFINITY,
-      add,
-      itemId,
-      quantity,
-      true
-    );
+    return this.layPayment(craft, add, itemId, quantity);
   }
 
-  /** `EPG` — the customer offers kamas. Absolute, like a trade's. */
+  /**
+   * `EPG` — the customer sets one of the two purses. Absolute, like a
+   * trade's.
+   *
+   * `bonus` picks which: the fee, owed whatever the roll says, or the
+   * premium, owed only on a success. Two amounts rather than one with a
+   * flag, because the customer is deciding two different things — what the
+   * artisan's time is worth and what the risk is worth — and a single
+   * number cannot express "pay something either way, more if it works".
+   */
   async movePayKamas(
     session: ExchangeSession,
-    amount: bigint
+    amount: bigint,
+    bonus: boolean
   ): Promise<SecureCraftResult> {
     const craft = this.craftOf(session);
 
@@ -365,44 +387,88 @@ export class SecureCraftFlow {
     // Clamped to the purse rather than refused, which is what the canonical
     // client does on its side (`validateKama`). An offer of more than one
     // has is a slip, not an attack, and the commit would refuse it anyway.
+    // What is left of the purse is measured against the *other* amount:
+    // the two are paid together on a success, so a fee that fits only
+    // because the premium is ignored does not fit.
     const purse = BigInt(
       (await this.players.findById(craft.customer.characterId))?.kamas ?? 0
     );
-    const clamped = amount > purse ? purse : amount;
+    const other = BigInt(bonus ? craft.payKamas : craft.payBonusKamas);
+    const room = purse > other ? purse - other : 0n;
+    const clamped = amount > room ? room : amount;
 
-    craft.payKamas = String(clamped);
+    if (bonus) {
+      craft.payBonusKamas = String(clamped);
+    } else {
+      craft.payKamas = String(clamped);
+    }
 
-    this.frames.payKamas(
-      craft.customer.sessionId,
-      craft.artisan.sessionId,
-      clamped
-    );
+    this.frames.payKamas(this.sides(craft), clamped, bonus);
+    this.unconfirm(craft);
 
     return { ok: true };
   }
 
   /**
-   * `EK` — the artisan makes it.
+   * `EK` — "Combiner". One player's confirmation, not the trigger.
    *
-   * The one asymmetry that matters: the object goes to the customer, the
-   * experience to the artisan, and the payment the other way. All four
-   * movements are one transaction.
+   * It sets the presser's own flag and broadcasts it; the craft runs when
+   * the *second* one arrives. Pressing it again takes the confirmation
+   * back, which is the only way out of a deal you have agreed to but the
+   * other side has not.
    */
-  async craft(session: ExchangeSession): Promise<SecureCraftResult> {
+  async setReady(session: ExchangeSession): Promise<SecureCraftResult> {
     const craft = this.craftOf(session);
 
     if (!craft) {
       return { ok: false, reason: "no-session" };
     }
 
-    if (session.sessionId !== craft.artisan.sessionId) {
-      return { ok: false, reason: "not-the-artisan" };
+    const side = sideOf(craft, session.sessionId);
+
+    if (!side) {
+      return { ok: false, reason: "not-a-party" };
     }
 
     if (!craft.accepted) {
       return { ok: false, reason: "pending" };
     }
 
+    const isArtisan = side.characterId === craft.artisan.characterId;
+    const now = !(isArtisan ? craft.artisanReady : craft.customerReady);
+
+    if (isArtisan) {
+      craft.artisanReady = now;
+    } else {
+      craft.customerReady = now;
+    }
+
+    this.frames.ready(this.sides(craft), side.characterId, now);
+
+    if (!(craft.customerReady && craft.artisanReady)) {
+      return { ok: true };
+    }
+
+    const result = await this.resolve(craft);
+
+    if (!result.ok) {
+      // The deal survives a refusal — a missing tool or a bench that spells
+      // no recipe is something the two can fix and try again — but neither
+      // confirmation may stand over a craft that did not happen.
+      this.unconfirm(craft);
+    }
+
+    return result;
+  }
+
+  /**
+   * Both sides have confirmed: make it.
+   *
+   * The one asymmetry that matters: each party's ingredients leave their
+   * own bag, the object goes to the customer, the experience to the
+   * artisan, and the payment the other way. All of it is one transaction.
+   */
+  private async resolve(craft: SecureCraftState): Promise<SecureCraftResult> {
     // Re-checked here, not only at request time: a deal can sit on screen
     // for as long as the two like, and unequipping the tool in the meantime
     // is entirely ordinary.
@@ -436,24 +502,29 @@ export class SecureCraftFlow {
     const experience = craftExperience(context);
 
     const committed = await this.txHost.withTransaction(async () => {
-      const held = await this.inventory.findByPlayer(
-        craft.customer.characterId
-      );
-      const byId = new Map(held.map((row) => [row.id, row]));
+      const byId = await this.benchRows(craft);
 
-      for (const [itemId, quantity] of Object.entries(craft.slots)) {
+      for (const [itemId, slot] of Object.entries(craft.slots)) {
         const row = byId.get(itemId);
 
-        if (!row || row.position >= 0 || row.quantity < quantity) {
+        // The owner too: a stack that changed hands since it was laid is
+        // no longer the thing that was agreed to, and consuming it anyway
+        // would take it out of whoever's bag it landed in.
+        if (
+          !row ||
+          row.ownerId !== slot.characterId ||
+          row.position >= 0 ||
+          row.quantity < slot.quantity
+        ) {
           return null;
         }
       }
 
-      const consumed: { id: string; left: number }[] = [];
+      const consumed: { id: string; left: number; sessionId: string }[] = [];
 
-      for (const [itemId, quantity] of Object.entries(craft.slots)) {
+      for (const [itemId, slot] of Object.entries(craft.slots)) {
         const row = byId.get(itemId) as ItemRow;
-        const left = row.quantity - quantity;
+        const left = row.quantity - slot.quantity;
 
         if (left <= 0) {
           await this.inventory.deleteItem(itemId);
@@ -461,7 +532,13 @@ export class SecureCraftFlow {
           await this.inventory.updateQuantity(itemId, left);
         }
 
-        consumed.push({ id: itemId, left });
+        consumed.push({
+          id: itemId,
+          left,
+          // Whose window has to be told the stack shrank — the owner's,
+          // which on a shared bench is not always the customer's.
+          sessionId: sideById(craft, slot.characterId).sessionId,
+        });
       }
 
       let produced: ItemRow | null = null;
@@ -490,7 +567,7 @@ export class SecureCraftFlow {
         experience
       );
 
-      const paid = await this.settle(craft);
+      const paid = await this.settle(craft, success);
 
       if (!paid) {
         return null;
@@ -503,15 +580,11 @@ export class SecureCraftFlow {
       return { ok: false, reason: "not-enough" };
     }
 
-    for (const { id, left } of committed.consumed) {
+    for (const { id, left, sessionId } of committed.consumed) {
       if (left <= 0) {
-        this.inventoryFrames.sendItemRemove(craft.customer.sessionId, id);
+        this.inventoryFrames.sendItemRemove(sessionId, id);
       } else {
-        this.inventoryFrames.sendItemQuantity(
-          craft.customer.sessionId,
-          id,
-          left
-        );
+        this.inventoryFrames.sendItemQuantity(sessionId, id, left);
       }
     }
 
@@ -522,9 +595,15 @@ export class SecureCraftFlow {
       );
     }
 
+    // Everything on the table has moved, so nothing on the table is still
+    // an offer. Both confirmations go with it: the next craft has to be
+    // agreed to on its own terms.
     craft.slots = {};
     craft.payItems = {};
     craft.payKamas = "0";
+    craft.payBonusKamas = "0";
+    craft.customerReady = false;
+    craft.artisanReady = false;
     craft.crafted++;
 
     for (const side of [craft.customer, craft.artisan]) {
@@ -597,15 +676,79 @@ export class SecureCraftFlow {
     return { ok: true, jobId: skill.jobId, level: held.level };
   }
 
-  /** Lay or take back one stack, on the bench or on the payment pile. */
+  /**
+   * Lay or take back one stack on the shared bench.
+   *
+   * The stack is looked up in **`by`'s own bag**, which is what stops a
+   * player laying the other one's goods, and recorded against them, which
+   * is what lets the commit take it back out of the right inventory.
+   */
   private async lay(
     craft: SecureCraftState,
-    pile: Record<string, number>,
-    limit: number,
+    by: SecureCraftSide,
     add: boolean,
     itemId: string,
-    quantity: number,
-    isPayment: boolean
+    quantity: number
+  ): Promise<SecureCraftResult> {
+    const existing = craft.slots[itemId];
+
+    // A stack somebody else laid is not yours to move, in either
+    // direction — a "Retirer" that reached across the bench would let one
+    // player empty the other's contribution.
+    if (existing && existing.characterId !== by.characterId) {
+      return { ok: false, reason: "not-a-party" };
+    }
+
+    const item = await this.inventory.findOwned(by.characterId, itemId);
+
+    if (!item) {
+      return { ok: false, reason: "not-found" };
+    }
+
+    if (!add) {
+      delete craft.slots[itemId];
+      this.frames.coopItem(this.sides(craft), by.characterId, false, item);
+      this.unconfirm(craft);
+      return { ok: true };
+    }
+
+    const checked = checkStack(item, quantity);
+
+    if (!checked.ok) {
+      return checked;
+    }
+
+    const wouldOccupy =
+      existing === undefined
+        ? Object.keys(craft.slots).length + 1
+        : Object.keys(craft.slots).length;
+
+    if (wouldOccupy > craft.maxSlots) {
+      return { ok: false, reason: "no-slot-left" };
+    }
+
+    craft.slots[itemId] = { characterId: by.characterId, quantity };
+    this.frames.coopItem(this.sides(craft), by.characterId, true, {
+      ...item,
+      quantity,
+    });
+    this.unconfirm(craft);
+
+    return { ok: true };
+  }
+
+  /**
+   * Lay or take back one stack on the payment pile.
+   *
+   * The customer's alone, and ungridded: a payment is not a recipe, so the
+   * artisan's slot count has nothing to say about how many things may be
+   * offered for the work.
+   */
+  private async layPayment(
+    craft: SecureCraftState,
+    add: boolean,
+    itemId: string,
+    quantity: number
   ): Promise<SecureCraftResult> {
     const item = await this.inventory.findOwned(
       craft.customer.characterId,
@@ -616,59 +759,96 @@ export class SecureCraftFlow {
       return { ok: false, reason: "not-found" };
     }
 
-    const echo = (row: ItemRow, added: boolean) => {
-      if (isPayment) {
-        this.frames.payItem(
-          craft.customer.sessionId,
-          craft.artisan.sessionId,
-          added,
-          row
-        );
-      } else {
-        this.frames.coopItem(
-          craft.customer.sessionId,
-          craft.artisan.sessionId,
-          added,
-          row
-        );
-      }
-    };
-
     if (!add) {
-      delete pile[itemId];
-      echo(item, false);
+      delete craft.payItems[itemId];
+      this.frames.payItem(this.sides(craft), false, item);
+      this.unconfirm(craft);
       return { ok: true };
     }
 
-    if (!Number.isInteger(quantity) || quantity <= 0) {
-      return { ok: false, reason: "invalid-quantity" };
+    const checked = checkStack(item, quantity);
+
+    if (!checked.ok) {
+      return checked;
     }
 
-    if (item.position >= 0) {
-      return { ok: false, reason: "equipped" };
-    }
-
-    if (quantity > item.quantity) {
-      return { ok: false, reason: "not-enough" };
-    }
-
-    const wouldOccupy =
-      pile[itemId] === undefined
-        ? Object.keys(pile).length + 1
-        : Object.keys(pile).length;
-
-    if (wouldOccupy > limit) {
-      return { ok: false, reason: "no-slot-left" };
-    }
-
-    pile[itemId] = quantity;
-    echo({ ...item, quantity }, true);
+    craft.payItems[itemId] = quantity;
+    this.frames.payItem(this.sides(craft), true, { ...item, quantity });
+    this.unconfirm(craft);
 
     return { ok: true };
   }
 
-  /** Move the payment from the customer to the artisan. */
-  private async settle(craft: SecureCraftState): Promise<boolean> {
+  /**
+   * Take back both confirmations.
+   *
+   * Called from every path that changes what is on the table. A "Combiner"
+   * agrees to a *particular* set of ingredients and a particular price, and
+   * letting it stand across a change is how a player ends up paying for
+   * something other than what they looked at.
+   */
+  private unconfirm(craft: SecureCraftState): void {
+    for (const side of [craft.customer, craft.artisan]) {
+      const was =
+        side.characterId === craft.artisan.characterId
+          ? craft.artisanReady
+          : craft.customerReady;
+
+      if (!was) {
+        continue;
+      }
+
+      if (side.characterId === craft.artisan.characterId) {
+        craft.artisanReady = false;
+      } else {
+        craft.customerReady = false;
+      }
+
+      this.frames.ready(this.sides(craft), side.characterId, false);
+    }
+  }
+
+  /** Both sockets, in the order every frame in this flow addresses them. */
+  private sides(craft: SecureCraftState): readonly string[] {
+    return [craft.customer.sessionId, craft.artisan.sessionId];
+  }
+
+  /**
+   * Every row the bench names, from whichever bag it is still sitting in.
+   *
+   * One query per contributor rather than one per stack: the two are
+   * usually the only two players involved, and reading a whole inventory
+   * is what `findByPlayer` is for.
+   */
+  private async benchRows(
+    craft: SecureCraftState
+  ): Promise<Map<string, ItemRow>> {
+    const owners = new Set(
+      Object.values(craft.slots).map((slot) => slot.characterId)
+    );
+    const byId = new Map<string, ItemRow>();
+
+    for (const characterId of owners) {
+      for (const row of await this.inventory.findByPlayer(characterId)) {
+        byId.set(row.id, row);
+      }
+    }
+
+    return byId;
+  }
+
+  /**
+   * Move the payment from the customer to the artisan.
+   *
+   * Goods and the fee are owed whatever the roll said — the artisan spent
+   * the same skill and the same tool on a failure, and a payment
+   * conditional on luck is not a payment. The premium is the part that is
+   * conditional, and it is the only part `success` touches.
+   */
+  private async settle(
+    craft: SecureCraftState,
+    success: boolean
+  ): Promise<boolean> {
     for (const [itemId, quantity] of Object.entries(craft.payItems)) {
       const result = await this.transfers.transfer({
         from: playerOwner(craft.customer.characterId),
@@ -690,7 +870,8 @@ export class SecureCraftFlow {
       );
     }
 
-    const amount = BigInt(craft.payKamas);
+    const amount =
+      BigInt(craft.payKamas) + (success ? BigInt(craft.payBonusKamas) : 0n);
 
     if (amount > 0n) {
       const result = await this.kamas.transfer({
@@ -722,11 +903,13 @@ export class SecureCraftFlow {
       return { ok: false, reason: "empty-bench" };
     }
 
-    const held = await this.inventory.findByPlayer(craft.customer.characterId);
-    const byId = new Map(held.map((row) => [row.id, row]));
+    const byId = await this.benchRows(craft);
     const onBench = new Map<number, number>();
 
-    for (const [itemId, quantity] of laid) {
+    // Summed by **template**, across both contributors: two players each
+    // laying five Ash Wood have laid ten, and a recipe asking for ten is
+    // satisfied. That is the whole reason to craft co-operatively.
+    for (const [itemId, slot] of laid) {
       const row = byId.get(itemId);
 
       if (!row) {
@@ -735,7 +918,7 @@ export class SecureCraftFlow {
 
       onBench.set(
         row.templateId,
-        (onBench.get(row.templateId) ?? 0) + quantity
+        (onBench.get(row.templateId) ?? 0) + slot.quantity
       );
     }
 
@@ -768,4 +951,46 @@ function sideCharacter(
   return side.sessionId === craft.artisan.sessionId
     ? craft.artisan.characterId
     : craft.customer.characterId;
+}
+
+/** Which party this socket is, or `undefined` if it is neither. */
+function sideOf(
+  craft: SecureCraftState,
+  sessionId: string
+): SecureCraftSide | undefined {
+  if (sessionId === craft.artisan.sessionId) {
+    return craft.artisan;
+  }
+
+  return sessionId === craft.customer.sessionId ? craft.customer : undefined;
+}
+
+/** The same, by character id. Both are always one of the two. */
+function sideById(
+  craft: SecureCraftState,
+  characterId: string
+): SecureCraftSide {
+  return characterId === craft.artisan.characterId
+    ? craft.artisan
+    : craft.customer;
+}
+
+/** The three things that make a stack layable, in one place. */
+function checkStack(
+  item: ItemRow,
+  quantity: number
+): { ok: true } | { ok: false; reason: SecureCraftDenial } {
+  if (!Number.isInteger(quantity) || quantity <= 0) {
+    return { ok: false, reason: "invalid-quantity" };
+  }
+
+  if (item.position >= 0) {
+    return { ok: false, reason: "equipped" };
+  }
+
+  if (quantity > item.quantity) {
+    return { ok: false, reason: "not-enough" };
+  }
+
+  return { ok: true };
 }

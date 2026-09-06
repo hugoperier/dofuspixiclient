@@ -81,10 +81,30 @@ function floodNotice(seconds: number): string {
  */
 export function BannerChatContainer() {
   const gameClient = useGameClient();
-  const { messages, visibleChannels, activeChannel, isOpen } =
-    useSyncExternalStore(chatStore.subscribe, chatStore.getSnapshot);
+  const {
+    messages,
+    visibleChannels,
+    activeChannel,
+    isOpen,
+    draft: prefill,
+  } = useSyncExternalStore(chatStore.subscribe, chatStore.getSnapshot);
   const [draft, setDraft] = useState("");
   const logRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * A one-shot push from `setChatDraft` — the co-operative craft's
+   * "Message privé" and anything else that writes *to* somebody.
+   *
+   * Keyed on the nonce rather than the text, so asking for the same
+   * `/w <name> ` twice reaches the field twice. It overwrites whatever is
+   * being typed, which is what the player asked for by pressing a button
+   * that fills the box.
+   */
+  useEffect(() => {
+    if (prefill.nonce > 0) {
+      setDraft(prefill.text);
+    }
+  }, [prefill.nonce, prefill.text]);
 
   const cooldownTick = useCooldownTick();
 

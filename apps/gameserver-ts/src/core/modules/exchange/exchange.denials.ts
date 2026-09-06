@@ -38,4 +38,5 @@ export const EXCHANGE_DENIAL_MESSAGES: Record<string, string> = {
   "no-tool": "Vous devez équiper l'outil du métier.",
   "not-a-craft-skill": "Ce métier ne se pratique pas à deux.",
   pending: "Une demande est déjà en attente.",
+  "not-a-party": "Cet ingrédient n'est pas le vôtre.",
 };

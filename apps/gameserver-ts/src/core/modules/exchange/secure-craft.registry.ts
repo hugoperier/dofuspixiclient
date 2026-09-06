@@ -10,6 +10,19 @@ export interface SecureCraftSide {
 }
 
 /**
+ * One stack laid on the shared bench.
+ *
+ * The owner travels with the amount because the bench is shared and the
+ * two piles are not: a commit has to take each stack out of the bag it
+ * actually came from, and the window has to draw it under the right name.
+ */
+export interface CoopSlot {
+  /** Whose bag the stack is still sitting in. */
+  characterId: string;
+  quantity: number;
+}
+
+/**
  * A craft done for somebody else.
  *
  * Like a trade and unlike a bench, this belongs to *two* sockets, so it
@@ -35,14 +48,43 @@ export interface SecureCraftState {
   maxSlots: number;
   artisan: SecureCraftSide;
   customer: SecureCraftSide;
-  /** The customer's ingredients: `items.id` → units laid on the bench. */
-  slots: Record<string, number>;
-  /** What the customer offers for the work: `items.id` → units. */
+  /**
+   * The bench: `items.id` → who laid it and how much.
+   *
+   * **Either** party may lay. The artisan supplying part of the recipe out
+   * of their own stock is the ordinary case of the mechanism — a customer
+   * who had every ingredient would have no reason to hire anybody — and
+   * the split is what makes the commit able to take each stack from the
+   * right bag.
+   */
+  slots: Record<string, CoopSlot>;
+  /**
+   * What the customer offers for the work: `items.id` → units.
+   *
+   * Customer-only, and deliberately a separate pile from `slots`: goods
+   * offered in payment are not ingredients, and a single pile would make
+   * "add one more Ash Wood" ambiguous between paying and contributing.
+   */
   payItems: Record<string, number>;
-  /** A `bigint` in string form, so this survives `JSON.stringify`. */
+  /**
+   * The fee, owed whatever the roll says. A `bigint` in string form, so
+   * this survives `JSON.stringify`.
+   */
   payKamas: string;
+  /** The premium, owed only on a success. Same encoding. */
+  payBonusKamas: string;
   /** False until the invited side says yes. */
   accepted: boolean;
+  /**
+   * Each side's "Combiner".
+   *
+   * Two confirmations, not one button on the artisan's side: both players
+   * are now putting goods and kamas into the deal, so both have something
+   * to agree to. Any change to either pile clears both — see
+   * `SecureCraftFlow.unconfirm`.
+   */
+  customerReady: boolean;
+  artisanReady: boolean;
   crafted: number;
 }
 

@@ -44,6 +44,9 @@ pgdata/
 
 # StarLoco world dump — downloaded locally per doc/data-seeding.md, never committed
 apps/gameserver-ts/game.sql
+# `doc/getting-started.md` downloads it into the repo root, which is where
+# `just import-world game.sql` looks for it.
+/game.sql
 # Local env
 .env
 .env.*

@@ -5,6 +5,7 @@ const log = createLogger("JobsLang");
 const LOCALE = "fr";
 const JOBS_BUNDLE_URL = `/assets/langs/${LOCALE}/jobs.json`;
 const SKILLS_BUNDLE_URL = `/assets/langs/${LOCALE}/skills.json`;
+const IO_BUNDLE_URL = `/assets/langs/${LOCALE}/interactiveobjects.json`;
 
 /**
  * The two job tables the HUD needs, straight from the 1.29 lang bundles —
@@ -34,11 +35,22 @@ export interface SkillText {
   harvestItemId: number | null;
   /** `SK[id].cl` — result templates this craft skill can make. */
   craftItemIds: number[];
+  /** `SK[id].io` — the interactive object the skill is performed on. */
+  workbenchId: number | null;
 }
 
 export interface JobsLang {
   jobs: Map<number, JobText>;
   skills: Map<number, SkillText>;
+  /**
+   * `IO.d[id].n` — "Table de confection", "Atelier", "Enclos"…
+   *
+   * The Métiers window names the workbench under every craft skill, the
+   * way retail does; `SK[id].io` is the key into this. The same table
+   * already feeds the interactive-element menu (`interactive-objects-lang`),
+   * but keyed by *gfx* there, which is the wrong key here.
+   */
+  workbenches: Map<number, string>;
 }
 
 type JobsBundle = {
@@ -47,16 +59,28 @@ type JobsBundle = {
 
 type SkillsBundle = {
   data?: {
-    SK?: Record<string, { d?: string; j?: number; i?: number; cl?: number[] }>;
+    SK?: Record<
+      string,
+      { d?: string; j?: number; i?: number; io?: number; cl?: number[] }
+    >;
   };
+};
+
+type IoBundle = {
+  data?: { IO?: { d?: Record<string, { n?: string }> } };
 };
 
 let cache: JobsLang | null = null;
 let loading: Promise<JobsLang> | null = null;
 
-function parseBundles(jobsJson: unknown, skillsJson: unknown): JobsLang {
+function parseBundles(
+  jobsJson: unknown,
+  skillsJson: unknown,
+  ioJson: unknown
+): JobsLang {
   const jobs = new Map<number, JobText>();
   const skills = new Map<number, SkillText>();
+  const workbenches = new Map<number, string>();
 
   for (const [key, entry] of Object.entries(
     (jobsJson as JobsBundle).data?.J ?? {}
@@ -93,10 +117,21 @@ function parseBundles(jobsJson: unknown, skillsJson: unknown): JobsLang {
       jobId: entry.j ?? 0,
       harvestItemId: entry.i ?? null,
       craftItemIds: entry.cl ?? [],
+      workbenchId: entry.io ?? null,
     });
   }
 
-  return { jobs, skills };
+  for (const [key, entry] of Object.entries(
+    (ioJson as IoBundle).data?.IO?.d ?? {}
+  )) {
+    const id = Number.parseInt(key, 10);
+
+    if (Number.isFinite(id) && entry.n) {
+      workbenches.set(id, entry.n);
+    }
+  }
+
+  return { jobs, skills, workbenches };
 }
 
 export function loadJobsLang(): Promise<JobsLang> {
@@ -108,16 +143,17 @@ export function loadJobsLang(): Promise<JobsLang> {
     loading = Promise.all([
       fetch(JOBS_BUNDLE_URL).then((r) => r.json()),
       fetch(SKILLS_BUNDLE_URL).then((r) => r.json()),
+      fetch(IO_BUNDLE_URL).then((r) => r.json()),
     ])
-      .then(([jobsJson, skillsJson]) => {
-        cache = parseBundles(jobsJson, skillsJson);
+      .then(([jobsJson, skillsJson, ioJson]) => {
+        cache = parseBundles(jobsJson, skillsJson, ioJson);
         return cache;
       })
       .catch((err) => {
         log.error("failed to load job bundles:", err);
         // Latch empty rather than retry: a job with no name reads as a
         // missing job, which is degraded and never wedged.
-        cache = { jobs: new Map(), skills: new Map() };
+        cache = { jobs: new Map(), skills: new Map(), workbenches: new Map() };
         return cache;
       });
   }

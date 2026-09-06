@@ -495,11 +495,15 @@ export class ExchangeService {
     );
   }
 
-  /** `EPG` — the same, in kamas. */
-  movePayKamas(sessionId: string, amount: bigint): Promise<MoveResult> {
+  /** `EPG` — the same, in kamas. `bonus` picks fee or premium. */
+  movePayKamas(
+    sessionId: string,
+    amount: bigint,
+    bonus: boolean
+  ): Promise<MoveResult> {
     return this.onSession(sessionId, (session) =>
       isSecureCraft(session.kind)
-        ? this.secureCraft.movePayKamas(session, amount)
+        ? this.secureCraft.movePayKamas(session, amount, bonus)
         : Promise.resolve({ ok: false as const, reason: "no-session" as const })
     );
   }
@@ -507,10 +511,11 @@ export class ExchangeService {
   /**
    * `EK`.
    *
-   * Two very different things share this frame. In a trade it is "I
+   * Three very different things share this frame. In a trade it is "I
    * validate", and the second one commits. At a workbench it is the "Créer"
    * button — `Craft.as:379` sends `ready()` when the bench is not empty —
-   * and there is nothing to validate.
+   * and there is nothing to validate. On a co-operative bench it is back to
+   * the trade's reading: a confirmation each, and the second one crafts.
    */
   setReady(sessionId: string): Promise<MoveResult> {
     return this.onSession(sessionId, (session) => {
@@ -519,7 +524,7 @@ export class ExchangeService {
       }
 
       if (isSecureCraft(session.kind)) {
-        return this.secureCraft.craft(session);
+        return this.secureCraft.setReady(session);
       }
 
       return this.trade.setReady(session);

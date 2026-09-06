@@ -420,7 +420,8 @@ export class ExchangeHandler {
 
     const result = await this.exchange.movePayKamas(
       ctx.sessionId,
-      msg.quantity
+      msg.quantity,
+      msg.bonus
     );
 
     if (!result.ok) {

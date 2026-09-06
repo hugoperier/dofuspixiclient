@@ -47,6 +47,17 @@ export interface ChatState {
   cooldowns: Partial<Record<ChatChannel, number>>;
   /** Is the chat currently visible? */
   isOpen: boolean;
+  /**
+   * Text to put in the input, and a token that changes every time it is
+   * set.
+   *
+   * The input keeps its own draft — it has to, since it is typed into —
+   * so this is a one-shot push rather than the value itself. The counter
+   * is what makes "set the same prefill twice" reach the field twice:
+   * without it, asking for `/w Bellegosse ` again after the player has
+   * cleared the box would be a no-op.
+   */
+  draft: { text: string; nonce: number };
 }
 
 const DEFAULT_VISIBLE_CHANNELS = new Set<SideChatChannel>(
@@ -66,6 +77,7 @@ const initialState: ChatState = {
   activeChannel: ChatChannel.GENERAL,
   cooldowns: {},
   isOpen: true,
+  draft: { text: "", nonce: 0 },
 };
 
 export const chatStore = new ExternalStore<ChatState>(initialState);
@@ -153,6 +165,21 @@ export function setChatSide(side: Side): void {
 
 export function setActiveChannel(channel: ChatChannel): void {
   chatStore.setState({ activeChannel: channel });
+}
+
+/**
+ * Put text in the chat input, replacing whatever is there.
+ *
+ * Used by the buttons that write *to* somebody — a co-operative craft's
+ * "Message privé" — rather than sending on the player's behalf: the
+ * whisper is theirs to write, and prefilling `/w <name> ` is the whole of
+ * what the button can honestly do for them.
+ */
+export function setChatDraft(text: string): void {
+  chatStore.setState({
+    draft: { text, nonce: chatStore.getSnapshot().draft.nonce + 1 },
+    isOpen: true,
+  });
 }
 
 export function toggleChatOpen(): void {

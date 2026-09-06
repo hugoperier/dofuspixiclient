@@ -69,6 +69,21 @@ export function HudOverlay({
     pointerEvents: "auto",
   };
 
+  // The Métiers window is a floating one, not a docked panel: it is nearly
+  // as wide as the play area, so anchoring it to the banner's right edge
+  // would push it off screen. It sits centred over the map instead.
+  const centeredPanelStyle: React.CSSProperties = {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    height: bannerTopPx,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    pointerEvents: "auto",
+  };
+
   return (
     <TooltipProvider>
       <div
@@ -119,7 +134,7 @@ export function HudOverlay({
         )}
 
         {activePanel === "jobs" && (
-          <div style={panelWrapStyle}>
+          <div style={centeredPanelStyle}>
             <JobsPanel
               zoom={baseZoom}
               onClose={() => closeAllPanels()}
@@ -227,11 +242,15 @@ export function HudOverlay({
           playArea={{ width: canvasRect.w, height: bannerTopPx }}
         />
 
-        {/* And a craft done for somebody else: both ends see the same
-            three piles, so one window serves types 12 and 13. */}
-        <div style={panelWrapStyle}>
-          <SecureCraftWindow zoom={baseZoom} gameClient={gameClient} />
-        </div>
+        {/* And a craft done with somebody else. Outside `panelWrapStyle`
+            for the same reason the solo bench is: it spreads across the
+            whole play area — a contribution strip in each bottom corner
+            and "Objet obtenu" between them — so it places its own pieces. */}
+        <SecureCraftWindow
+          zoom={baseZoom}
+          gameClient={gameClient}
+          playArea={{ width: canvasRect.w, height: bannerTopPx }}
+        />
 
         {/* The craftsmen's book, likewise server-driven. */}
         <div style={panelWrapStyle}>
