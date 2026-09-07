@@ -1,19 +1,20 @@
-import type { Application } from "pixi.js";
+import type { Application, Texture } from "pixi.js";
 import { Assets, Container, Graphics, Sprite } from "pixi.js";
 
 import type {
   HintManifest,
   HintsLayering,
-  MapCoordinates,
   WorldMapManifest,
 } from "@/game/types/worldmap";
-import { WORLDMAP_CONSTANTS } from "@/game/types/worldmap";
+import { getMapLangCoords } from "@/game/lang/maps-lang";
+import { drawPositionMarker } from "@/game/worldmap/position-marker";
+import { getSubareaIndex } from "@/game/worldmap/subarea-index";
 import {
   filterHintsByArea,
-  findMapAtCoord,
   loadWorldMapData,
   mapCoordToPixel,
   pixelToMapCoord,
+  selectVisibleTiles,
 } from "@/game/worldmap/world-map-data";
 
 interface MinimapRendererConfig {
@@ -32,11 +33,14 @@ export class MinimapRenderer {
   private manifest: WorldMapManifest | null = null;
   private hintManifest: HintManifest | null = null;
   private hintsLayering: HintsLayering | null = null;
-  private mapCoordinates: MapCoordinates | null = null;
 
   private currentSuperarea = 0;
 
-  private tileSprites: Sprite[] = [];
+  private app: Application;
+  private uniformGraphics: Graphics;
+  private overviewSprite: Sprite | null = null;
+  private tileSprites = new Map<string, Sprite>();
+  private centerPixel: { x: number; y: number } | null = null;
   private hintSprites: Sprite[] = [];
 
   private centerMapId?: number;
@@ -47,11 +51,14 @@ export class MinimapRenderer {
     this.centerMapId = config.centerOnMapId;
     this.initialCenterCoordinates = config.centerOnCoordinates;
 
+    this.app = config.app;
     this.worldContainer = new Container();
     this.mapContainer = new Container();
     this.hintsContainer = new Container();
     this.positionMarker = new Graphics();
+    this.uniformGraphics = new Graphics();
 
+    this.mapContainer.addChild(this.uniformGraphics);
     this.worldContainer.addChild(this.mapContainer);
     this.worldContainer.addChild(this.positionMarker);
     this.worldContainer.addChild(this.hintsContainer);
@@ -67,12 +74,11 @@ export class MinimapRenderer {
     this.manifest = data.manifest;
     this.hintManifest = data.hintManifest;
     this.hintsLayering = data.hintsLayering;
-    this.mapCoordinates = data.mapCoordinates;
 
     await this.renderMap();
     await this.renderHints();
 
-    if (this.centerMapId && this.mapCoordinates) {
+    if (this.centerMapId) {
       this.centerOnMap(this.centerMapId);
     } else if (this.initialCenterCoordinates) {
       this.centerOnCoordinates(
@@ -87,42 +93,127 @@ export class MinimapRenderer {
       return;
     }
 
-    this.mapContainer.removeChildren();
-    this.tileSprites = [];
+    for (const sprite of this.tileSprites.values()) {
+      sprite.destroy({ texture: false });
+    }
 
-    const { tile_size, tiles, worldmap } = this.manifest;
+    this.tileSprites.clear();
+    this.uniformGraphics.clear();
 
-    const tilePromises = tiles.map(async (tileInfo) => {
-      const texturePath = `/assets/maps/world/${worldmap}/${tileInfo.file}`;
+    if (this.overviewSprite) {
+      this.overviewSprite.destroy({ texture: false });
+      this.overviewSprite = null;
+    }
 
-      try {
-        const texture = await Assets.load({
-          src: texturePath,
-          data: { autoGenerateMipmaps: true },
-        });
+    const manifest = this.manifest;
+    const size = manifest.tile_size;
 
-        if (!texture) {
-          return;
-        }
-
-        if (texture.source) {
-          texture.source.autoGenerateMipmaps = true;
-          texture.source.scaleMode = "linear";
-          texture.source.updateMipmaps();
-        }
-
-        const sprite = new Sprite(texture);
-        sprite.x = tileInfo.x * tile_size;
-        sprite.y = tileInfo.y * tile_size;
-
-        this.tileSprites.push(sprite);
-        this.mapContainer.addChild(sprite);
-      } catch {
-        // Skip failed tiles
+    // Les tuiles unies deviennent des aplats : la minimap montait elle aussi
+    // les 1024 tuiles d'Amakna, sur sa propre Application Pixi, pour n'en
+    // afficher que quelques-unes dans un cercle de 119 px.
+    for (const [hex, cells] of Object.entries(manifest.uniform_tiles ?? {})) {
+      for (const [x, y] of cells) {
+        this.uniformGraphics.rect(x * size, y * size, size, size);
       }
+
+      this.uniformGraphics.fill({ color: Number.parseInt(hex, 16) });
+    }
+
+    if (manifest.overview) {
+      try {
+        const url = `/assets/maps/world/${manifest.worldmap}/${manifest.overview}`;
+        const texture = (await Assets.load(url)) as Texture | undefined;
+
+        if (texture) {
+          const plane = manifest.grid_size * manifest.tile_size;
+          const sprite = new Sprite(texture);
+
+          sprite.width = plane;
+          sprite.height = plane;
+          this.mapContainer.addChildAt(sprite, 0);
+          this.overviewSprite = sprite;
+        }
+      } catch {
+        // L'aperçu manque : les tuiles de détail suffisent.
+      }
+    }
+
+    this.refreshVisibleTiles();
+  }
+
+  /**
+   * Rayon visible autour du centre, en pixels du plan de tuiles. La minimap
+   * tient dans un cercle de bannière, donc deux ou trois tuiles suffisent.
+   */
+  private visibleRadius(): number {
+    const scale = this.worldContainer.parent?.scale.x ?? 1;
+    const side = Math.max(this.app.screen.width, this.app.screen.height, 128);
+
+    return side / Math.max(scale, 0.01) / 2;
+  }
+
+  private refreshVisibleTiles(): void {
+    const manifest = this.manifest;
+    const center = this.centerPixel;
+
+    if (!manifest || !center) {
+      return;
+    }
+
+    const radius = this.visibleRadius();
+    const wanted = selectVisibleTiles(manifest, {
+      left: center.x - radius,
+      top: center.y - radius,
+      right: center.x + radius,
+      bottom: center.y + radius,
     });
 
-    await Promise.all(tilePromises);
+    const wantedNames = new Set(wanted.map((t) => t.file));
+
+    for (const [file, sprite] of this.tileSprites) {
+      if (!wantedNames.has(file)) {
+        sprite.destroy({ texture: false });
+        this.tileSprites.delete(file);
+      }
+    }
+
+    const missing = wanted.filter((t) => !this.tileSprites.has(t.file));
+
+    if (missing.length === 0) {
+      return;
+    }
+
+    const urls = missing.map(
+      (t) => `/assets/maps/world/${manifest.worldmap}/${t.file}`
+    );
+
+    void Assets.load(urls)
+      .then((textures: Record<string, Texture>) => {
+        for (const tile of missing) {
+          const url = `/assets/maps/world/${manifest.worldmap}/${tile.file}`;
+          const texture = textures[url];
+
+          if (!texture || this.tileSprites.has(tile.file)) {
+            continue;
+          }
+
+          if (texture.source) {
+            texture.source.autoGenerateMipmaps = true;
+            texture.source.scaleMode = "linear";
+            texture.source.updateMipmaps();
+          }
+
+          const sprite = new Sprite(texture);
+          sprite.x = tile.x * manifest.tile_size;
+          sprite.y = tile.y * manifest.tile_size;
+
+          this.mapContainer.addChild(sprite);
+          this.tileSprites.set(tile.file, sprite);
+        }
+      })
+      .catch(() => {
+        // Tuile manquante : l'aperçu tient lieu de fond.
+      });
   }
 
   private async renderHints(): Promise<void> {
@@ -138,7 +229,6 @@ export class MinimapRenderer {
 
     const filteredHints = filterHintsByArea(
       this.hintsLayering,
-      this.mapCoordinates ?? {},
       enabledCategories,
       this.currentSuperarea
     );
@@ -223,11 +313,11 @@ export class MinimapRenderer {
   }
 
   centerOnMap(mapId: number, animate = false): void {
-    if (!this.mapCoordinates || !this.manifest) {
+    if (!this.manifest) {
       return;
     }
 
-    const mapCoord = this.mapCoordinates[mapId.toString()];
+    const mapCoord = getMapLangCoords(mapId);
 
     if (!mapCoord) {
       return;
@@ -299,28 +389,16 @@ export class MinimapRenderer {
   }
 
   private drawPositionMarker(pixelX: number, pixelY: number): void {
-    const cellW =
-      WORLDMAP_CONSTANTS.DISPLAY_WIDTH / WORLDMAP_CONSTANTS.CHUNK_SIZE;
-    const cellH =
-      WORLDMAP_CONSTANTS.DISPLAY_HEIGHT / WORLDMAP_CONSTANTS.CHUNK_SIZE;
-
-    this.positionMarker.clear();
-    // Pink filled rectangle matching one map cell, like original Dofus
-    this.positionMarker.rect(
-      pixelX - cellW / 2,
-      pixelY - cellH / 2,
-      cellW,
-      cellH
-    );
-    this.positionMarker.fill({ color: 0xff0000, alpha: 0.5 });
-    this.positionMarker.stroke({ color: 0xff0000, width: 1, alpha: 0.5 });
+    this.centerPixel = { x: pixelX, y: pixelY };
+    drawPositionMarker(this.positionMarker, pixelX, pixelY);
+    this.refreshVisibleTiles();
   }
 
   /**
    * Convert a global screen point to a map ID by tracing through the minimap's transforms.
    */
   getMapIdAtPoint(globalX: number, globalY: number): number | null {
-    if (!this.manifest || !this.mapCoordinates) {
+    if (!this.manifest) {
       return null;
     }
 
@@ -332,7 +410,11 @@ export class MinimapRenderer {
       bounds.xMin,
       bounds.yMin
     );
-    return findMapAtCoord(gameCoord.x, gameCoord.y, this.mapCoordinates);
+
+    return (
+      getSubareaIndex(this.currentSuperarea)?.mapAt(gameCoord.x, gameCoord.y) ??
+      null
+    );
   }
 
   show(): void {

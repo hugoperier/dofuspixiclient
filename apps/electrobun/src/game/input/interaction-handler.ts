@@ -94,6 +94,10 @@ export class InteractionHandler {
   }
 
   handlePointerDown(e: FederatedPointerEvent): void {
+    if (!this._enabled) {
+      return;
+    }
+
     const pickResult = this.pickingSystem.pick(
       e.global.x,
       e.global.y,
@@ -113,6 +117,10 @@ export class InteractionHandler {
   }
 
   handlePointerMove(e: FederatedPointerEvent): void {
+    if (!this._enabled) {
+      return;
+    }
+
     this.lastScreenX = e.global.x;
     this.lastScreenY = e.global.y;
 
@@ -152,6 +160,11 @@ export class InteractionHandler {
   }
 
   handlePointerUp(): void {
+    if (!this._enabled) {
+      this.isDragging = false;
+      return;
+    }
+
     if (this.isDragging && this.dragDistance < 5) {
       // Click detected (not a drag) — convert to map-local coordinates
       const zoom = this.mapContainer.scale.x || 1;
@@ -163,8 +176,32 @@ export class InteractionHandler {
     this.isDragging = false;
   }
 
+  /**
+   * Coupe la souris du jeu pendant qu'un panneau plein écran est ouvert.
+   *
+   * Le drapeau existait déjà mais ne gardait que `handleWheel`, et personne ne
+   * l'écrivait : les trois gestionnaires de pointeur sont posés sur
+   * `app.stage` (`battlefield/bootstrap.ts:219-222`), donc un clic destiné à la
+   * carte du monde remontait jusqu'à eux et devenait un déplacement — vers une
+   * case tirée de coordonnées qui n'avaient aucun sens pour la carte courante.
+   */
   set enabled(value: boolean) {
+    if (this._enabled === value) {
+      return;
+    }
+
     this._enabled = value;
+
+    if (!value) {
+      // Ne pas laisser un survol allumé ni un drag à moitié engagé derrière le
+      // panneau : ils resteraient tels quels jusqu'à sa fermeture.
+      this.isDragging = false;
+      this.updateHover(null);
+    }
+  }
+
+  get enabled(): boolean {
+    return this._enabled;
   }
 
   private handleWheel(e: WheelEvent): void {

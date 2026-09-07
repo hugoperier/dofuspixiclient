@@ -4,7 +4,7 @@ title: "Marqueur de position = rectangle rouge plein, sur la carte du monde auss
 severity: P2
 domain: worldmap
 type: bug
-status: open
+status: fixed
 session: 1
 opened: 2026-08-20
 closed:
@@ -20,3 +20,8 @@ case entière au lieu d'un repère.
 
 Sur les deux vues, le joueur ne peut pas voir ce qu'il y a sous sa propre
 position.
+
+## Correctif
+
+Même correctif que QA-009 : les deux vues passent par
+`worldmap/position-marker.ts` et son rectangle creux.

@@ -91,14 +91,14 @@ causes racines et les notes de méthode, mais plus le détail par entrée.
 
 _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 
-**165 entrées**, dont **161 encore ouvertes**.
+**167 entrées**, dont **163 encore ouvertes**.
 
 ## Par gravité
 
 | Gravité | Restantes | Total |
 |---|---|---|
 | P0 — bloque la session (crash, impossible d'avancer) | 4 | 4 |
-| P1 — fonctionnalité cassée ou absente sur un flux principal | 67 | 67 |
+| P1 — fonctionnalité cassée ou absente sur un flux principal | 69 | 69 |
 | P2 — comportement divergent du 1.29 canonique, contournable | 62 | 62 |
 | P3 — finition, confort, cosmétique | 28 | 29 |
 | Sans gravité — vérifications sans défaut | 0 | 3 |
@@ -107,10 +107,10 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 
 | Statut | Entrées |
 |---|---|
-| `open` — observé, non reproduit méthodiquement | 45 |
+| `open` — observé, non reproduit méthodiquement | 38 |
 | `confirmed` — reproduit, preuve au dossier | 17 |
 | `in-progress` — correctif engagé | 13 |
-| `fixed` — correctif livré, reste à revérifier manette en main | 86 |
+| `fixed` — correctif livré, reste à revérifier manette en main | 95 |
 | `closed` — vérifié, clos | 3 |
 | `wontfix` — écarté, avec la raison en fiche | 1 |
 
@@ -126,7 +126,7 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [`fight/`](fight/) | 14 | 14 |
 | [`hud-banner/`](hud-banner/) | 9 | 9 |
 | [`hud-panels/`](hud-panels/) | 19 | 20 |
-| [`input/`](input/) | 4 | 5 |
+| [`input/`](input/) | 5 | 6 |
 | [`inventory/`](inventory/) | 4 | 4 |
 | [`network/`](network/) | 9 | 9 |
 | [`progression/`](progression/) | 18 | 18 |
@@ -134,7 +134,7 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [`session/`](session/) | 3 | 3 |
 | [`world-content/`](world-content/) | 14 | 14 |
 | [`world-render/`](world-render/) | 15 | 15 |
-| [`worldmap/`](worldmap/) | 8 | 9 |
+| [`worldmap/`](worldmap/) | 9 | 10 |
 
 ## P0 — bloque la session (crash, impossible d'avancer)
 
@@ -216,6 +216,8 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [QA-154](progression/QA-154-lin-et-chanvre-du-paysan-inaccessibles.md) | P1 | progression | data | fixed | Le Lin et le Chanvre du Paysan n'existent sur aucune cellule du monde |
 | [QA-155](exchange/QA-155-boites-de-confirmation-du-craft-cooperatif-jamais-fermees.md) | P1 | exchange | bug | fixed | Les boîtes de confirmation du craft coopératif ne se ferment jamais et bloquent la fenêtre |
 | [QA-156](server-runtime/QA-156-redemarrage-de-gamed-deconnecte-les-clients.md) | P1 | server-runtime | bug | fixed | Un redémarrage de gamed déconnecte les clients, alors que le handoff existe pour l'éviter |
+| [QA-166](worldmap/QA-166-carte-du-monde-morte-et-lente-a-ouvrir.md) | P1 | worldmap | bug | fixed | Carte du monde : aucune entrée ne l'atteint, et 1 à 2 s pour l'ouvrir |
+| [QA-167](input/QA-167-clics-de-la-carte-et-de-la-minimap-atteignent-le-jeu.md) | P1 | input | bug | fixed | Clics et molette de la carte du monde et de la minimap atteignent le jeu dessous |
 
 ## P2 — comportement divergent du 1.29 canonique, contournable
 
@@ -224,7 +226,7 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [QA-001](auth/QA-001-ecran-login-hors-charte.md) | P2 | auth | bug | open | Écran de login générique, hors charte 1.29 et non traduit |
 | [QA-006](hud-banner/QA-006-ni-xp-ni-pods-ni-energie.md) | P2 | hud-banner | gap | open | Ni barre d'XP, ni pods, ni énergie, ni nom/niveau en bannière |
 | [QA-007](hud-banner/QA-007-slots-de-raccourcis-vides-et-inertes.md) | P2 | hud-banner | gap | fixed | Les 14 slots de raccourcis sont vides et inertes |
-| [QA-009](worldmap/QA-009-marqueur-minimap-rectangle-rouge.md) | P2 | worldmap | bug | open | Marqueur de position de la minimap = rectangle rouge plein |
+| [QA-009](worldmap/QA-009-marqueur-minimap-rectangle-rouge.md) | P2 | worldmap | bug | fixed | Marqueur de position de la minimap = rectangle rouge plein |
 | [QA-013](hud-panels/QA-013-inventaire-450-pods-pour-zero-objet.md) | P2 | hud-panels | bug | fixed | Inventaire : 450/1000 pods pour zéro objet |
 | [QA-014](hud-panels/QA-014-apercu-personnage-remplace-par-silhouette.md) | P2 | hud-panels | gap | open | Inventaire : aperçu du personnage remplacé par une silhouette |
 | [QA-017](hud-panels/QA-017-panneau-guilde-sans-guilde.md) | P2 | hud-panels | bug | open | Le panneau Guilde s'ouvre avec des données pour un personnage sans guilde |
@@ -233,8 +235,8 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [QA-021](chat/QA-021-deux-chats-concurrents.md) | P2 | chat | bug | open | Deux chats concurrents, dont un factice |
 | [QA-026](world-render/QA-026-pas-de-nom-au-dessus-du-personnage.md) | P2 | world-render | gap | open | Pas de nom au-dessus du personnage |
 | [QA-027](input/QA-027-menu-contextuel-en-anglais-non-conforme.md) | P2 | input | bug | open | Menu contextuel en anglais et non conforme |
-| [QA-030](worldmap/QA-030-marqueur-carte-du-monde-rectangle-rouge.md) | P2 | worldmap | bug | open | Marqueur de position = rectangle rouge plein, sur la carte du monde aussi |
-| [QA-033](worldmap/QA-033-clic-sur-la-carte-du-monde-sans-effet.md) | P2 | worldmap | gap | open | Cliquer une case de la carte du monde ne fait rien |
+| [QA-030](worldmap/QA-030-marqueur-carte-du-monde-rectangle-rouge.md) | P2 | worldmap | bug | fixed | Marqueur de position = rectangle rouge plein, sur la carte du monde aussi |
+| [QA-033](worldmap/QA-033-clic-sur-la-carte-du-monde-sans-effet.md) | P2 | worldmap | gap | fixed | Cliquer une case de la carte du monde ne fait rien |
 | [QA-038](input/QA-038-menu-contextuel-ne-se-ferme-jamais.md) | P2 | input | bug | open | Le menu contextuel ne se ferme jamais |
 | [QA-039](camera-zoom/QA-039-zoom-molette-hors-1-29-et-trop-ample.md) | P2 | camera-zoom | bug | open | Le zoom molette n'existe pas dans le 1.29 et va beaucoup trop loin |
 | [QA-040](camera-zoom/QA-040-camera-ne-suit-jamais-le-personnage.md) | P2 | camera-zoom | gap | confirmed | La caméra ne suit jamais le personnage |
@@ -296,10 +298,10 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [QA-016](hud-panels/QA-016-all-types-en-anglais.md) | P3 | hud-panels | bug | fixed | « All types » en anglais dans le panneau Inventaire |
 | [QA-023](chat/QA-023-libelles-de-canaux-en-anglais.md) | P3 | chat | bug | open | Libellés des filtres de canaux en anglais |
 | [QA-024](chat/QA-024-chat-lateral-force-theme-clair.md) | P3 | chat | bug | open | Le chat latéral force `data-theme="light"` |
-| [QA-028](worldmap/QA-028-titre-categories-en-anglais.md) | P3 | worldmap | bug | open | Titre « Categories » en anglais dans un panneau français |
-| [QA-029](worldmap/QA-029-cases-a-cocher-des-categories-toutes-vertes.md) | P3 | worldmap | bug | open | Cases à cocher des catégories toutes vertes |
-| [QA-031](worldmap/QA-031-barre-d-aide-recouvre-la-banniere.md) | P3 | worldmap | bug | open | La barre d'aide recouvre la bannière |
-| [QA-032](worldmap/QA-032-panneau-categories-masque-la-carte.md) | P3 | worldmap | bug | open | Le panneau « Categories » masque la carte et n'est ni déplaçable ni repliable |
+| [QA-028](worldmap/QA-028-titre-categories-en-anglais.md) | P3 | worldmap | bug | fixed | Titre « Categories » en anglais dans un panneau français |
+| [QA-029](worldmap/QA-029-cases-a-cocher-des-categories-toutes-vertes.md) | P3 | worldmap | bug | fixed | Cases à cocher des catégories toutes vertes |
+| [QA-031](worldmap/QA-031-barre-d-aide-recouvre-la-banniere.md) | P3 | worldmap | bug | fixed | La barre d'aide recouvre la bannière |
+| [QA-032](worldmap/QA-032-panneau-categories-masque-la-carte.md) | P3 | worldmap | bug | fixed | Le panneau « Categories » masque la carte et n'est ni déplaçable ni repliable |
 | [QA-042](world-render/QA-042-tuiles-non-re-rasterisees-au-zoom.md) | P3 | world-render | bug | open | Le rendu des tuiles n'est pas re-rastérisé net au zoom fort |
 | [QA-044](fight/QA-044-fond-hors-map-noir-en-mode-tactique.md) | P3 | fight | bug | open | Le fond hors-map reste noir en mode tactique |
 | [QA-053](hud-banner/QA-053-libelles-accessibilite-casses.md) | P3 | hud-banner | bug | open | Libellés d'accessibilité cassés sur les boutons de menu |

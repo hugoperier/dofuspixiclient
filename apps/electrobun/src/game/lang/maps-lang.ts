@@ -39,6 +39,13 @@ export interface MapsLangData {
   maps: Map<number, MapsLangEntry>;
   subareas: Map<number, MapsLangSubarea>;
   areaNames: Map<number, string>;
+  /**
+   * Aire -> super-aire. C'est le seul chemin vers la super-aire d'une carte
+   * (`MA.m[id].sa` -> `MA.sa[sa].a` -> `MA.a[a].sua`), et il rend
+   * `map-data.json` inutile pour la carte du monde : le bundle porte déjà les
+   * mêmes 9 271 cartes avec les mêmes coordonnées.
+   */
+  areaSuperareas: Map<number, number>;
 }
 
 /** The named half of the caption — "Incarnam (Pitons rocheux)". */
@@ -55,7 +62,7 @@ type MapsBundle = {
         string,
         { n?: string; a?: number; tt?: string; tc?: string[] }
       >;
-      a?: Record<string, { n?: string }>;
+      a?: Record<string, { n?: string; sua?: number }>;
     };
   };
 };
@@ -64,7 +71,12 @@ let cache: MapsLangData | null = null;
 let loading: Promise<MapsLangData> | null = null;
 
 function emptyData(): MapsLangData {
-  return { maps: new Map(), subareas: new Map(), areaNames: new Map() };
+  return {
+    maps: new Map(),
+    subareas: new Map(),
+    areaNames: new Map(),
+    areaSuperareas: new Map(),
+  };
 }
 
 export function parseMapsBundle(json: unknown): MapsLangData {
@@ -107,11 +119,17 @@ export function parseMapsBundle(json: unknown): MapsLangData {
   for (const [idKey, entry] of Object.entries(ma.a ?? {})) {
     const areaId = Number.parseInt(idKey, 10);
 
-    if (!Number.isFinite(areaId) || !entry.n) {
+    if (!Number.isFinite(areaId)) {
       continue;
     }
 
-    out.areaNames.set(areaId, entry.n);
+    if (entry.n) {
+      out.areaNames.set(areaId, entry.n);
+    }
+
+    if (entry.sua !== undefined) {
+      out.areaSuperareas.set(areaId, entry.sua);
+    }
   }
 
   return out;
@@ -175,6 +193,26 @@ export function getMapNames(
   }
 
   return { areaName, subareaName: subarea.name };
+}
+
+/**
+ * La super-aire d'une carte — 0 pour Amakna, 3 pour Incarnam. Synchrone :
+ * appeler `loadMapsLang()` d'abord.
+ */
+export function getMapSuperarea(mapId: number): number | null {
+  const subareaId = cache?.maps.get(mapId)?.subareaId;
+
+  if (subareaId === undefined) {
+    return null;
+  }
+
+  const areaId = cache?.subareas.get(subareaId)?.areaId;
+
+  if (areaId === undefined) {
+    return null;
+  }
+
+  return cache?.areaSuperareas.get(areaId) ?? null;
 }
 
 /** The map's world coordinates from the bundle, null when it isn't listed. */

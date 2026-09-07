@@ -274,6 +274,15 @@ issues:
 issues-check:
     @cd "{{root}}" && bun run scripts/issues.ts --check
 
+# Élague les tuiles unies de la carte du monde et regénère l'aperçu de dézoom.
+#
+# Relit les .webp déjà commités (aucun SWF requis, contrairement au reste du
+# pipeline d'assets) et réécrit `manifest.json` : les 754 tuiles d'une seule
+# couleur sortent de la liste des requêtes et deviennent des rectangles pleins,
+# `overview.webp` porte la planche entière en 1/4 de résolution. Idempotent.
+worldmap-optimize:
+    @cd "{{root}}" && bun run scripts/worldmap-optimize.ts
+
 # =============================================================================
 # Journaux
 # =============================================================================
