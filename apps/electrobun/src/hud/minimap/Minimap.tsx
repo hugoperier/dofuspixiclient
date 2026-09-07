@@ -92,5 +92,12 @@ export function Minimap() {
     rendererRef.current?.centerOnMap(minimapMapId, true);
   }, [minimapMapId]);
 
-  return <div ref={ref} className="absolute inset-0" />;
+  // `pointer-events-auto` : `MainBannerCircle` est en `pointer-events-none`,
+  // donc les clics et la molette traversaient la minimap jusqu'au canevas du
+  // jeu placé dessous. Comme la bannière est en bas de l'écran, le clic était
+  // converti en une case de la carte courante et déplaçait le personnage —
+  // souvent hors de la zone visible, d'où l'impression d'atteindre une case
+  // inaccessible. Les capter ici suffit : la pastille de survol qui déplie le
+  // cercle vient après dans le DOM et garde ses 37 px centraux.
+  return <div ref={ref} className="absolute inset-0 pointer-events-auto" />;
 }

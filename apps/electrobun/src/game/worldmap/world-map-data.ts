@@ -1,12 +1,11 @@
-import { Assets } from "pixi.js";
-
 import type {
   HintManifest,
   HintsData,
   HintsLayering,
-  MapCoordinates,
   WorldMapManifest,
+  WorldMapTile,
 } from "@/game/types/worldmap";
+import { getMapSuperarea } from "@/game/lang/maps-lang";
 import { WORLDMAP_CONSTANTS } from "@/game/types/worldmap";
 
 export interface WorldMapDataSet {
@@ -14,111 +13,136 @@ export interface WorldMapDataSet {
   hintsData: HintsData;
   hintManifest: HintManifest;
   hintsLayering: HintsLayering;
-  mapCoordinates: MapCoordinates;
 }
 
 const dataCache = new Map<string, WorldMapDataSet>();
+const inFlight = new Map<string, Promise<WorldMapDataSet>>();
 
+export function worldMapName(superarea: number): string {
+  return superarea === 0 ? "amakna" : "incarnam";
+}
+
+/**
+ * Les quatre JSON dont la carte a besoin.
+ *
+ * `map-data.json` n'en fait plus partie : ses 844 Ko ne portaient que
+ * `{x, y, sua}` par carte, que `maps.json` — déjà chargé pour le libellé de
+ * position — donne aussi, avec la sous-zone en plus. Voir `subarea-index.ts`.
+ */
 export async function loadWorldMapData(
   superarea: number
 ): Promise<WorldMapDataSet> {
-  const worldMapName = superarea === 0 ? "amakna" : "incarnam";
-  const cacheKey = worldMapName;
-
+  const cacheKey = worldMapName(superarea);
   const cached = dataCache.get(cacheKey);
 
   if (cached) {
     return cached;
   }
 
-  const [manifest, hintsData, hintManifest, hintsLayering, mapData] =
-    await Promise.all([
-      fetch(`/assets/maps/world/${worldMapName}/manifest.json`).then((r) =>
-        r.json()
-      ) as Promise<WorldMapManifest>,
-      fetch("/assets/data/hints-data.json").then((r) =>
-        r.json()
-      ) as Promise<HintsData>,
-      fetch("/assets/maps/hints/manifest.json").then((r) =>
-        r.json()
-      ) as Promise<HintManifest>,
-      fetch("/assets/data/hints-layering.json").then((r) =>
-        r.json()
-      ) as Promise<HintsLayering>,
-      fetch("/assets/data/map-data.json").then((r) => r.json()) as Promise<{
-        maps: MapCoordinates;
-      }>,
-    ]);
+  // Le préchargement au ralenti et l'ouverture du panneau peuvent tomber en
+  // même temps ; sans ce verrou les deux téléchargeraient tout.
+  const pending = inFlight.get(cacheKey);
 
-  const dataSet: WorldMapDataSet = {
-    manifest,
-    hintsData,
-    hintManifest,
-    hintsLayering,
-    mapCoordinates: mapData.maps,
-  };
+  if (pending) {
+    return pending;
+  }
 
-  dataCache.set(cacheKey, dataSet);
-  return dataSet;
+  const promise = (async () => {
+    const [manifest, hintsData, hintManifest, hintsLayering] =
+      await Promise.all([
+        fetch(`/assets/maps/world/${cacheKey}/manifest.json`).then((r) =>
+          r.json()
+        ) as Promise<WorldMapManifest>,
+        fetch("/assets/data/hints-data.json").then((r) =>
+          r.json()
+        ) as Promise<HintsData>,
+        fetch("/assets/maps/hints/manifest.json").then((r) =>
+          r.json()
+        ) as Promise<HintManifest>,
+        fetch("/assets/data/hints-layering.json").then((r) =>
+          r.json()
+        ) as Promise<HintsLayering>,
+      ]);
+
+    const dataSet: WorldMapDataSet = {
+      manifest,
+      hintsData,
+      hintManifest,
+      hintsLayering,
+    };
+
+    dataCache.set(cacheKey, dataSet);
+    inFlight.delete(cacheKey);
+    return dataSet;
+  })();
+
+  inFlight.set(cacheKey, promise);
+  return promise;
 }
 
-export async function loadWorldMapTiles(
-  manifest: WorldMapManifest
-): Promise<Map<string, import("pixi.js").Texture>> {
-  const worldMapName = manifest.worldmap;
-  const urls = manifest.tiles.map(
-    (t) => `/assets/maps/world/${worldMapName}/${t.file}`
+/** Rectangle visible, en pixels du plan de tuiles. */
+export interface TileViewport {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+/**
+ * Les tuiles de détail qui touchent le viewport, plus une marge de `margin`
+ * tuiles pour que le pan n'attende pas le chargement.
+ *
+ * C'est le cœur du gain à l'ouverture : le renderer chargeait les 1024 tuiles
+ * d'Amakna d'un coup — 1024 requêtes et autant d'uploads de textures dans une
+ * frame — alors qu'au zoom par défaut une vingtaine sont visibles.
+ */
+export function selectVisibleTiles(
+  manifest: WorldMapManifest,
+  view: TileViewport,
+  margin = 1
+): WorldMapTile[] {
+  const size = manifest.tile_size;
+  const minX = Math.floor(view.left / size) - margin;
+  const maxX = Math.floor(view.right / size) + margin;
+  const minY = Math.floor(view.top / size) - margin;
+  const maxY = Math.floor(view.bottom / size) + margin;
+
+  return manifest.tiles.filter(
+    (t) => t.x >= minX && t.x <= maxX && t.y >= minY && t.y <= maxY
   );
-
-  const textures = await Assets.load(urls);
-  const textureMap = new Map<string, import("pixi.js").Texture>();
-
-  for (const tile of manifest.tiles) {
-    const url = `/assets/maps/world/${worldMapName}/${tile.file}`;
-
-    if (textures[url]) {
-      textureMap.set(tile.file, textures[url]);
-    }
-  }
-
-  return textureMap;
 }
 
-export async function loadHintTextures(
-  hints: Array<{ gfxID: number }>,
-  hintManifest: HintManifest
-): Promise<Map<string, import("pixi.js").Texture>> {
-  const uniqueGfxIds = new Set(hints.map((h) => h.gfxID.toString()));
-  const urls: string[] = [];
-
-  for (const gfxID of uniqueGfxIds) {
-    const info = hintManifest.graphics[gfxID];
-
-    if (info) {
-      urls.push(`/assets/maps/hints/${info.file}`);
-    }
+/**
+ * Vrai quand les tuiles pleine résolution apportent quelque chose.
+ *
+ * L'aperçu porte la planche à `overview_size / planeSize` — un quart pour
+ * Amakna. En dessous de ce facteur d'affichage, une tuile de détail serait
+ * réduite plus fort que l'aperçu ne l'est déjà : autant ne rien télécharger.
+ */
+export function shouldLoadDetailTiles(
+  manifest: WorldMapManifest,
+  scale: number
+): boolean {
+  if (!manifest.overview || !manifest.overview_size) {
+    return true;
   }
 
-  if (urls.length === 0) {
-    return new Map();
-  }
+  const planeSize = manifest.grid_size * manifest.tile_size;
+  return scale > manifest.overview_size / planeSize;
+}
 
-  const textures = await Assets.load(urls);
-  const textureMap = new Map<string, import("pixi.js").Texture>();
+/** Étendue réelle du contenu, en pixels du plan de tuiles. */
+export function contentExtent(manifest: WorldMapManifest): {
+  width: number;
+  height: number;
+} {
+  const { bounds } = manifest;
+  const { DISPLAY_WIDTH, DISPLAY_HEIGHT } = WORLDMAP_CONSTANTS;
 
-  for (const gfxID of uniqueGfxIds) {
-    const info = hintManifest.graphics[gfxID];
-
-    if (info) {
-      const url = `/assets/maps/hints/${info.file}`;
-
-      if (textures[url]) {
-        textureMap.set(gfxID, textures[url]);
-      }
-    }
-  }
-
-  return textureMap;
+  return {
+    width: (bounds.xMax - bounds.xMin + 1) * DISPLAY_WIDTH,
+    height: (bounds.yMax - bounds.yMin + 1) * DISPLAY_HEIGHT,
+  };
 }
 
 export function mapCoordToPixel(
@@ -172,26 +196,8 @@ export function pixelToMapCoord(
   };
 }
 
-/**
- * Find the map ID at the given game coordinates.
- */
-export function findMapAtCoord(
-  gameX: number,
-  gameY: number,
-  mapCoordinates: MapCoordinates
-): number | null {
-  for (const [mapId, coord] of Object.entries(mapCoordinates)) {
-    if (coord.x === gameX && coord.y === gameY) {
-      return Number(mapId);
-    }
-  }
-
-  return null;
-}
-
 export function filterHintsByArea(
   hintsLayering: HintsLayering,
-  mapCoordinates: MapCoordinates,
   enabledCategories: Set<number>,
   superarea: number
 ): Array<{
@@ -205,14 +211,15 @@ export function filterHintsByArea(
 
   for (const overlay of hintsLayering.hint_overlays) {
     for (const hint of overlay.hints) {
-      const mapID = hint.mapID.toString();
-      const coord = mapCoordinates[mapID];
-
-      if (coord && coord.sua !== superarea) {
+      if (!enabledCategories.has(hint.categoryID)) {
         continue;
       }
 
-      if (!enabledCategories.has(hint.categoryID)) {
+      // `null` = carte inconnue du bundle : on la garde plutôt que de faire
+      // disparaître un hint parce que le bundle n'a pas fini de charger.
+      const hintSuperarea = getMapSuperarea(hint.mapID);
+
+      if (hintSuperarea !== null && hintSuperarea !== superarea) {
         continue;
       }
 

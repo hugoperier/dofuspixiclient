@@ -8,6 +8,7 @@ import { upgradeWebSocket, websocket } from "hono/bun";
 import type { AccountProvisioner } from "./admin-accounts.ts";
 import type { UpstreamRegistry } from "./upstream-registry.ts";
 import { registerAdminAccountsRoute } from "./admin-accounts.ts";
+import { logger } from "./logger.ts";
 import {
   newSession,
   type Role,
@@ -35,6 +36,31 @@ type Deps = {
 };
 
 const ROLES: readonly Role[] = ["auth", "game"];
+
+/**
+ * The one line that joins the client's journal to the server's.
+ *
+ * `sessionId` is minted here and never reaches the client — it is stripped
+ * from the envelope before the WebSocket write (`SessionRegistry.sendBytes`),
+ * and no client-facing protobuf carries a correlation field. So the client
+ * brings its own id on the query string (`src/utils/client-id.ts`) and this
+ * records the pair once per connection. After that, `grep` on either id reads
+ * the whole session across all four journals.
+ *
+ * Absent for anything that is not our client (a bot, a raw protobuf probe),
+ * which is itself worth seeing.
+ */
+function logConnection(
+  clientId: string | undefined,
+  sessionId: string,
+  role: Role,
+  remoteAddr: string
+): void {
+  logger.info(
+    { mod: "ws", clientId: clientId ?? "-", sessionId, role, remoteAddr },
+    "client connected"
+  );
+}
 
 function isRole(raw: string): raw is Role {
   return (ROLES as readonly string[]).includes(raw);
@@ -123,6 +149,7 @@ export function buildHttpApp(deps: Deps) {
         return {};
       }
       const role = roleParam;
+      const clientId = c.req.query("clientId");
       const upstream = deps.upstreams.get(role);
       const session = newSession({
         sessionId: crypto.randomUUID(),
@@ -144,6 +171,7 @@ export function buildHttpApp(deps: Deps) {
             },
           };
           deps.sessions.add(session);
+          logConnection(clientId, session.sessionId, role, session.remoteAddr);
           upstream.sessionOpen(
             session.sessionId,
             session.accountId,
@@ -177,6 +205,7 @@ export function buildHttpApp(deps: Deps) {
     upgradeWebSocket((c) => {
       const auth = c.get("auth");
       const role = c.get("role");
+      const clientId = c.req.query("clientId");
       const upstream = deps.upstreams.get(role);
       const session = newSession({
         sessionId: crypto.randomUUID(),
@@ -198,6 +227,7 @@ export function buildHttpApp(deps: Deps) {
             },
           };
           deps.sessions.add(session);
+          logConnection(clientId, session.sessionId, role, session.remoteAddr);
           upstream.sessionOpen(
             session.sessionId,
             session.accountId,

@@ -19,6 +19,21 @@ export interface WorldMapManifest {
   tile_size: number;
   format: string;
   bounds: WorldMapBounds;
+  /**
+   * Nom de l'aperçu basse résolution, écrit par `just worldmap-optimize`.
+   * Absent sur un manifeste non optimisé — le renderer retombe alors sur les
+   * seules tuiles de détail.
+   */
+  overview?: string;
+  /** Côté de l'aperçu en pixels ; la planche fait `grid_size * tile_size`. */
+  overview_size?: number;
+  /**
+   * Tuiles d'une seule couleur, groupées par teinte hexadécimale sans `#`.
+   * Elles ne sont jamais téléchargées : le renderer en fait des rectangles
+   * pleins, ce qui est exact au pixel puisque la tuile était unie.
+   */
+  uniform_tiles?: Record<string, Array<[number, number]>>;
+  /** Tuiles qui portent réellement du détail. */
   tiles: WorldMapTile[];
 }
 
@@ -125,6 +140,54 @@ export const WORLDMAP_CONSTANTS = {
   MAX_ZOOM: 100,
   ZOOM_STEP: 5,
 } as const;
+
+/**
+ * Outils de la barre du haut, mutuellement exclusifs comme `_btnMove` /
+ * `_btnSelect` en 1.29 (`MapExplorer.as:567-589`).
+ *
+ * Le 1.29 sépare « déplacer » et « sélectionner » parce que sa sélection pose
+ * le drapeau de cible unique. Ici ce rôle revient à l'outil marqueur, et le pan
+ * reste disponible dans les deux modes — un bouton « sélectionner » de plus
+ * n'aurait rien fait.
+ */
+export type WorldMapTool = "move" | "marker";
+
+/** Un marqueur posé par le joueur, en coordonnées de carte. */
+export interface WorldMapMarker {
+  id: string;
+  x: number;
+  y: number;
+  /** Couleur 0xRRGGBB, prise dans `MARKER_COLORS`. */
+  color: number;
+  label?: string;
+}
+
+/**
+ * Palette du sélecteur de marqueur. Reprend les teintes que le 1.29 utilisait
+ * pour ses drapeaux de carte (`Constants.as:186-193`), plus de quoi distinguer
+ * plusieurs annotations.
+ */
+export const MARKER_COLORS: ReadonlyArray<{ name: string; value: number }> = [
+  { name: "Rouge", value: 0xff0000 },
+  { name: "Bleu", value: 0x006699 },
+  { name: "Vert", value: 0xccff00 },
+  { name: "Jaune", value: 0xffcc00 },
+  { name: "Violet", value: 0x8844ff },
+  { name: "Blanc", value: 0xffffff },
+];
+
+/**
+ * Identifiant de la case « Grille » dans la rangée de filtres. Le 1.29 écrase
+ * l'entrée 0 des catégories avec la grille (`MapExplorer.as:188`), et persiste
+ * les sept dans une seule option `MapFilters`.
+ */
+export const GRID_FILTER_ID = 0;
+
+/** Teinte du survol de sous-zone — `AREA_NO_ALIGNMENT_COLOR` en 1.29. */
+export const SUBAREA_HIGHLIGHT_COLOR = 0xffff99;
+
+/** Opacité du survol — `_alpha = 20` dans `MapNavigator.addSubareaClip`. */
+export const SUBAREA_HIGHLIGHT_ALPHA = 0.2;
 
 export const HINT_COLORS: Record<string, number> = {
   Orange: 0xff8800,

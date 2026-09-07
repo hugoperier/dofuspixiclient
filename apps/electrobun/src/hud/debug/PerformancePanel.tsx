@@ -6,6 +6,8 @@ import type { PerfSceneSample } from "@/game/stores";
 import { perfStore } from "@/game/stores";
 import { cn } from "@/lib/utils";
 
+import { TracePanel } from "./TracePanel";
+
 /**
  * Dev-only performance panel, rendered in the letterbox gutter beside the
  * canvas — never over it, so it cannot cost the game a pixel or a click.
@@ -80,6 +82,8 @@ export function PerformancePanel({ gutter }: PerformancePanelProps) {
       ) : (
         <p className="text-[10px] text-neutral-600">Scène en attente…</p>
       )}
+
+      <TracePanel />
     </div>
   );
 }

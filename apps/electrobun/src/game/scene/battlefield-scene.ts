@@ -979,6 +979,17 @@ export class Battlefield {
     e.preventDefault();
   }
 
+  /**
+   * Coupe (ou rétablit) la souris du jeu. Appelé quand un panneau plein écran
+   * s'ouvre au-dessus du canevas : sans ça, ses clics et sa molette continuent
+   * d'atteindre la carte de jeu dessous.
+   */
+  setInputEnabled(enabled: boolean): void {
+    if (this.interactionHandler) {
+      this.interactionHandler.enabled = enabled;
+    }
+  }
+
   destroy(): void {
     // Clean up map transition and adjacent cache
     this.mapTransition?.destroy();

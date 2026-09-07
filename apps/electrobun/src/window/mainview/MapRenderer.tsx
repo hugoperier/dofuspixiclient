@@ -76,8 +76,35 @@ export function MapRenderer({ client, onReady, onProgress }: MapRendererProps) {
     hudStore.setState({ connected });
   }, [connected]);
 
+  // La carte du monde couvre tout le canevas, mais les gestionnaires de souris
+  // du jeu sont posés sur `app.stage` et sur le canevas DOM : ses clics
+  // remontaient jusqu'à eux et déplaçaient le personnage, sa molette zoomait la
+  // carte de jeu dessous. On coupe la souris du jeu tant qu'elle est ouverte.
+  useEffect(() => {
+    let last: boolean | null = null;
+
+    const sync = () => {
+      const { isWorldMapOpen } = hudStore.getSnapshot();
+
+      if (isWorldMapOpen !== last) {
+        last = isWorldMapOpen;
+        battlefieldRef.current?.setInputEnabled(!isWorldMapOpen);
+      }
+    };
+
+    sync();
+    return hudStore.subscribe(sync);
+  }, []);
+
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
+
+    // La carte du monde est au-dessus et se sert du clic droit pour ses
+    // marqueurs ; le menu du jeu n'a rien à y faire.
+    if (hudStore.getSnapshot().isWorldMapOpen) {
+      return;
+    }
+
     battlefieldRef.current?.handleContextMenu(e.nativeEvent);
   }, []);
 

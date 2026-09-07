@@ -19,6 +19,14 @@ import {
 } from "./close-codes.ts";
 import { logger } from "./logger.ts";
 
+/**
+ * Per-frame protocol trace. Off unless `TRACE_FRAMES=1`, because one line per
+ * frame is hundreds a second during a fight and would make the journal it is
+ * written into unreadable. Turn it on when the question is "what actually
+ * crossed the wire, in what order".
+ */
+const TRACE_FRAMES = process.env.TRACE_FRAMES === "1";
+
 const BUFFER_CAP = 10_000;
 const HANDOFF_TIMEOUT_MS = 10_000;
 
@@ -120,6 +128,16 @@ export class Upstream {
   }
 
   forwardClient(msg: PendingClientMsg) {
+    if (TRACE_FRAMES) {
+      this.log.debug(
+        {
+          sessionId: msg.sessionId,
+          payload: msg.message.payload.case,
+        },
+        "ws → clientEnv"
+      );
+    }
+
     this.send(
       create(GatewayFrameSchema, {
         kind: {
@@ -270,10 +288,20 @@ export class Upstream {
           value.sessionIds,
           encodeDofusMessage(value.message)
         );
-        this.log.info(
-          { sessions: value.sessionIds.length, delivered, payload: value.message.payload.case },
-          "coreEnv → ws"
-        );
+        // The outbound half of the frame trace. It used to log at `info` on
+        // every single frame, which in a fight is hundreds a second and buries
+        // everything else in the journal; it now shares the gate with its
+        // inbound counterpart above.
+        if (TRACE_FRAMES) {
+          this.log.debug(
+            {
+              sessions: value.sessionIds.length,
+              delivered,
+              payload: value.message.payload.case,
+            },
+            "coreEnv → ws"
+          );
+        }
       })
       // `sessionClose` normally travels the other way (a client hung up).
       // Coming *from* the core it is an order: drop this one. The core decides

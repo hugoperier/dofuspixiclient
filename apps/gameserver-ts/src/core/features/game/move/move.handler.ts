@@ -58,6 +58,7 @@ export class MoveHandler {
     const session = this.sessions.get(ctx.sessionId);
 
     if (!session?.characterId) {
+      this.logger.debug("move dropped: session has no character yet");
       return;
     }
 
@@ -68,6 +69,7 @@ export class MoveHandler {
     // off mid-deal. A bank or a chest does not block — see
     // `ExchangeService.blocksMovement`.
     if (this.exchange.blocksMovement(ctx.sessionId)) {
+      this.logger.debug("move dropped: an exchange pins the character");
       return;
     }
 
@@ -75,6 +77,7 @@ export class MoveHandler {
     // suppresses the click too, but this is the authority: a modified or
     // lagging client still cannot move or cancel the action.
     if (this.harvest.isRunning(session.characterId)) {
+      this.logger.debug("move dropped: a harvest owns the character");
       return;
     }
 
@@ -114,6 +117,20 @@ export class MoveHandler {
     });
 
     const targets = this.presence.sessionsOnMap(placed.mapId);
+
+    // The counterpart of the client's `move sent=…` line. Between the two,
+    // a walk that visibly crossed half the map can be pinned on whichever
+    // side actually produced the long path.
+    //
+    // `truncated` is the one field here that was never surfaced anywhere: it
+    // says an unwalkable step cut the walk short, so the client is animating
+    // to one cell while the server has committed to another.
+    this.logger.debug(
+      `move ok action=${actionId} ${placed.cellId} → ${validated.endCell} ` +
+        `${validated.steps.length} step(s) truncated=${validated.truncated} ` +
+        `map=${placed.mapId} witnesses=${targets.length} ` +
+        `path=${formatCells(validated.cells)}`
+    );
 
     this.frames.broadcast(
       targets,
@@ -172,6 +189,21 @@ export class MoveHandler {
       throw err;
     }
   }
+}
+
+/**
+ * Renders a path for a log line: whole when short, head and tail when not.
+ * `MAX_PATH_LENGTH` is 64, and 64 cell ids would drown the line.
+ */
+function formatCells(cells: readonly number[]): string {
+  if (cells.length <= 20) {
+    return `[${cells.join(",")}]`;
+  }
+
+  const head = cells.slice(0, 12).join(",");
+  const tail = cells.slice(-8).join(",");
+
+  return `[${head},…${cells.length - 20} more…,${tail}]`;
 }
 
 function firstField(params: string): string {

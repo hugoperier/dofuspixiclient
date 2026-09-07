@@ -4,7 +4,7 @@ title: "Marqueur de position de la minimap = rectangle rouge plein"
 severity: P2
 domain: worldmap
 type: bug
-status: open
+status: fixed
 session: 1
 opened: 2026-08-20
 closed:
@@ -24,3 +24,15 @@ première fois.
 ## Attendu (1.29)
 
 Un petit repère qui ne masque pas ce qu'il y a dessous.
+
+## Correctif
+
+`drawPositionMarker` était dupliqué mot pour mot dans les deux renderers. Il
+part dans `worldmap/position-marker.ts`, partagé, et dessine un rectangle
+**creux** de deux pixels — le `UI_MapExplorerSelectRectangle` du 1.29 — au lieu
+d'un aplat rouge à 50 %.
+
+Second symptôme, la minimap vide avant le premier déplacement : le repère
+n'était tracé que depuis `applyCenter()` / `animateCenter()`. `centerOnMap()`
+est désormais appelé dès que le bundle de noms résout, donc au premier
+`GameMapData`.

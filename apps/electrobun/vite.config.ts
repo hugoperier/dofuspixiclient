@@ -1,4 +1,11 @@
-import { readFile, readFileSync, existsSync, realpathSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFile,
+  readFileSync,
+  realpathSync,
+} from "node:fs";
 import { resolve, join } from "node:path";
 
 import type { Plugin } from "vite";
@@ -32,6 +39,69 @@ const velloPkgDir = (() => {
     return pkg;
   }
 })();
+
+/**
+ * Dev-only sink for the client's log ring buffer.
+ *
+ * `src/utils/log-shipper.ts` POSTs batches here every couple of seconds and
+ * once more on `pagehide`; each entry is appended as one NDJSON line to
+ * `$DOFUS_LOG_DIR/client.log`, which is the same directory `scripts/dev.sh`
+ * tees the gateway, gamed and authd journals into. That is the whole point:
+ * after a session, one `just logs-bundle` interleaves all four by timestamp
+ * and a single `clientId` joins the client's story to the server's.
+ *
+ * It lives on the Vite dev server rather than on the gateway on purpose. The
+ * gateway is the production front door and is started without watch mode
+ * because it must not restart — a debug route there would mean dropping every
+ * session to iterate. This middleware cannot exist in a production build.
+ */
+function clientLogSinkPlugin(): Plugin {
+  const logDir = process.env.DOFUS_LOG_DIR ?? "/tmp/dofus-logs";
+  const logPath = join(logDir, "client.log");
+
+  return {
+    name: "vite-plugin-client-log-sink",
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (req.url !== "/__log" || req.method !== "POST") {
+          next();
+          return;
+        }
+
+        const chunks: Buffer[] = [];
+
+        req.on("data", (chunk: Buffer) => chunks.push(chunk));
+        req.on("end", () => {
+          try {
+            const parsed = JSON.parse(Buffer.concat(chunks).toString("utf-8"));
+            const clientId =
+              typeof parsed.clientId === "string" ? parsed.clientId : "?";
+            const entries = Array.isArray(parsed.entries) ? parsed.entries : [];
+
+            const lines = entries
+              .map((entry: Record<string, unknown>) =>
+                JSON.stringify({ ...entry, clientId })
+              )
+              .join("\n");
+
+            if (lines.length > 0) {
+              mkdirSync(logDir, { recursive: true });
+              appendFileSync(logPath, `${lines}\n`, "utf-8");
+            }
+
+            res.statusCode = 204;
+            res.end();
+          } catch {
+            // A malformed batch is the client's problem, not the server's:
+            // answer 400 so the shipper puts it back and we see it retried.
+            res.statusCode = 400;
+            res.end();
+          }
+        });
+      });
+    },
+  };
+}
 
 function compressionPlugin(): Plugin {
   return {
@@ -485,6 +555,7 @@ export default defineConfig({
     svgCompositionPlugin(),
     svgResolutionPlugin(),
     compressionPlugin(),
+    clientLogSinkPlugin(),
     babel({
       babelConfig: {
         plugins: [

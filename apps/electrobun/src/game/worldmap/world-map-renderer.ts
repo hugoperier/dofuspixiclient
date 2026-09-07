@@ -3,29 +3,55 @@ import {
   Assets,
   BlurFilter,
   Container,
+  type FederatedPointerEvent,
   Graphics,
+  Rectangle,
   Sprite,
   Text,
   TextStyle,
+  type Texture,
 } from "pixi.js";
 
 import type {
   HintGroup,
   HintManifest,
   HintSpriteData,
-  HintsData,
   HintsLayering,
-  MapCoordinates,
   WorldMapManifest,
+  WorldMapMarker,
+  WorldMapTool,
 } from "@/game/types/worldmap";
-import { HINT_COLORS, WORLDMAP_CONSTANTS } from "@/game/types/worldmap";
-import { animateSprite, animateTileSurface } from "@/game/worldmap/animations";
 import {
+  getMapLangCoords,
+  getMapNames,
+  loadMapsLang,
+} from "@/game/lang/maps-lang";
+import {
+  addMarker,
+  removeMarker,
+  setHoveredSubarea,
+  setWorldMapZoom,
+  worldMapStore,
+} from "@/game/stores/worldmap-store";
+import {
+  SUBAREA_HIGHLIGHT_ALPHA,
+  SUBAREA_HIGHLIGHT_COLOR,
+  WORLDMAP_CONSTANTS,
+} from "@/game/types/worldmap";
+import { animateSprite } from "@/game/worldmap/animations";
+import {
+  drawMarkerFlag,
+  drawPositionMarker,
+} from "@/game/worldmap/position-marker";
+import { getSubareaIndex } from "@/game/worldmap/subarea-index";
+import {
+  contentExtent,
   filterHintsByArea,
-  findMapAtCoord,
   loadWorldMapData,
   mapCoordToPixel,
   pixelToMapCoord,
+  selectVisibleTiles,
+  shouldLoadDetailTiles,
 } from "@/game/worldmap/world-map-data";
 
 interface HintSprite extends Sprite, HintSpriteData {}
@@ -34,6 +60,12 @@ interface WorldMapRendererConfig {
   app: Application;
   parentContainer?: Container;
   onTeleport?: (mapId: number) => void;
+  /** Clic droit sur un marqueur — la React ouvre le menu contextuel. */
+  onMarkerContextMenu?: (
+    marker: WorldMapMarker,
+    screenX: number,
+    screenY: number
+  ) => void;
 }
 
 export class WorldMapRenderer {
@@ -49,10 +81,8 @@ export class WorldMapRenderer {
   private tooltipBg: Graphics;
 
   private manifest: WorldMapManifest | null = null;
-  private hintsData: HintsData | null = null;
   private hintManifest: HintManifest | null = null;
   private hintsLayering: HintsLayering | null = null;
-  private mapCoordinates: MapCoordinates | null = null;
 
   private enabledCategories = new Set<number>([1, 2, 3, 4, 5, 6]);
   private currentSuperarea = 0;
@@ -70,9 +100,37 @@ export class WorldMapRenderer {
 
   private gridContainer: Container;
   private gridGraphics: Graphics;
-  private showGrid = true;
+  private showGrid = false;
 
   private positionMarker: Graphics;
+
+  /** Aperçu basse résolution : le fond peint dès la première frame. */
+  private overviewSprite: Sprite | null = null;
+  /** Les tuiles unies, en rectangles pleins — aucune requête. */
+  private uniformGraphics: Graphics;
+  /** Tuiles de détail montées, par nom de fichier. */
+  private tileSprites = new Map<string, Sprite>();
+  private tileRequest = 0;
+  private refreshHandle: number | null = null;
+
+  /** Silhouette de la sous-zone survolée. */
+  private highlightGraphics: Graphics;
+  private hoveredSubareaId: number | null = null;
+  private lastHoverKey: string | null = null;
+
+  private markersContainer: Container;
+  private markerGraphics = new Map<string, Graphics>();
+  private storeUnsubscribe: (() => void) | null = null;
+
+  private tool: WorldMapTool = "move";
+  /** Hauteur de la barre d'outils React, qui mange le haut du canevas. */
+  private topInset = 0;
+  private playerMapId: number | null = null;
+  private onMarkerContextMenu?: (
+    marker: WorldMapMarker,
+    screenX: number,
+    screenY: number
+  ) => void;
 
   private hintGroups = new Map<string, HintGroup>();
   private collapseTimers = new Map<string, number>();
@@ -85,6 +143,8 @@ export class WorldMapRenderer {
   private pointerDownPos = { x: 0, y: 0 };
   private lastClickTime = 0;
   private lastClickPos = { x: 0, y: 0 };
+  /** L'infobulle affiche les coordonnées du survol, pas un nom de hint. */
+  private coordTooltipVisible = false;
 
   constructor(config: WorldMapRendererConfig) {
     this.app = config.app;
@@ -101,11 +161,19 @@ export class WorldMapRenderer {
     this.uiContainer = new Container();
 
     this.positionMarker = new Graphics();
+    this.uniformGraphics = new Graphics();
+    this.highlightGraphics = new Graphics();
+    this.markersContainer = new Container();
 
+    // Ordre de pile : aperçu et aplats en fond, puis les tuiles de détail, la
+    // teinte de survol, la grille, le repère, les hints, les marqueurs.
+    this.mapContainer.addChild(this.uniformGraphics);
     this.worldContainer.addChild(this.mapContainer);
+    this.worldContainer.addChild(this.highlightGraphics);
     this.worldContainer.addChild(this.gridContainer);
     this.worldContainer.addChild(this.positionMarker);
     this.worldContainer.addChild(this.hintsContainer);
+    this.worldContainer.addChild(this.markersContainer);
 
     this.root.addChild(this.worldContainer);
     this.root.addChild(this.uiContainer);
@@ -131,7 +199,9 @@ export class WorldMapRenderer {
     this.root.addChild(this.tooltip);
 
     this.onTeleport = config.onTeleport;
+    this.onMarkerContextMenu = config.onMarkerContextMenu;
     this.setupControls();
+    this.subscribeToStore();
   }
 
   /** Current render scale — baseScale × zoom. At MIN_ZOOM (10) the map fits the viewport. */
@@ -141,11 +211,50 @@ export class WorldMapRenderer {
 
   private setupControls(): void {
     this.worldContainer.eventMode = "static";
-    this.root.eventMode = "static";
+    // `show()` arme `eventMode` et la `hitArea` ; au repos le renderer ne doit
+    // rien intercepter du jeu qui tourne dessous.
+    this.root.eventMode = "none";
 
+    this.setupPropagationGuard();
     this.setupZoomControl();
     this.setupDragControl();
+    this.setupHoverTracking();
     this.setupGroupTracking();
+  }
+
+  /**
+   * Les gestionnaires de souris du jeu sont posés sur `app.stage`
+   * (`battlefield/bootstrap.ts:219-222`), qui est un ancêtre de ce conteneur :
+   * les événements Pixi remontent, donc un clic sur la carte du monde arrivait
+   * aussi au jeu et devenait un déplacement.
+   *
+   * `InteractionHandler.enabled` est la vraie coupure, décidée par
+   * `MapRenderer` sur l'état d'ouverture. Ceci ferme le chemin à la source,
+   * pour tout autre écouteur qui vivrait sur le stage.
+   */
+  private setupPropagationGuard(): void {
+    const stop = (e: FederatedPointerEvent) => {
+      if (this.worldContainer.visible) {
+        e.stopPropagation();
+      }
+    };
+
+    this.root.on("pointerdown", stop);
+    this.root.on("pointermove", stop);
+    this.root.on("pointerup", stop);
+    this.root.on("pointerupoutside", stop);
+    this.root.on("pointertap", stop);
+  }
+
+  /** Coordonnées d'un `WheelEvent` relatives au canevas, pas à la fenêtre. */
+  private canvasPoint(e: WheelEvent): { x: number; y: number } {
+    const rect = this.app.canvas?.getBoundingClientRect();
+
+    if (!rect) {
+      return { x: e.clientX, y: e.clientY };
+    }
+
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   }
 
   private setupZoomControl(): void {
@@ -156,30 +265,46 @@ export class WorldMapRenderer {
         return;
       }
 
-      const { MIN_ZOOM, MAX_ZOOM, ZOOM_STEP } = WORLDMAP_CONSTANTS;
-      const zoomDelta = e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP;
-      const newZoom = this.currentZoom + zoomDelta;
+      const { ZOOM_STEP } = WORLDMAP_CONSTANTS;
+      const delta = e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP;
 
-      if (newZoom < MIN_ZOOM || newZoom > MAX_ZOOM) {
-        return;
-      }
-
-      const worldPos = {
-        x: (e.clientX - this.worldContainer.x) / this.worldContainer.scale.x,
-        y: (e.clientY - this.worldContainer.y) / this.worldContainer.scale.y,
-      };
-
-      this.currentZoom = newZoom;
-      const newScale = this.getScale();
-
-      this.worldContainer.scale.set(newScale);
-      this.worldContainer.x = e.clientX - worldPos.x * newScale;
-      this.worldContainer.y = e.clientY - worldPos.y * newScale;
-      this.clampPosition();
+      // Le canevas n'est pas collé au coin de la fenêtre : `clientX` seul
+      // décalait l'ancrage du zoom de tout l'offset du canevas.
+      this.zoomAt(this.currentZoom + delta, this.canvasPoint(e));
     };
 
-    this.app.canvas?.addEventListener("wheel", this.wheelHandler, {
-      passive: false,
+    // Posé par `show()` seulement — voir le commentaire là-bas.
+  }
+
+  /** Zoome en gardant fixe le point écran donné. */
+  private zoomAt(zoom: number, anchor: { x: number; y: number }): void {
+    const { MIN_ZOOM, MAX_ZOOM } = WORLDMAP_CONSTANTS;
+    const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
+
+    if (next === this.currentZoom) {
+      return;
+    }
+
+    const worldX = (anchor.x - this.worldContainer.x) / this.getScale();
+    const worldY = (anchor.y - this.worldContainer.y) / this.getScale();
+
+    this.currentZoom = next;
+    const scale = this.getScale();
+
+    this.worldContainer.scale.set(scale);
+    this.worldContainer.x = anchor.x - worldX * scale;
+    this.worldContainer.y = anchor.y - worldY * scale;
+    this.clampPosition();
+    this.scheduleTileRefresh();
+    this.refreshHighlight();
+    setWorldMapZoom(next);
+  }
+
+  /** Zoom depuis la barre d'outils : ancré au centre de la vue. */
+  setZoom(zoom: number): void {
+    this.zoomAt(zoom, {
+      x: this.viewWidth / 2,
+      y: (this.topInset + this.viewHeight) / 2,
     });
   }
 
@@ -188,48 +313,44 @@ export class WorldMapRenderer {
       return;
     }
 
-    const mapSize = this.manifest.grid_size * this.manifest.tile_size;
+    // L'étendue du contenu, pas celle de la planche de tuiles : la planche fait
+    // 8192 px de côté alors que le monde n'en occupe que 6678 × 5184, et borner
+    // sur la planche laissait paner dans le vide.
+    const { width, height } = contentExtent(this.manifest);
     const scale = this.getScale();
-    const scaledW = mapSize * scale;
-    const scaledH = mapSize * scale;
+    const scaledW = width * scale;
+    const scaledH = height * scale;
 
-    // Don't let the map leave the viewport entirely — keep at least half visible
     const minX = this.viewWidth - scaledW;
     const minY = this.viewHeight - scaledH;
     const maxX = 0;
-    const maxY = 0;
+    const maxY = this.topInset;
 
-    this.worldContainer.x = Math.max(
-      minX,
-      Math.min(maxX, this.worldContainer.x)
-    );
-    this.worldContainer.y = Math.max(
-      minY,
-      Math.min(maxY, this.worldContainer.y)
-    );
-  }
+    this.worldContainer.x =
+      scaledW <= this.viewWidth
+        ? (this.viewWidth - scaledW) / 2
+        : Math.max(minX, Math.min(maxX, this.worldContainer.x));
 
-  private isPointOverUI(x: number, y: number): boolean {
-    if (!this.uiContainer.visible) {
-      return false;
-    }
-
-    const bounds = this.uiContainer.getBounds();
-    return (
-      x >= bounds.x &&
-      x <= bounds.x + bounds.width &&
-      y >= bounds.y &&
-      y <= bounds.y + bounds.height
-    );
+    this.worldContainer.y =
+      scaledH <= this.viewHeight - this.topInset
+        ? this.topInset + (this.viewHeight - this.topInset - scaledH) / 2
+        : Math.max(minY, Math.min(maxY, this.worldContainer.y));
   }
 
   private setupDragControl(): void {
     this.root.on("pointerdown", (e) => {
-      // Don't start drag when clicking on the category UI panel
-      if (this.isPointOverUI(e.global.x, e.global.y)) {
+      if (e.global.y < this.topInset) {
         return;
       }
 
+      // Le bouton droit sert au menu contextuel d'un marqueur, pas au pan.
+      if (e.button === 2) {
+        this.handleRightClick(e.global.x, e.global.y);
+        return;
+      }
+
+      // Le pan reste disponible même avec l'outil marqueur : ce qui distingue
+      // les modes, c'est ce que fait un clic *sans* glissé.
       this.isDragging = true;
       this.dragDistance = 0;
       this.pointerDownPos.x = e.global.x;
@@ -242,7 +363,10 @@ export class WorldMapRenderer {
       }
     });
 
-    this.root.on("pointermove", (e) => {
+    // `globalpointermove` et pas `pointermove` : un glissé rapide qui sort du
+    // conteneur perdait ses événements en cours de route. C'est déjà ce que
+    // fait le suivi des groupes de hints.
+    this.root.on("globalpointermove", (e) => {
       if (!this.isDragging) {
         return;
       }
@@ -253,6 +377,7 @@ export class WorldMapRenderer {
       this.worldContainer.x = e.global.x - this.dragStart.x;
       this.worldContainer.y = e.global.y - this.dragStart.y;
       this.clampPosition();
+      this.scheduleTileRefresh();
     });
 
     const stopDrag = (e?: { global: { x: number; y: number } }) => {
@@ -260,24 +385,27 @@ export class WorldMapRenderer {
       this.isDragging = false;
 
       if (this.app.canvas) {
-        this.app.canvas.style.cursor = "default";
+        this.app.canvas.style.cursor = this.cursorForTool();
       }
 
-      // Manual double-click detection (not a drag)
-      if (!wasDrag && e) {
-        const now = performance.now();
-        const dx = e.global.x - this.lastClickPos.x;
-        const dy = e.global.y - this.lastClickPos.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
+      if (wasDrag || !e || e.global.y < this.topInset) {
+        return;
+      }
 
-        if (now - this.lastClickTime < 400 && dist < 20) {
-          this.handleDoubleClick(e.global.x, e.global.y);
-          this.lastClickTime = 0;
-        } else {
-          this.lastClickTime = now;
-          this.lastClickPos.x = e.global.x;
-          this.lastClickPos.y = e.global.y;
-        }
+      this.handleClick(e.global.x, e.global.y);
+
+      const now = performance.now();
+      const dx = e.global.x - this.lastClickPos.x;
+      const dy = e.global.y - this.lastClickPos.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (now - this.lastClickTime < 400 && dist < 20) {
+        this.handleDoubleClick(e.global.x, e.global.y);
+        this.lastClickTime = 0;
+      } else {
+        this.lastClickTime = now;
+        this.lastClickPos.x = e.global.x;
+        this.lastClickPos.y = e.global.y;
       }
     };
 
@@ -285,23 +413,201 @@ export class WorldMapRenderer {
     this.root.on("pointerupoutside", () => stopDrag());
   }
 
-  private handleDoubleClick(screenX: number, screenY: number): void {
-    if (!this.manifest || !this.mapCoordinates || !this.onTeleport) {
+  private cursorForTool(): string {
+    return this.tool === "marker" ? "crosshair" : "grab";
+  }
+
+  /** Écran -> coordonnées de carte, ou `null` hors du monde. */
+  private screenToMapCoord(
+    screenX: number,
+    screenY: number
+  ): { x: number; y: number } | null {
+    if (!this.manifest) {
+      return null;
+    }
+
+    const { bounds } = this.manifest;
+    const scale = this.getScale();
+    const localX = (screenX - this.worldContainer.x) / scale;
+    const localY = (screenY - this.worldContainer.y) / scale;
+
+    return pixelToMapCoord(localX, localY, bounds.xMin, bounds.yMin);
+  }
+
+  /**
+   * Le survol : nom de zone dans la barre, silhouette teintée, infobulle des
+   * coordonnées. On ne recalcule qu'au changement de case — le 1.29 fait pareil
+   * avec sa garde `_oLastCoordsOver` (`MapNavigator.as:562-597`).
+   */
+  private setupHoverTracking(): void {
+    this.root.on("globalpointermove", (e) => {
+      if (!this.worldContainer.visible || this.isDragging) {
+        return;
+      }
+
+      if (e.global.y < this.topInset) {
+        this.clearHover();
+        return;
+      }
+
+      const coord = this.screenToMapCoord(e.global.x, e.global.y);
+
+      if (!coord) {
+        return;
+      }
+
+      const key = `${coord.x},${coord.y}`;
+
+      if (key !== this.lastHoverKey) {
+        this.lastHoverKey = key;
+        this.updateHover(coord.x, coord.y);
+      }
+
+      if (this.coordTooltipVisible) {
+        this.updateTooltipPosition(e.global.x, e.global.y);
+      }
+    });
+  }
+
+  private updateHover(x: number, y: number): void {
+    const index = getSubareaIndex(this.currentSuperarea);
+    const subareaId = index?.subareaAt(x, y) ?? null;
+
+    if (subareaId === null) {
+      this.clearHover();
+      return;
+    }
+
+    this.coordTooltipVisible = true;
+    this.showTooltip(`${x}, ${y}`, 0, 0);
+
+    if (subareaId !== this.hoveredSubareaId) {
+      this.hoveredSubareaId = subareaId;
+      this.refreshHighlight();
+
+      const mapId = index?.mapAt(x, y) ?? null;
+      const names = mapId === null ? null : getMapNames(mapId, subareaId);
+
+      setHoveredSubarea(names);
+    }
+  }
+
+  private clearHover(): void {
+    this.lastHoverKey = null;
+
+    if (this.hoveredSubareaId !== null) {
+      this.hoveredSubareaId = null;
+      this.highlightGraphics.clear();
+      setHoveredSubarea(null);
+    }
+
+    if (this.coordTooltipVisible) {
+      this.coordTooltipVisible = false;
+      this.hideTooltip();
+    }
+  }
+
+  /**
+   * La silhouette de la sous-zone survolée : l'union de ses cases, teintée.
+   *
+   * Le 1.29 attachait un clip `subarea_<id>` déjà dessiné dans le SWF
+   * (`MapNavigator.addSubareaClip`), qui n'a jamais été exporté ici. Sauté au
+   * zoom minimal, comme lui (`MapExplorer.as:729`).
+   */
+  private refreshHighlight(): void {
+    this.highlightGraphics.clear();
+
+    if (
+      this.hoveredSubareaId === null ||
+      !this.manifest ||
+      this.currentZoom <= WORLDMAP_CONSTANTS.MIN_ZOOM
+    ) {
+      return;
+    }
+
+    const index = getSubareaIndex(this.currentSuperarea);
+    const cells = index?.cellsOf(this.hoveredSubareaId) ?? [];
+
+    if (cells.length === 0) {
       return;
     }
 
     const { bounds } = this.manifest;
+    const { DISPLAY_WIDTH, DISPLAY_HEIGHT, CHUNK_SIZE } = WORLDMAP_CONSTANTS;
+    const cellW = DISPLAY_WIDTH / CHUNK_SIZE;
+    const cellH = DISPLAY_HEIGHT / CHUNK_SIZE;
 
-    // Convert screen position to world-container-local coordinates
-    const localX =
-      (screenX - this.worldContainer.x) / this.worldContainer.scale.x;
-    const localY =
-      (screenY - this.worldContainer.y) / this.worldContainer.scale.y;
+    for (const cell of cells) {
+      const [px, py] = mapCoordToPixel(
+        cell.x,
+        cell.y,
+        bounds.xMin,
+        bounds.yMin
+      );
 
-    // Convert pixel to game map coordinates
-    const coord = pixelToMapCoord(localX, localY, bounds.xMin, bounds.yMin);
+      this.highlightGraphics.rect(px - cellW / 2, py - cellH / 2, cellW, cellH);
+    }
 
-    const mapId = findMapAtCoord(coord.x, coord.y, this.mapCoordinates);
+    this.highlightGraphics.fill({
+      color: SUBAREA_HIGHLIGHT_COLOR,
+      alpha: SUBAREA_HIGHLIGHT_ALPHA,
+    });
+  }
+
+  private handleClick(screenX: number, screenY: number): void {
+    if (this.tool !== "marker") {
+      return;
+    }
+
+    const coord = this.screenToMapCoord(screenX, screenY);
+    const index = getSubareaIndex(this.currentSuperarea);
+
+    // Pas de marqueur dans le vide : hors du monde il ne désignerait rien.
+    if (!coord || index?.subareaAt(coord.x, coord.y) == null) {
+      return;
+    }
+
+    const { markerColor } = worldMapStore.getSnapshot();
+    addMarker(coord.x, coord.y, markerColor);
+  }
+
+  private handleRightClick(screenX: number, screenY: number): void {
+    const marker = this.markerAt(screenX, screenY);
+
+    if (!marker) {
+      return;
+    }
+
+    if (this.onMarkerContextMenu) {
+      this.onMarkerContextMenu(marker, screenX, screenY);
+      return;
+    }
+
+    removeMarker(marker.id);
+  }
+
+  private markerAt(screenX: number, screenY: number): WorldMapMarker | null {
+    const coord = this.screenToMapCoord(screenX, screenY);
+
+    if (!coord) {
+      return null;
+    }
+
+    const { markers } = worldMapStore.getSnapshot();
+
+    return markers.find((m) => m.x === coord.x && m.y === coord.y) ?? null;
+  }
+
+  private handleDoubleClick(screenX: number, screenY: number): void {
+    if (!this.onTeleport) {
+      return;
+    }
+
+    const coord = this.screenToMapCoord(screenX, screenY);
+    const mapId = coord
+      ? (getSubareaIndex(this.currentSuperarea)?.mapAt(coord.x, coord.y) ??
+        null)
+      : null;
 
     if (mapId != null) {
       this.onTeleport(mapId);
@@ -311,65 +617,230 @@ export class WorldMapRenderer {
   async loadWorldMap(superarea: number = 0): Promise<void> {
     this.currentSuperarea = superarea;
 
-    const data = await loadWorldMapData(superarea);
+    // `centerOnMapId` et l'index de sous-zones lisent tous deux le bundle de
+    // noms ; il est déjà en vol pour le libellé du HUD, donc c'est gratuit.
+    const [data] = await Promise.all([
+      loadWorldMapData(superarea),
+      loadMapsLang(),
+    ]);
     this.manifest = data.manifest;
-    this.hintsData = data.hintsData;
     this.hintManifest = data.hintManifest;
     this.hintsLayering = data.hintsLayering;
-    this.mapCoordinates = data.mapCoordinates;
 
     await this.renderMap();
     this.drawGrid();
+    this.renderMarkers();
     await this.renderHints();
-    this.createCategoryUI();
   }
 
+  /**
+   * Le fond de carte, en trois couches.
+   *
+   * Avant, cette méthode montait les 1024 tuiles d'Amakna d'un coup : 1024
+   * requêtes, 1024 `updateMipmaps()` et 1024 fondus rAF dans la même frame,
+   * dont 754 pour des tuiles d'une seule couleur. D'où la seconde ou deux
+   * d'attente à l'ouverture.
+   *
+   * Maintenant l'aperçu et les aplats peignent la planche entière tout de
+   * suite, sans rien attendre, et seules les tuiles visibles sont demandées.
+   */
   private async renderMap(): Promise<void> {
     if (!this.manifest) {
       return;
     }
 
-    this.mapContainer.removeChildren();
+    this.clearTiles();
     this.centerMap();
+    this.drawUniformTiles();
+    await this.mountOverview();
+    this.refreshVisibleTiles();
+  }
 
-    const { tile_size, tiles, worldmap } = this.manifest;
+  private clearTiles(): void {
+    for (const sprite of this.tileSprites.values()) {
+      sprite.destroy({ texture: false });
+    }
 
-    const tilePromises = tiles.map(async (tileInfo) => {
-      const texturePath = `/assets/maps/world/${worldmap}/${tileInfo.file}`;
+    this.tileSprites.clear();
+    this.uniformGraphics.clear();
 
-      try {
-        const texture = await Assets.load(texturePath);
+    if (this.overviewSprite) {
+      this.overviewSprite.destroy({ texture: false });
+      this.overviewSprite = null;
+    }
+  }
 
-        if (!texture) {
+  /**
+   * Les tuiles unies, en rectangles pleins. Exact au pixel : la tuile n'avait
+   * qu'une couleur, donc le rectangle la reproduit tel quel — et rien n'est
+   * téléchargé.
+   */
+  private drawUniformTiles(): void {
+    const manifest = this.manifest;
+
+    if (!manifest?.uniform_tiles) {
+      return;
+    }
+
+    const size = manifest.tile_size;
+
+    for (const [hex, cells] of Object.entries(manifest.uniform_tiles)) {
+      for (const [x, y] of cells) {
+        this.uniformGraphics.rect(x * size, y * size, size, size);
+      }
+
+      this.uniformGraphics.fill({ color: Number.parseInt(hex, 16) });
+    }
+  }
+
+  /** L'aperçu basse résolution, étiré sur toute la planche. */
+  private async mountOverview(): Promise<void> {
+    const manifest = this.manifest;
+
+    if (!manifest?.overview) {
+      return;
+    }
+
+    const url = `/assets/maps/world/${manifest.worldmap}/${manifest.overview}`;
+
+    try {
+      const texture = (await Assets.load(url)) as Texture | undefined;
+
+      if (!texture || !this.manifest) {
+        return;
+      }
+
+      const plane = manifest.grid_size * manifest.tile_size;
+      const sprite = new Sprite(texture);
+
+      sprite.width = plane;
+      sprite.height = plane;
+      sprite.eventMode = "none";
+
+      // Sous les aplats et les tuiles de détail.
+      this.mapContainer.addChildAt(sprite, 0);
+      this.overviewSprite = sprite;
+    } catch {
+      // Manifeste non optimisé, ou aperçu absent : les tuiles suffisent.
+    }
+  }
+
+  /** Le rectangle visible, en pixels du plan de tuiles. */
+  private visibleRect(): {
+    left: number;
+    top: number;
+    right: number;
+    bottom: number;
+  } {
+    const scale = this.getScale();
+
+    return {
+      left: -this.worldContainer.x / scale,
+      top: (this.topInset - this.worldContainer.y) / scale,
+      right: (this.viewWidth - this.worldContainer.x) / scale,
+      bottom: (this.viewHeight - this.worldContainer.y) / scale,
+    };
+  }
+
+  /** Coalesce les rafraîchissements pendant un pan ou un zoom continu. */
+  private scheduleTileRefresh(): void {
+    if (this.refreshHandle !== null) {
+      return;
+    }
+
+    this.refreshHandle = requestAnimationFrame(() => {
+      this.refreshHandle = null;
+      this.refreshVisibleTiles();
+    });
+  }
+
+  private refreshVisibleTiles(): void {
+    const manifest = this.manifest;
+
+    if (!manifest) {
+      return;
+    }
+
+    // Au dézoom, l'aperçu est déjà plus fin que ce qui sera affiché : inutile
+    // de télécharger quoi que ce soit.
+    if (!shouldLoadDetailTiles(manifest, this.getScale())) {
+      this.dropTilesOutside(new Set());
+      return;
+    }
+
+    const wanted = selectVisibleTiles(manifest, this.visibleRect());
+    const wantedNames = new Set(wanted.map((t) => t.file));
+
+    this.dropTilesOutside(wantedNames);
+
+    const missing = wanted.filter((t) => !this.tileSprites.has(t.file));
+
+    if (missing.length === 0) {
+      return;
+    }
+
+    const request = ++this.tileRequest;
+    const urls = missing.map(
+      (t) => `/assets/maps/world/${manifest.worldmap}/${t.file}`
+    );
+
+    // Un seul `Assets.load` pour le lot : Pixi mutualise les requêtes et ne
+    // retéléchargera pas une tuile déjà en cache.
+    void Assets.load(urls)
+      .then((textures: Record<string, Texture>) => {
+        // Un pan rapide peut avoir invalidé le lot entre-temps.
+        if (request !== this.tileRequest || !this.manifest) {
           return;
         }
 
-        // Enable mipmaps for smooth downscaling
-        if (texture.source) {
-          texture.source.autoGenerateMipmaps = true;
-          texture.source.updateMipmaps();
+        for (const tile of missing) {
+          const url = `/assets/maps/world/${manifest.worldmap}/${tile.file}`;
+          const texture = textures[url];
+
+          if (!texture || this.tileSprites.has(tile.file)) {
+            continue;
+          }
+
+          if (texture.source) {
+            texture.source.autoGenerateMipmaps = true;
+            texture.source.updateMipmaps();
+          }
+
+          const sprite = new Sprite(texture);
+          sprite.x = tile.x * manifest.tile_size;
+          sprite.y = tile.y * manifest.tile_size;
+          sprite.eventMode = "none";
+
+          this.mapContainer.addChild(sprite);
+          this.tileSprites.set(tile.file, sprite);
         }
+      })
+      .catch(() => {
+        // Tuile manquante : l'aperçu tient lieu de fond.
+      });
+  }
 
-        const sprite = new Sprite(texture);
-        sprite.x = tileInfo.x * tile_size;
-
-        const finalY = tileInfo.y * tile_size;
-        sprite.alpha = 0;
-        sprite.y = finalY + 20;
-
-        this.mapContainer.addChild(sprite);
-        animateTileSurface(sprite, finalY, 200);
-      } catch {
-        // Skip failed tiles
+  private dropTilesOutside(wanted: Set<string>): void {
+    for (const [file, sprite] of this.tileSprites) {
+      if (!wanted.has(file)) {
+        sprite.destroy({ texture: false });
+        this.tileSprites.delete(file);
       }
-    });
-
-    await Promise.all(tilePromises);
+    }
   }
 
   setViewSize(w: number, h: number): void {
     this.viewWidth = w;
     this.viewHeight = h;
+
+    if (this.worldContainer.visible) {
+      this.root.hitArea = new Rectangle(0, 0, w, h);
+    }
+  }
+
+  /** Hauteur de la barre d'outils React, qui n'appartient pas à la carte. */
+  setTopInset(px: number): void {
+    this.topInset = px;
   }
 
   private centerMap(): void {
@@ -391,17 +862,21 @@ export class WorldMapRenderer {
     // This matches the original Dofus MapExplorer zoom behavior.
     const fitScale = Math.min(
       this.viewWidth / mapPixelW,
-      this.viewHeight / mapPixelH
+      (this.viewHeight - this.topInset) / mapPixelH
     );
     this.baseScale = fitScale / WORLDMAP_CONSTANTS.MIN_ZOOM;
 
     this.currentZoom = WORLDMAP_CONSTANTS.DEFAULT_ZOOM;
 
     const scale = this.getScale();
-    const mapSize = this.manifest.grid_size * this.manifest.tile_size;
     this.worldContainer.scale.set(scale);
-    this.worldContainer.x = (this.viewWidth - mapSize * scale) / 2;
-    this.worldContainer.y = (this.viewHeight - mapSize * scale) / 2;
+    // Sur le contenu (6678 × 5184), pas sur la planche de tuiles (8192²) :
+    // centrer sur la planche décalait la vue vers le vide de droite et du bas.
+    this.worldContainer.x = (this.viewWidth - mapPixelW * scale) / 2;
+    this.worldContainer.y =
+      this.topInset + (this.viewHeight - this.topInset - mapPixelH * scale) / 2;
+    this.clampPosition();
+    setWorldMapZoom(this.currentZoom);
   }
 
   private drawGrid(): void {
@@ -451,10 +926,13 @@ export class WorldMapRenderer {
     }
   }
 
-  toggleGrid(): boolean {
-    this.showGrid = !this.showGrid;
+  setGridVisible(visible: boolean): void {
+    if (this.showGrid === visible) {
+      return;
+    }
+
+    this.showGrid = visible;
     this.drawGrid();
-    return this.showGrid;
   }
 
   private async renderHints(): Promise<void> {
@@ -469,7 +947,6 @@ export class WorldMapRenderer {
 
     const filteredHints = filterHintsByArea(
       this.hintsLayering,
-      this.mapCoordinates ?? {},
       this.enabledCategories,
       this.currentSuperarea
     );
@@ -822,113 +1299,6 @@ export class WorldMapRenderer {
     this.hintGroups.clear();
   }
 
-  private createCategoryUI(): void {
-    if (!this.hintsData) {
-      return;
-    }
-
-    this.uiContainer.removeChildren();
-
-    const panelBg = new Graphics();
-    panelBg.rect(10, 10, 250, 250);
-    panelBg.fill({ color: 0x000000, alpha: 0.7 });
-    panelBg.stroke({ color: 0x666666, width: 2 });
-    this.uiContainer.addChild(panelBg);
-
-    const title = new Text({
-      text: "Categories",
-      style: new TextStyle({
-        fontFamily: "Arial",
-        fontSize: 18,
-        fontWeight: "bold",
-        fill: 0xffffff,
-      }),
-    });
-    title.x = 20;
-    title.y = 20;
-    this.uiContainer.addChild(title);
-
-    const categoryStyle = new TextStyle({
-      fontFamily: "Arial",
-      fontSize: 14,
-      fill: 0xffffff,
-    });
-
-    this.hintsData.categories.forEach((category, index) => {
-      const yPos = 50 + index * 30;
-      const isEnabled = this.enabledCategories.has(category.id);
-
-      const checkbox = new Graphics();
-      checkbox.rect(20, yPos, 20, 20);
-
-      if (isEnabled) {
-        checkbox.fill({ color: 0x44ff44 });
-      } else {
-        checkbox.fill({ color: 0x444444 });
-      }
-
-      checkbox.stroke({ color: 0xffffff, width: 1 });
-      checkbox.interactive = true;
-      checkbox.cursor = "pointer";
-
-      checkbox.on("pointerdown", () => {
-        if (this.enabledCategories.has(category.id)) {
-          this.enabledCategories.delete(category.id);
-        } else {
-          this.enabledCategories.add(category.id);
-        }
-
-        this.renderHints();
-        this.createCategoryUI();
-      });
-
-      this.uiContainer.addChild(checkbox);
-
-      const label = new Text({
-        text: category.name,
-        style: categoryStyle,
-      });
-      label.x = 50;
-      label.y = yPos + 2;
-      this.uiContainer.addChild(label);
-
-      const colorIndicator = new Graphics();
-      colorIndicator.circle(230, yPos + 10, 6);
-      colorIndicator.fill({ color: HINT_COLORS[category.color] ?? 0xffffff });
-      this.uiContainer.addChild(colorIndicator);
-    });
-
-    // Grid toggle — below categories
-    const gridYPos = 50 + this.hintsData.categories.length * 30 + 10;
-
-    const gridCheckbox = new Graphics();
-    gridCheckbox.rect(20, gridYPos, 20, 20);
-    gridCheckbox.fill({ color: this.showGrid ? 0x44ff44 : 0x444444 });
-    gridCheckbox.stroke({ color: 0xffffff, width: 1 });
-    gridCheckbox.interactive = true;
-    gridCheckbox.cursor = "pointer";
-    gridCheckbox.on("pointerdown", () => {
-      this.toggleGrid();
-      this.createCategoryUI();
-    });
-    this.uiContainer.addChild(gridCheckbox);
-
-    const gridLabel = new Text({
-      text: "Grille",
-      style: categoryStyle,
-    });
-    gridLabel.x = 50;
-    gridLabel.y = gridYPos + 2;
-    this.uiContainer.addChild(gridLabel);
-
-    // Resize panel bg to fit
-    const totalH = gridYPos + 30 + 10;
-    panelBg.clear();
-    panelBg.rect(10, 10, 250, totalH - 10);
-    panelBg.fill({ color: 0x000000, alpha: 0.7 });
-    panelBg.stroke({ color: 0x666666, width: 2 });
-  }
-
   private showTooltip(text: string, x: number, y: number): void {
     this.tooltipText.text = text;
 
@@ -970,12 +1340,42 @@ export class WorldMapRenderer {
   show(): void {
     this.worldContainer.visible = true;
     this.uiContainer.visible = true;
+
+    // La `hitArea` couvre tout le canevas : sans ça `pointerdown` ne partirait
+    // pas hors tuile. Elle ne doit donc exister que pendant que la carte est
+    // ouverte, sinon elle avale les clics du jeu dessous.
+    this.root.eventMode = "static";
+    this.root.hitArea = new Rectangle(0, 0, this.viewWidth, this.viewHeight);
+
+    // Le listener était posé au constructeur et retiré au seul `destroy()` :
+    // une fois la carte fermée, la molette continuait de zoomer dans le vide
+    // pour le reste de la session.
+    if (this.wheelHandler) {
+      this.app.canvas?.addEventListener("wheel", this.wheelHandler, {
+        passive: false,
+      });
+    }
+
+    this.refreshVisibleTiles();
   }
 
   hide(): void {
     this.worldContainer.visible = false;
     this.uiContainer.visible = false;
     this.hideTooltip();
+    this.clearHover();
+    this.isDragging = false;
+
+    this.root.eventMode = "none";
+    this.root.hitArea = null;
+
+    if (this.wheelHandler) {
+      this.app.canvas?.removeEventListener("wheel", this.wheelHandler);
+    }
+
+    if (this.app.canvas) {
+      this.app.canvas.style.cursor = "default";
+    }
 
     // Collapse any spread group immediately (without destroying group data)
     if (this.activeGroupKey) {
@@ -1014,11 +1414,13 @@ export class WorldMapRenderer {
 
   /** Center the view on a specific map ID. */
   centerOnMapId(mapId: number): void {
-    if (!this.manifest || !this.mapCoordinates) {
+    this.playerMapId = mapId;
+
+    if (!this.manifest) {
       return;
     }
 
-    const coord = this.mapCoordinates[mapId.toString()];
+    const coord = getMapLangCoords(mapId);
 
     if (!coord) {
       return;
@@ -1034,32 +1436,110 @@ export class WorldMapRenderer {
 
     const scale = this.getScale();
     this.worldContainer.x = this.viewWidth / 2 - pixelX * scale;
-    this.worldContainer.y = this.viewHeight / 2 - pixelY * scale;
+    this.worldContainer.y =
+      (this.topInset + this.viewHeight) / 2 - pixelY * scale;
     this.clampPosition();
-    this.drawPositionMarker(pixelX, pixelY);
+    drawPositionMarker(this.positionMarker, pixelX, pixelY);
+    this.scheduleTileRefresh();
   }
 
-  private drawPositionMarker(pixelX: number, pixelY: number): void {
-    const cellW =
-      WORLDMAP_CONSTANTS.DISPLAY_WIDTH / WORLDMAP_CONSTANTS.CHUNK_SIZE;
-    const cellH =
-      WORLDMAP_CONSTANTS.DISPLAY_HEIGHT / WORLDMAP_CONSTANTS.CHUNK_SIZE;
+  /** Le bouton « Centrer sur moi » de la barre (`_btnCenterOnMe` en 1.29). */
+  centerOnPlayer(): void {
+    if (this.playerMapId !== null) {
+      this.centerOnMapId(this.playerMapId);
+    }
+  }
 
-    this.positionMarker.clear();
-    this.positionMarker.rect(
-      pixelX - cellW / 2,
-      pixelY - cellH / 2,
-      cellW,
-      cellH
-    );
-    this.positionMarker.fill({ color: 0xff0000, alpha: 0.5 });
-    this.positionMarker.stroke({ color: 0xff0000, width: 1, alpha: 0.5 });
+  // ── Pilotage depuis la barre React ──────────────────────────────────────
+
+  setTool(tool: WorldMapTool): void {
+    this.tool = tool;
+
+    if (this.app.canvas) {
+      this.app.canvas.style.cursor = this.cursorForTool();
+    }
+  }
+
+  setCategoryEnabled(categoryId: number, enabled: boolean): void {
+    const has = this.enabledCategories.has(categoryId);
+
+    if (has === enabled) {
+      return;
+    }
+
+    if (enabled) {
+      this.enabledCategories.add(categoryId);
+    } else {
+      this.enabledCategories.delete(categoryId);
+    }
+
+    void this.renderHints();
+  }
+
+  /**
+   * Les marqueurs du joueur, redessinés à chaque changement du store. Il y en a
+   * une poignée : tout refaire coûte moins cher que de diffuser.
+   */
+  private renderMarkers(): void {
+    if (!this.manifest) {
+      return;
+    }
+
+    for (const graphics of this.markerGraphics.values()) {
+      graphics.destroy();
+    }
+
+    this.markerGraphics.clear();
+
+    const { bounds } = this.manifest;
+    const { markers } = worldMapStore.getSnapshot();
+
+    for (const marker of markers) {
+      const [pixelX, pixelY] = mapCoordToPixel(
+        marker.x,
+        marker.y,
+        bounds.xMin,
+        bounds.yMin
+      );
+
+      const graphics = new Graphics();
+      drawMarkerFlag(graphics, pixelX, pixelY, marker.color);
+      graphics.eventMode = "none";
+
+      this.markersContainer.addChild(graphics);
+      this.markerGraphics.set(marker.id, graphics);
+    }
+  }
+
+  private subscribeToStore(): void {
+    let lastMarkers = worldMapStore.getSnapshot().markers;
+
+    this.storeUnsubscribe = worldMapStore.subscribe(() => {
+      const { markers } = worldMapStore.getSnapshot();
+
+      if (markers !== lastMarkers) {
+        lastMarkers = markers;
+        this.renderMarkers();
+      }
+    });
   }
 
   destroy(): void {
     if (this.wheelHandler) {
       this.app.canvas?.removeEventListener("wheel", this.wheelHandler);
+      this.wheelHandler = null;
     }
+
+    if (this.refreshHandle !== null) {
+      cancelAnimationFrame(this.refreshHandle);
+      this.refreshHandle = null;
+    }
+
+    this.storeUnsubscribe?.();
+    this.storeUnsubscribe = null;
+
+    this.root.eventMode = "none";
+    this.root.hitArea = null;
 
     this.clearHintGroups();
     this.worldContainer.destroy({ children: true, texture: false });

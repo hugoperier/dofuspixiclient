@@ -25,6 +25,7 @@ import {
   endHarvest,
   harvestingCellId,
 } from "@/game/stores/jobs-store";
+import { formatPath } from "@/utils/format-path";
 import { createLogger } from "@/utils/logger";
 
 import type { CharacterHandler, CharacterInfo } from "./character.handler";
@@ -225,6 +226,14 @@ export class MapHandler {
     }
 
     if (Date.now() - this.selfMoveSentAt > SELF_MOVE_TIMEOUT_MS) {
+      // Only a request the server refused outright — or one that never left,
+      // because `Connection.send` queued it on a dead socket — ever gets here.
+      // Either way the player spent two seconds with their clicks going
+      // nowhere, so it is worth a line rather than a silent recovery.
+      log.warn(
+        `self-move timed out after ${SELF_MOVE_TIMEOUT_MS} ms with no echo ` +
+          `— releasing the click lock`
+      );
       this.selfMoveSentAt = null;
       return false;
     }
@@ -457,6 +466,12 @@ export class MapHandler {
 
       // A map change ends any move the old map still owed an ack for —
       // the server teleported us, so nothing is in flight any more.
+      if (this.selfMoveSentAt !== null || this.isMoving) {
+        log.debug(
+          `map ${oldMapId} → ${mapId} cleared a live move ` +
+            `(inFlight=${this.selfMoveSentAt !== null} animating=${this.isMoving})`
+        );
+      }
       this.selfMoveSentAt = null;
       this.selfMoveInterrupted = false;
       this.truncateNextSelfPath = false;
@@ -599,6 +614,10 @@ export class MapHandler {
     if (isSelf && this.truncateNextSelfPath) {
       this.truncateNextSelfPath = false;
       path = rawPath.slice(0, 2);
+      log.debug(
+        `echoed path cut to its first step: ${rawPath.length} → 2 cell(s) ` +
+          `(interrupted before the server echoed it back)`
+      );
     }
 
     if (isSelf && path.length > 0) {
@@ -615,7 +634,32 @@ export class MapHandler {
 
     const battlefield = this.getBattlefield();
 
+    // Bracketing the animation, because everything this method commits it
+    // commits *after* the await — the landing cell, `isMoving`, and the ack.
+    // A `handleMapData` that lands in that window resets the same flags and
+    // swaps `currentMapId` underneath us, and what wakes up here then writes a
+    // cell belonging to the previous map and acks an action the server has
+    // already replaced. Comparing the two map ids is what makes that visible
+    // rather than merely suspected.
+    const mapAtStart = this.currentMapId;
+
+    if (isSelf && path.length > 0) {
+      log.debug(
+        `walk start seq=${sequenceId} map=${mapAtStart} ` +
+          `${path.length - 1} step(s) ${path[0]} → ${path[path.length - 1]} ` +
+          `path=${formatPath(path)}`
+      );
+    }
+
     await battlefield?.moveWorldActor(numeric, path);
+
+    if (isSelf && path.length > 0 && this.currentMapId !== mapAtStart) {
+      log.warn(
+        `walk finished on a different map than it started: ` +
+          `seq=${sequenceId} start=${mapAtStart} now=${this.currentMapId} — ` +
+          `the landing cell and the ack below belong to the old map`
+      );
+    }
 
     if (isSelf && path.length > 0) {
       // Where the sprite actually stands, which is not always the last
@@ -631,6 +675,13 @@ export class MapHandler {
 
       this.currentCellId = landedCell;
       this.isMoving = false;
+      log.debug(
+        `walk end seq=${sequenceId} map=${this.currentMapId} ` +
+          `cell=${landedCell} interrupted=${interrupted}` +
+          (landedCell === path[path.length - 1]
+            ? ""
+            : ` (expected ${path[path.length - 1]})`)
+      );
       this.characterHandler.setMapPosition(
         this.currentMapId ?? 0,
         this.currentCellId

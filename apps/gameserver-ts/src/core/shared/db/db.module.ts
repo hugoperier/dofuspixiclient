@@ -32,7 +32,13 @@ export class KyselyInstanceModule implements OnModuleDestroy {
 @Module({
   imports: [
     KyselyInstanceModule,
+    // `global: true` so `ClsService` can be injected outside this module —
+    // `WsRouter` opens a CLS context per inbound frame to carry the session
+    // into every log line underneath it. Without it, only the transactional
+    // plugin (which reaches CLS through its own module) could see the store,
+    // and the router's constructor cannot be resolved at all.
     ClsModule.forRoot({
+      global: true,
       plugins: [
         new ClsPluginTransactional({
           imports: [KyselyInstanceModule],
