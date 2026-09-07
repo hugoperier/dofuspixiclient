@@ -275,6 +275,28 @@ issues-check:
     @cd "{{root}}" && bun run scripts/issues.ts --check
 
 # =============================================================================
+# Journaux
+# =============================================================================
+#
+# `scripts/dev.sh` tee les processus dans $DOFUS_LOG_DIR (défaut
+# /tmp/dofus-logs) ; le navigateur y ajoute client.log via le plugin Vite
+# `clientLogSinkPlugin`, alimenté par src/utils/log-shipper.ts.
+# Voir doc/logging.md.
+
+# Suit les journaux en direct, préfixés par processus.
+logs:
+    @cd "{{root}}" && bun run scripts/logs.ts --follow
+
+# Les N dernières minutes des journaux, fusionnées et triées — le fichier à transmettre.
+logs-bundle minutes="10":
+    @cd "{{root}}" && bun run scripts/logs.ts --bundle {{minutes}}
+
+# Efface les journaux et leur génération de rotation.
+logs-clear:
+    @rm -f "${DOFUS_LOG_DIR:-/tmp/dofus-logs}"/*.log "${DOFUS_LOG_DIR:-/tmp/dofus-logs}"/*.log.1
+    @echo "journaux effacés"
+
+# =============================================================================
 # UI Builder
 # =============================================================================
 

@@ -43,9 +43,15 @@ export class MoveAckHandler {
 
   @MessageHandler(GameActionAckSchema)
   async handle(ctx: HandlerContext, msg: GameActionAck): Promise<void> {
+    // `take` is get-and-delete, and it runs before the id check below: an
+    // ack that names the wrong action destroys the pending move on its way
+    // out. That is worth knowing when a character ends up frozen.
     const move = this.pending.take(ctx.sessionId);
 
     if (!move) {
+      this.logger.debug(
+        `ack ${msg.actionId} arrived with no move pending on this session`
+      );
       return;
     }
 
@@ -70,6 +76,15 @@ export class MoveAckHandler {
           `committing destination ${move.endCell} instead`
       );
     }
+
+    this.logger.debug(
+      `ack ${move.actionId} committed cell=${landing.cell} ` +
+        `dir=${landing.direction} map=${move.mapId} ` +
+        `isAck=${msg.isAck}` +
+        (landing.cell === move.endCell
+          ? ""
+          : ` (destination was ${move.endCell})`)
+    );
 
     this.presence.updatePosition(
       move.characterId,

@@ -1,6 +1,8 @@
-import { createActor, assign, setup } from "xstate";
+import { assign, createActor, setup } from "xstate";
 
 import type { SpellEntry } from "@/game/stores/spells-store";
+
+import { traceInspector } from "./trace-inspector";
 
 /**
  * Spell-cast UX flow — the single driver of what the HUD shows and what
@@ -108,9 +110,7 @@ export const spellCastMachine = setup({
       event.type === "TARGET_CELL" ? { targetCellId: event.cellId } : {}
     ),
     applyRejection: assign(({ event }) =>
-      event.type === "SERVER_REJECTED"
-        ? { rejectionReason: event.reason }
-        : {}
+      event.type === "SERVER_REJECTED" ? { rejectionReason: event.reason } : {}
     ),
     reset: assign(() => ({ ...initialContext })),
   },
@@ -178,5 +178,7 @@ export type SpellCastMachine = typeof spellCastMachine;
  * import time so stores and the composition root can subscribe without
  * plumbing an actor reference everywhere.
  */
-export const spellCastActor = createActor(spellCastMachine);
+export const spellCastActor = createActor(spellCastMachine, {
+  inspect: traceInspector("spellCast"),
+});
 spellCastActor.start();

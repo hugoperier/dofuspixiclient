@@ -1,8 +1,13 @@
 import type { ConnectionConfig, ConnectionState } from "@/game/types";
+import { getClientId } from "@/utils/client-id";
 import { createLogger } from "@/utils/logger";
 
 import { isTerminalClose, WS_CLOSE_NORMAL } from "./close-codes";
-import { type DofusMessage, decodeServer } from "./protocol";
+import {
+  type DofusMessage,
+  decodeServer,
+  describeClientFrame,
+} from "./protocol";
 
 const log = createLogger("Connection");
 
@@ -31,6 +36,31 @@ const DEFAULT_CONFIG: Required<ConnectionConfig> = {
 // nothing else, which is the zombie session QA-046 is about.
 function isRetryable(code: number): boolean {
   return code !== WS_CLOSE_NORMAL && !isTerminalClose(code);
+}
+
+/**
+ * Hangs this tab's `clientId` off the WebSocket URL.
+ *
+ * The gateway logs it once beside the `sessionId` it mints, which is the only
+ * thing that lets a client log line and a server log line about the same click
+ * be recognised as the same event — nothing on the wire carries a correlation
+ * id, and the `sessionId` never travels back to the client.
+ *
+ * It has to survive the authd → gamed pivot, so it is applied on every
+ * `connect()` rather than once at construction.
+ */
+function withClientId(url: string): string {
+  try {
+    const parsed = new URL(url);
+
+    parsed.searchParams.set("clientId", getClientId());
+
+    return parsed.toString();
+  } catch {
+    // A URL the parser refuses is one the WebSocket will refuse too; hand it
+    // back untouched and let the socket produce the real error.
+    return url;
+  }
 }
 
 export class Connection {
@@ -93,7 +123,7 @@ export class Connection {
     this.clearReconnectTimer();
 
     try {
-      this.socket = new WebSocket(this.config.url);
+      this.socket = new WebSocket(withClientId(this.config.url));
       this.socket.binaryType = "arraybuffer";
       this.socket.onopen = this.handleOpen.bind(this);
       this.socket.onclose = this.handleClose.bind(this);
@@ -120,14 +150,26 @@ export class Connection {
 
   send(data: Uint8Array): boolean {
     if (!this.socket || !this.isConnected()) {
+      // Queued, not sent — and callers routinely discard the return value.
+      // `GameClient.move` in particular marks the move in flight *before*
+      // calling this, so a queued frame leaves the client believing it is
+      // walking while nothing left the machine; only the 2 s timeout in
+      // `MapHandler.isSelfMoveInFlight` then frees it. Worth a line every
+      // time, not a trace channel.
       this.messageQueue.push(data);
+      log.warn(
+        `send queued (socket ${this.state}): ${data.byteLength} B, ` +
+          `${this.messageQueue.length} frame(s) waiting`
+      );
       return false;
     }
 
     try {
       this.socket.send(data);
+      log.trace("net", () => `→ ${describeClientFrame(data)}`);
       return true;
-    } catch {
+    } catch (e) {
+      log.error("send failed:", e);
       return false;
     }
   }
@@ -165,10 +207,11 @@ export class Connection {
 
   private handleMessage(event: MessageEvent): void {
     try {
-      this.emit({
-        type: "message",
-        message: decodeServer(event.data as ArrayBuffer),
-      });
+      const message = decodeServer(event.data as ArrayBuffer);
+
+      log.trace("net", () => `← ${message.payload.case ?? "?"}`);
+
+      this.emit({ type: "message", message });
     } catch (e) {
       log.error("Failed to decode message:", e);
     }

@@ -152,10 +152,49 @@ if [ "$RUN_SEED" = "1" ]; then say "seed"; $JUST db-seed; fi
 PIDS=""
 NAMES=""
 
+# Journaux sur disque. Sans ça, un bug qui apparaît au bout de vingt minutes de
+# jeu a déjà quitté le scrollback quand on veut le comprendre : le seul fichier
+# qui existait était celui du gateway, et uniquement en mode TTY (`just gateway`
+# à part), donc jamais sous `just dev`.
+#
+# Le client écrit dans le même dossier — pas par ce script, mais par le plugin
+# `clientLogSinkPlugin` du serveur de dev Vite, que le shipper du navigateur
+# alimente. Les quatre journaux sont donc côte à côte, et `just logs-bundle` les
+# entrelace par horodatage.
+LOGDIR="${DOFUS_LOG_DIR:-/tmp/dofus-logs}"
+export DOFUS_LOG_DIR="$LOGDIR"
+mkdir -p "$LOGDIR"
+
+# Une génération de rotation : le run précédent reste consultable pendant qu'on
+# rejoue le bug, celui d'avant ne sert plus à rien.
+for f in gateway gamed authd vite client; do
+  if [ -f "$LOGDIR/$f.log" ]; then
+    mv -f "$LOGDIR/$f.log" "$LOGDIR/$f.log.1"
+  fi
+done
+
+# Le gateway a son propre logger pino ; on le fait écrire dans le même dossier
+# plutôt que dans son défaut historique.
+export GATEWAY_LOG_FILE="${GATEWAY_LOG_FILE:-$LOGDIR/gateway.log}"
+
 # start <nom> <couleur> <dossier> <commande...>
 start() {
   local name="$1" color="$2" dir="$3"
   shift 3
+  # Quel fichier reçoit ce processus.
+  #
+  #   client  → vite.log. `client` ici, c'est le serveur de dev Vite, pas le
+  #             jeu ; `client.log` appartient au navigateur, alimenté par le
+  #             plugin `clientLogSinkPlugin`. Deux écrivains sur un même
+  #             fichier entrelaceraient du NDJSON et des lignes de Vite.
+  #   gateway → rien. Il écrit lui-même son JSON dans gateway.log via pino
+  #             (GATEWAY_LOG_FILE, exporté plus haut) ; ce qu'il met sur stdout
+  #             est du pino-pretty colorisé, illisible à la relecture.
+  local logfile="$LOGDIR/$name.log"
+  case "$name" in
+    client)  logfile="$LOGDIR/vite.log" ;;
+    gateway) logfile="" ;;
+  esac
   (
     cd "$ROOT/$dir"
     # stdin sur /dev/null, obligatoire : le gateway lance une TUI Ink quand
@@ -164,9 +203,18 @@ start() {
     # toujours :8080 mais ne répond plus, et le client tourne en "connecting"
     # à l'infini. Sans TTY il saute la TUI et log en clair sur stdout, ce qui
     # est exactement ce qu'on veut ici. Pour la TUI : `just gateway` à part.
-    "$@" </dev/null 2>&1 | while IFS= read -r line; do
-      printf '%s%-8s%s %s\n' "$color" "$name" "$RESET" "$line"
-    done
+    # `tee` AVANT la boucle de préfixage : elle injecte des codes ANSI, qui
+    # n'ont rien à faire dans un fichier qu'on relira au grep. Le terminal, lui,
+    # garde exactement l'affichage d'avant.
+    if [ -n "$logfile" ]; then
+      "$@" </dev/null 2>&1 | tee -a "$logfile" | while IFS= read -r line; do
+        printf '%s%-8s%s %s\n' "$color" "$name" "$RESET" "$line"
+      done
+    else
+      "$@" </dev/null 2>&1 | while IFS= read -r line; do
+        printf '%s%-8s%s %s\n' "$color" "$name" "$RESET" "$line"
+      done
+    fi
   ) &
   PIDS="$PIDS $!"
   NAMES="$NAMES $name"

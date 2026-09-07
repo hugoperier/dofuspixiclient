@@ -99,6 +99,48 @@ with the most walkable edge cells picks the *house*, not the street. If you
 hit this again on some position, the fix is an explicit override rather than
 another heuristic.
 
+### A bug appeared mid-session and you want it diagnosed
+
+Everything the five processes logged is already on disk, in `/tmp/dofus-logs`
+(`$DOFUS_LOG_DIR`). Nothing has to be armed in advance, and there is nothing to
+do at the moment the bug happens — the browser pushes its ring buffer to disk
+every two seconds.
+
+In a second terminal, **without stopping `scripts/dev.sh`**:
+
+```bash
+bunx just logs-bundle 10        # the last 10 minutes, all sources on one timeline
+```
+
+It prints the path of one file. Hand over that path, plus a sentence about what
+you were doing — "I clicked the north edge of the map, the character walked the
+other way". The bundle interleaves the browser, the gateway and both cores by
+timestamp, so a click and the server's answer to it read as consecutive lines,
+and a single `clientId` ties the two sides together.
+
+Widen the window (`bunx just logs-bundle 30`) if the bug happened further back.
+
+**If the run has already been stopped and restarted.** Still recoverable: each
+start rotates one generation, so the previous session is in
+`/tmp/dofus-logs/*.log.1`. `logs-bundle` does not read those — point at them by
+hand.
+
+**If the bug is reproducible.** Arm the verbose channels first and reproduce it
+once, which adds the frame-by-frame detail:
+
+```
+http://localhost:5173/?trace=net,move
+```
+
+**If `client.log` is missing or empty.** The log sink is a middleware on the
+Vite dev server, so it only collects from the browser client on :5173. Under
+the Electrobun shell (`bunx just client`) there is no sink and the entries stay
+in memory — type `__dumpLogs()` in the console and hand over the result
+instead.
+
+See [logging.md](logging.md) for the channels, the other console handles, and
+the list of log lines that each mean something specific went wrong.
+
 ### The character crosses to the next map but is then stuck
 
 Fixed, but worth knowing why: both halves of the edge transition assumed the

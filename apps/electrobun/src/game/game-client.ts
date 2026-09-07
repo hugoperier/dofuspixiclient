@@ -103,6 +103,7 @@ import {
 import { spellsStore, tickCooldowns } from "@/game/stores/spells-store";
 import { BOOST_WIRE_STAT_IDS } from "@/game/types/stats";
 import { HoverPreview } from "@/hud/fight/hover-preview";
+import { formatPath } from "@/utils/format-path";
 import { createLogger } from "@/utils/logger";
 
 const LOST_CAUSE: Record<number, LostCause> = {
@@ -1272,11 +1273,19 @@ export class GameClient {
     // owns the character, and a click in that window interrupts it
     // rather than racing a second request against it.
     this.mapHandler.markSelfMoveSent();
-    this.connection.send(
+    const sent = this.connection.send(
       encodeClient(
         "gameAction",
         create(GameActionRequestSchema, { actionType: 1, params })
       )
+    );
+
+    // The whole path, not just its ends: a walk that visibly crosses half the
+    // map is either a path the client computed that way or one the server sent
+    // back that way, and only printing both ends makes the two look alike.
+    log.debug(
+      `move sent=${sent} ${path.length - 1} step(s) ` +
+        `${path[0]} → ${path[path.length - 1]} path=${formatPath(path)}`
     );
   }
 
@@ -2046,10 +2055,21 @@ export class GameClient {
     const currentCellId = this.mapHandler.getCurrentCellId();
     const pathfinding = this.mapHandler.getPathfinding();
     if (currentCellId === null || !pathfinding) {
+      // Used to be a bare `return`, and it is one of the two ways a click can
+      // do nothing at all with nothing said about it. Both are reachable while
+      // a map is still loading, which is when clicks feel dead.
+      log.debug(
+        `cell-click dropped: currentCell=${currentCellId} ` +
+          `pathfinding=${pathfinding !== null} map=${this.mapHandler.getCurrentMapId()}`
+      );
       return;
     }
     const path = pathfinding.findPath(currentCellId, targetCellId);
     if (!path || path.length < 2) {
+      log.debug(
+        `cell-click dropped: no path ${currentCellId} → ${targetCellId} ` +
+          `(found ${path?.length ?? 0} cell(s))`
+      );
       return;
     }
     log.debug(`Moving: ${currentCellId} → ${targetCellId}`);

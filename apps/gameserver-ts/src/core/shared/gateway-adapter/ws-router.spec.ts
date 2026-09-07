@@ -12,7 +12,9 @@ import { Injectable } from "@nestjs/common";
 import { DiscoveryModule } from "@nestjs/core";
 import { Test } from "@nestjs/testing";
 import { MessageHandler } from "@shared/gateway-adapter/message-handler.decorator";
+import { SessionRegistry } from "@shared/gateway-adapter/session-registry";
 import { WsRouter } from "@shared/gateway-adapter/ws-router";
+import { ClsModule } from "nestjs-cls";
 
 const identityHandler = mock(() => {});
 const serversHandler = mock(() => {});
@@ -30,11 +32,25 @@ class TestHandlers {
   }
 }
 
-async function buildModule() {
+// The router opens a CLS context per frame so that every line logged
+// underneath carries the session; the registry is how it learns the character
+// on that session. Neither changes dispatch, so the double is the empty
+// answer.
+const noSessions = { get: () => undefined };
+
+function buildModuleWith(providers: unknown[]) {
   return Test.createTestingModule({
-    imports: [DiscoveryModule],
-    providers: [WsRouter, TestHandlers],
+    imports: [DiscoveryModule, ClsModule.forRoot()],
+    providers: [
+      WsRouter,
+      { provide: SessionRegistry, useValue: noSessions },
+      ...(providers as never[]),
+    ],
   }).compile();
+}
+
+async function buildModule() {
+  return buildModuleWith([TestHandlers]);
 }
 
 describe("WsRouter", () => {
@@ -102,10 +118,7 @@ describe("WsRouter", () => {
 
     identityHandler.mockClear();
 
-    const mod = await Test.createTestingModule({
-      imports: [DiscoveryModule],
-      providers: [WsRouter, TestHandlers, SecondIdentityHandlers],
-    }).compile();
+    const mod = await buildModuleWith([TestHandlers, SecondIdentityHandlers]);
     await mod.init();
 
     const router = mod.get(WsRouter);

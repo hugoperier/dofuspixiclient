@@ -4,6 +4,7 @@ import {
   type FighterSnapshot,
   fightMachine,
 } from "@/game/machines/fight.machine";
+import { traceInspector } from "@/game/machines/trace-inspector";
 
 import { ExternalStore } from "./game-store";
 
@@ -51,7 +52,10 @@ const initialState: FightState = {
  * fightStore projects a denormalized snapshot for legacy useSyncExternalStore
  * consumers. New consumers should useSelector on fightActor directly.
  */
-export const fightActor: Actor<typeof fightMachine> = createActor(fightMachine);
+export const fightActor: Actor<typeof fightMachine> = createActor(
+  fightMachine,
+  { inspect: traceInspector("fight") }
+);
 
 export const fightStore = new ExternalStore<FightState>(initialState);
 
