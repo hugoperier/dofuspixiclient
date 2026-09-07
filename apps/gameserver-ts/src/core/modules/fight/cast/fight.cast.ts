@@ -14,14 +14,16 @@ import type {
   Emitter,
   Scope,
 } from "@modules/fight/effects/fight.effect-registry";
+import { castGeometryError } from "@dofus/grid";
 import { CastError } from "@modules/fight/cast/fight.cast.types";
 import { isValidTarget } from "@modules/fight/effects/fight.target-mask";
-import { StateName } from "@modules/fight/fight.types";
 import {
-  cellsInArea,
-  distance,
-  hasLineOfSight,
-} from "@modules/fight/map/fight.area";
+  Characteristic,
+  type FightStateId,
+  StateName,
+} from "@modules/fight/fight.types";
+import { cellsInArea } from "@modules/fight/map/fight.area";
+import { combatUnavailableReason } from "@modules/spells/spells.combat-data";
 
 export type {
   CastResolution,
@@ -33,6 +35,7 @@ export type { TeamSide } from "@modules/fight/fight.types";
 export { CastError } from "@modules/fight/cast/fight.cast.types";
 
 export class CastSpellUseCase {
+  private readonly applied = new WeakSet<CastResolution>();
   constructor(
     private registry: FightRegistry,
     private spells: SpellPort,
@@ -72,7 +75,17 @@ export class CastSpellUseCase {
       throw new CastError("not_your_turn", "not your turn");
     }
 
-    const { spellId, targetCell, level } = parseCastParams(params);
+    const { spellId, targetCell } = parseCastParams(params);
+    if (!caster.player) {
+      throw new CastError("no_spell", "Personnage introuvable.");
+    }
+    const level = await this.spells.playerSpellRank(
+      String(caster.player.id),
+      spellId
+    );
+    if (!level) {
+      throw new CastError("no_spell", "Ce sort n’est pas appris.");
+    }
     return this.resolveCast(fight, active, caster, spellId, targetCell, level);
   }
 
@@ -148,54 +161,27 @@ export class CastSpellUseCase {
     targetCell: number,
     level: number
   ): Promise<CastResolution> {
+    const epoch = fight.turnEpoch;
     const spell = await this.spells.spellLevel(spellId, level);
     if (!spell) {
       throw new CastError("no_spell", "spell not learned / unknown");
     }
 
-    // Verify player knows this spell
-    if (caster.player && this.spells.playerHasSpell) {
-      const knows = await this.spells.playerHasSpell(
-        String(caster.player.id),
-        spellId
-      );
-      if (!knows) {
-        throw new CastError("no_spell", "spell not learned");
+    const reason =
+      spell.combatUnavailableReason ||
+      combatUnavailableReason([...spell.effects, ...spell.criticalEffects]);
+    if (reason) {
+      throw new CastError("unsupported_spell", reason);
+    }
+    for (const effect of [...spell.effects, ...spell.criticalEffects]) {
+      if (effect.id !== 666 && !this.effects.handler(effect.id)) {
+        throw new CastError(
+          "unsupported_spell",
+          `Effet ${effect.id} indisponible.`
+        );
       }
     }
-
-    if (caster.ap < spell.apCost) {
-      throw new CastError("no_ap", "not enough AP");
-    }
-
-    const dist = distance(fight.fightMap, caster.cell, targetCell);
-    if (dist < spell.rangeMin || dist > spell.rangeMax) {
-      throw new CastError("out_of_range", "target out of range");
-    }
-    if (
-      spell.lineOfSight &&
-      !hasLineOfSight(fight.fightMap, caster.cell, targetCell)
-    ) {
-      throw new CastError("no_los", "target not in line of sight");
-    }
-
-    if (spell.castPerTurn > 0 || spell.castPerTarget > 0) {
-      const targetFighter = fight
-        .fighters()
-        .find((f) => !f.dead && f.cell === targetCell);
-      const targetId = targetFighter?.id ?? 0;
-      if (
-        !fight.spellUsage.canCast(
-          caster.id,
-          spellId,
-          targetId,
-          spell.castPerTurn,
-          spell.castPerTarget
-        )
-      ) {
-        throw new CastError("cooldown", "spell cast limit reached");
-      }
-    }
+    this.validate(fight, active, caster, spell, targetCell, epoch);
 
     const castCtx: CastContext = {
       caster,
@@ -208,12 +194,22 @@ export class CastSpellUseCase {
       throw new CastError("no_spell", "spell blocked by module");
     }
 
+    const baseCrit = Math.max(
+      2,
+      spell.criticalRate - caster.stats.get(Characteristic.CriticalHit)
+    );
+    const agility = Math.max(0, caster.stats.get(Characteristic.Agility));
+    const critRate = Math.max(
+      2,
+      Math.floor(
+        Math.min(baseCrit, (baseCrit * Math.E * 1.1) / Math.log(agility + 12))
+      )
+    );
     const critical =
-      spell.criticalRate > 0 &&
-      Math.floor(Math.random() * spell.criticalRate) === 0;
+      spell.criticalRate > 0 && Math.floor(fight.random() * critRate) === 0;
     const failure =
       spell.failureRate > 0 &&
-      Math.floor(Math.random() * spell.failureRate) === 0;
+      Math.floor(fight.random() * spell.failureRate) === 0;
     castCtx.critical = critical;
 
     // Pre-resolve trigger spells for glyph/trap/summon effects. These
@@ -225,12 +221,11 @@ export class CastSpellUseCase {
     //
     // The trigger is loaded at the level of the spell being cast, not at
     // level 1: a Glyphe Enflammé cast at rank 5 must burn for rank 5.
-    // Trigger spells mirror their parent's level range, and the loader
-    // falls back to level 1 when a rank is missing from the data.
+    // A missing trigger rank rejects the whole cast.
     const effects = critical ? spell.criticalEffects : spell.effects;
     const triggerCache = new Map<number, SpellLevel>();
     for (const eff of effects) {
-      const isSpawn = eff.id === 400 || eff.id === 401 || eff.id === 185;
+      const isSpawn = eff.id === 400 || eff.id === 401;
       if (!isSpawn) {
         continue;
       }
@@ -238,15 +233,25 @@ export class CastSpellUseCase {
       if (triggerId <= 0 || triggerCache.has(triggerId)) {
         continue;
       }
-      const lvl =
-        (await this.spells.spellLevel(triggerId, spell.level)) ??
-        (await this.spells.spellLevel(triggerId, 1));
-      if (lvl) {
-        triggerCache.set(triggerId, lvl);
+      const lvl = await this.spells.spellLevel(triggerId, spell.level);
+      if (
+        !lvl ||
+        lvl.combatUnavailableReason ||
+        lvl.effects.length === 0 ||
+        lvl.effects.some((effect) => effect.id < 96 || effect.id > 100)
+      ) {
+        throw new CastError(
+          "unsupported_spell",
+          "Les effets déclenchés de ce sort sont indisponibles."
+        );
       }
+      triggerCache.set(triggerId, lvl);
     }
 
+    this.validate(fight, active, caster, spell, targetCell, epoch);
     return {
+      turnEpoch: epoch,
+      targetId: lookupFighterAt(fight, targetCell)?.id ?? -targetCell - 1,
       fight,
       active,
       caster,
@@ -259,6 +264,93 @@ export class CastSpellUseCase {
       triggerCache,
       castCtx,
     };
+  }
+
+  private validate(
+    fight: Fight,
+    active: ActiveState,
+    caster: Fighter,
+    spell: SpellLevel,
+    targetCell: number,
+    epoch: number
+  ): void {
+    if (
+      fight.ending ||
+      fight.state !== active ||
+      fight.turnEpoch !== epoch ||
+      caster.dead ||
+      active.turnList.current()?.id !== caster.id
+    ) {
+      throw new CastError("not_your_turn", "Ce n’est pas votre tour.");
+    }
+    if (caster.player && caster.level < spell.minPlayerLevel) {
+      throw new CastError("no_spell", "Niveau insuffisant.");
+    }
+    if (caster.ap < spell.apCost) {
+      throw new CastError("no_ap", "Pas assez de PA.");
+    }
+    const geometry = castGeometryError(
+      fight.fightMap,
+      caster.cell,
+      targetCell,
+      {
+        ...spell,
+        rangeBonus: caster.stats.get(Characteristic.Range),
+      }
+    );
+    if (geometry) {
+      throw new CastError(geometry, "Cellule hors portée, occupée ou masquée.");
+    }
+    if (spell.emptyCell && !fight.fightMap.isWalkable(targetCell)) {
+      throw new CastError("bad_cell", "Cellule impraticable.");
+    }
+    const target = lookupFighterAt(fight, targetCell);
+    if (
+      spell.effects.some((effect) => effect.id === 4) &&
+      (!fight.fightMap.isFree(targetCell) ||
+        !fight.fightMap.isWalkable(targetCell))
+    ) {
+      throw new CastError("bad_target", "Destination indisponible.");
+    }
+    if (
+      spell.effects.some((effect) => effect.id === 8) &&
+      (!target || target === caster)
+    ) {
+      throw new CastError("bad_target", "Cible indisponible.");
+    }
+    if (spell.spellId === 438 && (!target || target.team !== caster.team)) {
+      throw new CastError("bad_target", "Transposition nécessite un allié.");
+    }
+    if (spell.spellId === 445 && (!target || target.team === caster.team)) {
+      throw new CastError("bad_target", "Coopération nécessite un ennemi.");
+    }
+    for (const state of spell.requiredStates ?? []) {
+      if (!caster.states.has(state as FightStateId)) {
+        throw new CastError("required_state", "État requis absent.");
+      }
+    }
+    for (const state of spell.forbiddenStates ?? []) {
+      if (caster.states.has(state as FightStateId)) {
+        throw new CastError(
+          "forbidden_state",
+          "État incompatible avec ce sort."
+        );
+      }
+    }
+    if (
+      !fight.spellUsage.canCast(
+        caster.id,
+        spell.spellId,
+        target?.id ?? -targetCell - 1,
+        spell.castPerTurn,
+        spell.castPerTarget
+      )
+    ) {
+      throw new CastError(
+        "cooldown",
+        "Délai de relance ou limite de lancers atteint."
+      );
+    }
   }
 
   private runApply(resolution: CastResolution): CastResult {
@@ -276,7 +368,25 @@ export class CastSpellUseCase {
       castCtx,
     } = resolution;
 
+    if (this.applied.has(resolution)) {
+      throw new CastError("already_applied", "Action déjà résolue.");
+    }
+    this.validate(
+      fight,
+      active,
+      caster,
+      spell,
+      targetCell,
+      resolution.turnEpoch
+    );
+    this.applied.add(resolution);
     caster.spendAp(spell.apCost);
+    fight.spellUsage.recordCast(
+      caster.id,
+      spellId,
+      resolution.targetId,
+      spell.cooldown
+    );
 
     const result: CastResult = {
       fight,
@@ -299,7 +409,7 @@ export class CastSpellUseCase {
     for (const eff of effects) {
       if (
         eff.probability > 0 &&
-        Math.floor(Math.random() * 100) >= eff.probability
+        Math.floor(fight.random() * 100) >= eff.probability
       ) {
         continue;
       }
@@ -375,6 +485,7 @@ export class CastSpellUseCase {
           caster,
           target: targetFighter,
           targetCell: cell,
+          castTargetCell: targetCell,
           effect: eff,
           spell,
           critical,
@@ -384,12 +495,6 @@ export class CastSpellUseCase {
         handler(scope);
       }
     }
-
-    const targetFighter = fight
-      .fighters()
-      .find((f) => !f.dead && f.cell === targetCell);
-    const targetId = targetFighter?.id ?? 0;
-    fight.spellUsage.recordCast(caster.id, spellId, targetId);
 
     for (const fighter of fight.fighters()) {
       if (!fighter.dead) {
@@ -431,17 +536,17 @@ function parseCastParams(params: string): {
   if (parts.length < 2) {
     throw new CastError("bad_params", "malformed params");
   }
-  const spellId = Number.parseInt(parts[0] ?? "", 10);
-  const targetCell = Number.parseInt(parts[1] ?? "", 10);
-  if (Number.isNaN(spellId) || Number.isNaN(targetCell)) {
-    throw new CastError("bad_params", "malformed params");
+  if (
+    parts.length > 3 ||
+    !/^\d+$/.test(parts[0] ?? "") ||
+    !/^\d+$/.test(parts[1] ?? "")
+  ) {
+    throw new CastError("bad_params", "Paramètres de sort invalides.");
   }
-  let level = 1;
-  if (parts.length >= 3) {
-    const lvl = Number.parseInt(parts[2] ?? "", 10);
-    if (!Number.isNaN(lvl) && lvl > 0) {
-      level = lvl;
-    }
+  const spellId = Number(parts[0]);
+  const targetCell = Number(parts[1]);
+  if (!Number.isSafeInteger(spellId) || !Number.isSafeInteger(targetCell)) {
+    throw new CastError("bad_params", "Paramètres de sort invalides.");
   }
-  return { spellId, targetCell, level };
+  return { spellId, targetCell, level: 1 };
 }

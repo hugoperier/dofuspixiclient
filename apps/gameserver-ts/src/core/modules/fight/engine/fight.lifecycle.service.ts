@@ -4,25 +4,22 @@ import {
   GameStartToPlaySchema,
   GameTurnFinishSchema,
   GameTurnListSchema,
-  GameTurnMiddleSchema,
   GameTurnStartSchema,
   GameZoneData_Operation,
   GameZoneDataSchema,
-  TurnMiddleEntrySchema,
 } from "@dofus/proto/game_pb";
 import { DofusMessageSchema } from "@dofus/proto/server_messages_pb";
-import { CastSpellUseCase } from "@modules/fight/cast/fight.cast";
 import { ActiveState } from "@modules/fight/core/fight.active-state";
-import { EffectRegistry } from "@modules/fight/effects/fight.effect-registry";
 import { MonsterAI } from "@modules/fight/engine/fight.ai";
 import { FightEndService } from "@modules/fight/engine/fight.end.service";
-import { FightFrameEmitter } from "@modules/fight/engine/fight.frame-emitter";
 import { Runner } from "@modules/fight/engine/fight.runner";
+import { StateName } from "@modules/fight/fight.types";
 import { FightRegistryService } from "@modules/fight/registry/fight.registry";
-import { SpellsService } from "@modules/spells/spells.service";
 import { Injectable, Logger } from "@nestjs/common";
 import { GatewayFrameService } from "@shared/gateway-adapter/gateway-frame.service";
 import { match } from "ts-pattern";
+
+import { FightActionsService } from "./fight.actions.service";
 
 @Injectable()
 export class FightLifecycleService {
@@ -31,13 +28,15 @@ export class FightLifecycleService {
   constructor(
     private readonly fightRegistry: FightRegistryService,
     private readonly fightEnd: FightEndService,
-    private readonly spells: SpellsService,
-    private readonly effectRegistry: EffectRegistry,
-    private readonly frameEmitter: FightFrameEmitter,
-    private readonly frames: GatewayFrameService
+    private readonly frames: GatewayFrameService,
+    private readonly actions: FightActionsService
   ) {}
 
   startFight(fight: Fight): void {
+    if (fight.ending || fight.state.name !== StateName.Placement) {
+      return;
+    }
+    fight.cancelPlacementTimer();
     const targets = this.fightSessions(fight);
 
     // GS — Game Start
@@ -55,62 +54,29 @@ export class FightLifecycleService {
     const active = new ActiveState();
     fight.transition(active);
 
-    // GTL — Turn list
-    this.frames.broadcast(
-      targets,
-      create(DofusMessageSchema, {
-        payload: {
-          case: "gameTurnList",
-          value: create(GameTurnListSchema, {
-            spriteIds: active.turnList.fighters().map((f) => String(f.id)),
-          }),
-        },
-      })
-    );
-
-    // GTM — Fighter stats snapshot
-    this.frames.broadcast(
-      targets,
-      create(DofusMessageSchema, {
-        payload: {
-          case: "gameTurnMiddle",
-          value: create(GameTurnMiddleSchema, {
-            entries: fight.fighters().map((f) =>
-              create(TurnMiddleEntrySchema, {
-                spriteId: String(f.id),
-                isDead: f.dead,
-                lp: f.lp,
-                ap: f.ap,
-                mp: f.mp,
-                cellNum: f.cell,
-                lpMax: f.lpMax,
-              })
-            ),
-          }),
-        },
-      })
-    );
-
     // Start the turn loop runner with monster AI
     const frameSink = this.createFrameSink(fight);
     const runner = new Runner(fight, active, frameSink, 30_000);
 
-    // Wire spell casting into the AI
-    const castUseCase = new CastSpellUseCase(
-      { bySession: (sid) => this.fightRegistry.getBySession(sid) },
-      this.spells,
-      this.effectRegistry,
-      this.frameEmitter
-    );
-
     const ai = new MonsterAI(
-      (fighterId) => runner.requestEnd(fighterId),
-      async (fightObj, caster, spellId, targetCell, level) => {
-        await castUseCase.castFor(fightObj, caster, spellId, targetCell, level);
+      (fighterId, epoch) => {
+        void fight.runAction(() => {
+          if (fight.turnEpoch === epoch) {
+            runner.requestEnd(fighterId);
+          }
+        });
       },
-      (fightObj, fighter, pathCells) => {
-        this.frameEmitter.emitMovement(fightObj, fighter.id, pathCells);
-      }
+      (fightObj, caster, spellId, targetCell, level, epoch) =>
+        this.actions.castFor(
+          fightObj,
+          caster,
+          spellId,
+          targetCell,
+          level,
+          epoch
+        ),
+      (fightObj, fighter, pathCells, epoch) =>
+        this.actions.move(fightObj, fighter, pathCells, epoch)
     );
     runner.setObserver(ai);
     this.fightRegistry.addRunner(fight.id, runner);
@@ -188,43 +154,10 @@ export class FightLifecycleService {
             );
           })
           .with("GTM", () => {
-            const p = payload as {
-              entries: Array<{
-                spriteId: string;
-                cell: number;
-                lp: number;
-                lpMax: number;
-                ap: number;
-                mp: number;
-                isDead: boolean;
-              }>;
-            };
-            this.frames.broadcast(
-              targets,
-              create(DofusMessageSchema, {
-                payload: {
-                  case: "gameTurnMiddle",
-                  value: create(GameTurnMiddleSchema, {
-                    entries: p.entries.map((e) =>
-                      create(TurnMiddleEntrySchema, {
-                        spriteId: e.spriteId,
-                        cellNum: e.cell,
-                        lp: e.lp,
-                        // Forward lpMax + isDead so the client's
-                        // FIGHTER_UPDATE patch carries the full
-                        // snapshot. Without lpMax the proto default
-                        // (0) wipes maxHp on every turn change and
-                        // breaks the HP bar ratio downstream.
-                        lpMax: e.lpMax,
-                        ap: e.ap,
-                        mp: e.mp,
-                        isDead: e.isDead,
-                      })
-                    ),
-                  }),
-                },
-              })
-            );
+            this.actions.snapshot(fight);
+            for (const fighter of fight.fighters()) {
+              this.actions.sendCooldowns(fight, fighter);
+            }
           })
           .with("GE", () => {
             this.fightEnd.endFight(fight).catch((err) => {

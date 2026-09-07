@@ -103,6 +103,9 @@ export class SpellsRepository {
           "spellLevels.criticalRate",
           "spellLevels.failureRate",
           "spellLevels.effects",
+          "spellLevels.criticalEffects",
+          "spellLevels.requiredStates",
+          "spellLevels.forbiddenStates",
           "firstLevel.minPlayerLevel as learnLevel",
           // Fallback display name when the lang bundle has no entry for this
           // spell (e.g. new spells without translations). The localized name

@@ -8,6 +8,7 @@ import {
 import { DofusMessageSchema } from "@dofus/proto/server_messages_pb";
 import { FightStartService } from "@features/game/fight-start/fight-start.service";
 import { resolveMoveLanding } from "@features/game/move-ack/move-ack.landing";
+import { FightRegistryService } from "@modules/fight/registry/fight.registry";
 import { MapCacheService } from "@modules/maps/maps.cache.service";
 import {
   detectExitDirection,
@@ -38,11 +39,15 @@ export class MoveAckHandler {
     private readonly transition: MapTransitionService,
     private readonly frames: GatewayFrameService,
     private readonly mapMonsters: MapMonsterService,
-    private readonly fightStart: FightStartService
+    private readonly fightStart: FightStartService,
+    private readonly fights: FightRegistryService
   ) {}
 
   @MessageHandler(GameActionAckSchema)
   async handle(ctx: HandlerContext, msg: GameActionAck): Promise<void> {
+    if (this.fights.isInFight(ctx.sessionId)) {
+      return;
+    }
     // `take` is get-and-delete, and it runs before the id check below: an
     // ack that names the wrong action destroys the pending move on its way
     // out. That is worth knowing when a character ends up frozen.
@@ -173,7 +178,9 @@ export class MoveAckHandler {
       return false;
     }
 
-    const walkable = this.mapMonsters.walkableCells(mapId);
+    const walkable = mapData.cells
+      .filter((cell) => cell.active && cell.movement > 1)
+      .map((cell) => cell.id);
 
     const fight = await this.fightStart.startPvM(
       sessionId,
@@ -188,7 +195,10 @@ export class MoveAckHandler {
         cellId: group.cellId,
         members: group.members,
       },
-      walkable
+      walkable,
+      mapData.cells
+        .filter((cell) => !cell.active || !cell.lineOfSight)
+        .map((cell) => cell.id)
     );
 
     if (fight !== null) {

@@ -43,7 +43,8 @@ export function calculateDamage(scope: Scope, element: number): number {
   const pctDmg = caster.stats.get(Characteristic.DamagePercent);
   const flatDmg = caster.stats.get(Characteristic.DamageBonus);
 
-  const raw = Math.floor(roll * ((100 + stat + pctDmg) / 100)) + flatDmg;
+  const raw =
+    Math.floor(roll * ((100 + Math.max(0, stat + pctDmg)) / 100)) + flatDmg;
 
   const flatRes = target.stats.get(elementResistFlat(element));
   let pctRes = target.stats.get(elementResistPct(element));
@@ -59,21 +60,24 @@ export function applyDamageToTarget(
   scope: Scope,
   damage: number,
   element: number
-): void {
+): number {
   const { target, caster, fight, emitter } = scope;
   if (!target || target.dead || damage <= 0) {
-    return;
+    return 0;
   }
 
+  damage = Math.min(damage, target.lp);
   target.setLp(target.lp - damage);
   caster.damageDealt += damage;
   target.damageTaken += damage;
   emitter.emitDamage(fight, caster.id, target.id, damage, element);
 
   if (target.dead) {
+    fight.fightMap.free(target.cell, target.id);
     emitter.emitDeath(fight, target.id);
     fight.modules.fireFighterDied(fight, target);
   }
+  return damage;
 }
 
 export function healTarget(scope: Scope, amount: number): void {

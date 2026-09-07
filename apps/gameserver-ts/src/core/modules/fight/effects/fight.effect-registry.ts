@@ -21,7 +21,19 @@ export function rollEffect(scope: Scope): number {
   if (scope.caster.states.has(FightStateId.RollMaximize)) {
     return max;
   }
-  return min + Math.floor(Math.random() * (max - min + 1));
+  const dice = scope.effect.dice?.match(/^(\d+)d(\d+)([+-]\d+)?$/);
+  if (dice) {
+    const count = Number(dice[1]);
+    const sides = Number(dice[2]);
+    if (count > 0 && count <= 100 && sides > 0) {
+      let value = Number(dice[3] ?? 0);
+      for (let i = 0; i < count; i++) {
+        value += 1 + Math.floor(scope.fight.random() * sides);
+      }
+      return Math.max(min, Math.min(max, value));
+    }
+  }
+  return min + Math.floor(scope.fight.random() * (max - min + 1));
 }
 
 export class EffectRegistry {

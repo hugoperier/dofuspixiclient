@@ -9,6 +9,9 @@ import { ExternalStore } from "./game-store";
  * locally without a round-trip.
  */
 export interface SpellEntry {
+  requiredStates?: number[];
+  forbiddenStates?: number[];
+  combatUnavailableReason?: string;
   spellId: number;
   level: number;
   position: number;
@@ -73,6 +76,9 @@ export function applySpellList(list: readonly SpellData[]): void {
     // wipe mid-fight cooldowns if the server ever re-emits SL.
     const existingCooldown = prev.get(s.spellId)?.cooldownRemaining ?? 0;
     return {
+      requiredStates: s.requiredStates,
+      forbiddenStates: s.forbiddenStates,
+      combatUnavailableReason: s.combatUnavailableReason,
       spellId: s.spellId,
       level: s.level,
       position: s.position,
@@ -124,9 +130,7 @@ export function applySpellCooldown(
   };
   const byId = new Map(state.byId);
   byId.set(spellId, updated);
-  const spells = state.spells.map((s) =>
-    s.spellId === spellId ? updated : s
-  );
+  const spells = state.spells.map((s) => (s.spellId === spellId ? updated : s));
   spellsStore.replaceState({ spells, byId });
 }
 

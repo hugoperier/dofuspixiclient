@@ -287,6 +287,7 @@ export function HudOverlay({
             ? {
                 onSelectSpell: (spellId) =>
                   gameClient.fightSelectSpell(spellId),
+                onPassTurn: () => gameClient.fightPassTurn(),
               }
             : {})}
         />
@@ -294,7 +295,7 @@ export function HudOverlay({
         {gameClient && (
           <FightOverlay
             actions={{
-              onPassTurn: () => gameClient.fightPassTurn(),
+              onHoverFighter: (id) => gameClient.fightHoverFighter(id),
               onForfeit: () => gameClient.fightForfeit(),
               onReady: () => gameClient.fightReady(),
               // Spell selection now lives on the main banner grid
@@ -305,6 +306,7 @@ export function HudOverlay({
           />
         )}
         <FightEndDialog
+          playArea={{ width: canvasRect.w, height: bannerTopPx }}
           onClose={() => {
             // Local-only dismissal — the server already emitted GameEnd
             // and tore down the fight on its side. Sending gameLeave

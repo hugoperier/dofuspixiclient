@@ -91,6 +91,9 @@ message SpellLevelDetail {
   bool  crit_failure_ends_turn = 15;
   repeated SpellEffectData effects = 16;
   repeated SpellEffectData critical_effects = 17;
+  repeated int32 required_states = 18;
+  repeated int32 forbidden_states = 19;
+  string combat_unavailable_reason = 20;
 }
 
 // Sd - Spell details: every level of one spell, sent on demand when the

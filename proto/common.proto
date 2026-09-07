@@ -123,6 +123,9 @@ message SpellData {
   // a book in the order the spells were obtained, and `position` cannot
   // stand in for that any more now that dragging the hotbar rewrites it.
   int32    learn_level = 24;
+  repeated int32 required_states = 25;
+  repeated int32 forbidden_states = 26;
+  string combat_unavailable_reason = 27;
 
   // Localized display info, resolved server-side from @dofus/dofus-lang.
   // Ships in the SpellList on enter-game so the HUD doesn't need a second

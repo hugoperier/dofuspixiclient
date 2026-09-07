@@ -1169,6 +1169,8 @@ function MainBannerTurnButton({
       type="button"
       className={cn(
         "group/turn absolute z-10 cursor-pointer border-none bg-transparent p-0 overflow-visible",
+        "disabled:cursor-default disabled:grayscale disabled:opacity-40",
+        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ffa800]",
         "left-[calc(463px*var(--resolution-factor))]",
         "top-[calc(89.2px*var(--resolution-factor))]",
         "w-[calc(41px*var(--resolution-factor))]",
@@ -1177,8 +1179,8 @@ function MainBannerTurnButton({
       )}
       {...props}
     >
-      <TurnButtonUp className="absolute inset-0 w-full h-full pointer-events-none group-active/turn:opacity-0" />
-      <TurnButtonDown className="absolute inset-0 w-full h-full pointer-events-none opacity-0 group-active/turn:opacity-100" />
+      <TurnButtonUp className="absolute inset-0 w-full h-full pointer-events-none group-active/turn:opacity-0 group-disabled/turn:opacity-100" />
+      <TurnButtonDown className="absolute inset-0 w-full h-full pointer-events-none opacity-0 group-active/turn:opacity-100 group-disabled/turn:opacity-0" />
     </button>
   );
 }

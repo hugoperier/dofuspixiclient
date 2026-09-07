@@ -222,7 +222,10 @@ export class BattlefieldPicking {
         // maintaining a parallel cell→playerId index that would have
         // to track teleports / death / removal.
         for (const [playerId, pickableId] of this.playerIdToPickableId) {
-          if (renderer.getPlayerCell(playerId) === cellId) {
+          if (
+            renderer.getPlayerCell(playerId) === cellId &&
+            renderer.getPlayerPickingData(playerId)?.container.renderable
+          ) {
             nextPickableId = pickableId;
             break;
           }

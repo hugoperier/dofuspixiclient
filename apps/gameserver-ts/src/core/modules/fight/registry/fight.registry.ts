@@ -52,6 +52,7 @@ export class FightRegistryService {
   remove(fightId: number): void {
     const fight = this.byId.get(fightId);
     if (fight) {
+      fight.cancelPlacementTimer();
       for (const fighter of fight.fighters()) {
         if (fighter.sessionId) {
           this.bySession.delete(fighter.sessionId);

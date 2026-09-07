@@ -53,6 +53,7 @@ message GameEnd {
   int32 fight_type = 4;           // FightType (challenge/pvm/pvp/agression/...)
   int32 star_bonus = 5;           // PvM monster group star bonus (Fight.java:4353)
   repeated FightResult results = 6;
+  repeated FightChallengeResult challenges = 7;
 }
 
 message FightResult {
@@ -71,6 +72,24 @@ message FightResult {
   int32  pvp_rating_change = 11;
   int32  honor_won = 12;
   int32  disgrace_won = 13;
+  // Present for player fighters only, captured after rewards and level-ups.
+  FightExperienceProgress experience = 14;
+  optional bool is_player = 15;
+}
+
+message FightExperienceProgress {
+  int64 current = 1;
+  int64 level_floor = 2;
+  // Absent at the level cap.
+  optional int64 next_level_floor = 3;
+}
+
+message FightChallengeResult {
+  int32 challenge_id = 1;
+  string name = 2;
+  bool succeeded = 3;
+  int32 xp_bonus_pct = 4;
+  int32 drop_bonus_pct = 5;
 }
 
 message FightItemDrop {
@@ -335,6 +354,8 @@ message GameActionsStart {
 message GameActionsFinish {
   int32  action_result_id = 1;
   string sprite_id = 2;
+  string rejection_code = 3;
+  string rejection_reason = 4;
 }
 
 // GA - Game action (core combat/world action)
@@ -689,6 +710,10 @@ message TurnMiddleEntry {
   int32  mp = 5;
   int32  cell_num = 6;   // -1 = no change (NaN in original)
   int32  lp_max = 7;
+  int32 range_bonus = 8;
+  int32 ap_max = 9;
+  int32 mp_max = 10;
+  repeated int32 states = 11;
 }
 
 // GTR - Turn ready request

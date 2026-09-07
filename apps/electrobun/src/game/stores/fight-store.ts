@@ -1,5 +1,6 @@
 import { type Actor, createActor } from "xstate";
 
+import type { GameEnd } from "@/game/network/protocol";
 import {
   type FighterSnapshot,
   fightMachine,
@@ -20,6 +21,11 @@ export type FightMode =
   | "ended";
 
 export interface FightState {
+  result: GameEnd | null;
+  deadline: number;
+  turnDurationMs: number;
+  actionPending: boolean;
+  finishing: boolean;
   mode: FightMode;
   ap: number;
   mp: number;
@@ -34,6 +40,11 @@ export interface FightState {
 }
 
 const initialState: FightState = {
+  result: null,
+  deadline: 0,
+  turnDurationMs: 0,
+  actionPending: false,
+  finishing: false,
   mode: "none",
   ap: 0,
   mp: 0,
@@ -88,6 +99,11 @@ fightActor.subscribe((snap) => {
     (snap.value as { fighting: string }).fighting === "myTurn";
 
   fightStore.setState({
+    result: ctx.result,
+    deadline: ctx.deadline,
+    turnDurationMs: ctx.turnDurationMs,
+    actionPending: ctx.actionPending,
+    finishing: ctx.finishing,
     mode,
     ap: ctx.ap,
     mp: ctx.mp,

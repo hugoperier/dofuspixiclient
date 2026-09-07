@@ -1,5 +1,5 @@
 import type { DofusPathfinding } from "@dofus/grid";
-import { cellsInArea, hasLineOfSight } from "@dofus/grid";
+import { castGeometryError, cellsInArea } from "@dofus/grid";
 
 import type { Battlefield } from "@/game/scene";
 import type { FightUI } from "@/hud/fight/fight-ui";
@@ -200,8 +200,13 @@ export class HoverPreview {
 
     // LoS gate: if the spell requires LoS and the caster can't see
     // the target cell, the whole AoE is invalid.
+    const state = fightStore.getSnapshot();
+    const mine = state.fighters.get(state.mySpriteId ?? "");
     const losOk =
-      !spell.lineOfSight || hasLineOfSight(fmap, caster, hoveredCell);
+      castGeometryError(fmap, caster, hoveredCell, {
+        ...spell,
+        rangeBonus: mine?.rangeBonus ?? 0,
+      }) === null;
     if (!losOk) {
       ui.highlightCells([hoveredCell], "spell-zone-invalid" as const);
       ui.clearHighlightType("spell-zone");

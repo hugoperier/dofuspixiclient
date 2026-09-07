@@ -11,6 +11,7 @@ import {
   MainBannerIconButton,
   MainBannerMorePanel,
   MainBannerRightPanel,
+  MainBannerTurnButton,
 } from "@/components/ui/main-banner";
 import { useSpellCast } from "@/game/machines/spell-cast-selectors";
 import { togglePanel, toggleWorldMap } from "@/game/stores";
@@ -42,11 +43,48 @@ import {
 } from "@/hud/banner/hotbar-dnd";
 import { BannerChatContainer } from "@/hud/chat/BannerChatContainer";
 import { useGameClient } from "@/hud/contexts/GameClientContext";
+import { useFightClock } from "@/hud/fight/useFightClock";
 import { useFightMode } from "@/hud/fight/useFightMode";
 import { ItemIcon } from "@/hud/inventory/ItemIcon";
 import { SpellIconMount } from "@/hud/spells/SpellIconMount";
 
 import { Minimap } from "../minimap/Minimap";
+import { BannerFightPoints } from "./BannerFightPoints";
+import { BannerFightPortrait } from "./BannerFightPortrait";
+
+/** Keep clock ticks local to the dial so they do not rerender every spell. */
+function BannerCircle() {
+  const fight = useFightMode();
+  const character = useSyncExternalStore(
+    characterStore.subscribe,
+    characterStore.getSnapshot
+  );
+  const { seconds, remainingFraction } = useFightClock(
+    fight.turnDurationMs > 0 ? fight.deadline : 0,
+    fight.turnDurationMs
+  );
+  const countdown =
+    fight.isMyTurn && !fight.finishing && seconds >= 1 && seconds <= 5
+      ? seconds
+      : undefined;
+  // Retro fills the ring with elapsed time; an inactive clock stays empty.
+  return (
+    <MainBannerCircle
+      fill={remainingFraction === undefined ? 0 : 1 - remainingFraction}
+    >
+      {fight.isFighting ? (
+        <BannerFightPortrait
+          gfxId={character.gfxId}
+          name={character.name}
+          colors={[character.color1, character.color2, character.color3]}
+          countdown={countdown}
+        />
+      ) : (
+        <Minimap />
+      )}
+    </MainBannerCircle>
+  );
+}
 
 /**
  * In-fight cast state for a single hotbar slot. Used to drive the
@@ -212,6 +250,11 @@ function SpellHotbarCell({
                 )}
               </div>
             )}
+            {spell.combatUnavailableReason && (
+              <div className="mt-1 font-bold text-[#a33723]">
+                {spell.combatUnavailableReason}
+              </div>
+            )}
             {spell.description && (
               <div className="mt-[3px] font-normal text-[#3a3528]">
                 {spell.description}
@@ -340,9 +383,13 @@ const ICON_BUTTONS = [
 interface BannerReactProps {
   /** Callback when a spell slot is clicked during a fight (cast/select). */
   onSelectSpell?: (spellId: number) => void;
+  onPassTurn?: () => void;
 }
 
-export function BannerReact({ onSelectSpell }: BannerReactProps = {}) {
+export function BannerReact({
+  onSelectSpell,
+  onPassTurn,
+}: BannerReactProps = {}) {
   const gameClient = useGameClient();
   const { stats } = useSyncExternalStore(
     characterStore.subscribe,
@@ -418,7 +465,12 @@ export function BannerReact({ onSelectSpell }: BannerReactProps = {}) {
       if (!spell) {
         return "idle";
       }
-      if (!fight.isMyTurn) {
+      if (
+        !fight.isMyTurn ||
+        fight.actionPending ||
+        fight.finishing ||
+        spell.combatUnavailableReason
+      ) {
         return "disabled";
       }
       if (spell.cooldownRemaining > 0) {
@@ -440,6 +492,8 @@ export function BannerReact({ onSelectSpell }: BannerReactProps = {}) {
     hotbar,
     fight.isCombat,
     fight.isMyTurn,
+    fight.actionPending,
+    fight.finishing,
     fight.ap,
     cast.selectedSpellId,
     cast.isPending,
@@ -491,11 +545,27 @@ export function BannerReact({ onSelectSpell }: BannerReactProps = {}) {
       <MainBanner mode={isFighting ? "fight" : "normal"}>
         <BannerChatContainer />
 
-        <MainBannerCircle>
-          <Minimap />
-        </MainBannerCircle>
+        <BannerCircle />
 
         <MainBannerHeart hp={hp} max={maxHp} />
+        {isFighting && !fight.isSpectator && (
+          <BannerFightPoints ap={fight.ap} mp={fight.mp} />
+        )}
+        {fight.isCombat && (
+          <MainBannerTurnButton
+            onClick={onPassTurn}
+            disabled={
+              !onPassTurn ||
+              !fight.isMyTurn ||
+              fight.actionPending ||
+              fight.finishing ||
+              !myFighter ||
+              myFighter.dead
+            }
+            aria-label="Passer le tour"
+            title="Passer le tour"
+          />
+        )}
 
         <MainBannerButtons>
           {ICON_BUTTONS.map(({ icon, panel }) => (

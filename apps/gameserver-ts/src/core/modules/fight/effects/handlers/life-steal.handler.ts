@@ -21,8 +21,11 @@ export class LifeStealEffectHandler {
       .with(95, () => Element.Neutral)
       .otherwise(() => Element.Neutral);
 
-    const damage = calculateDamage(scope, element);
-    applyDamageToTarget(scope, damage, element);
+    const damage = applyDamageToTarget(
+      scope,
+      calculateDamage(scope, element),
+      element
+    );
 
     if (damage > 0 && !scope.caster.dead) {
       const heal = Math.floor(damage / 2);

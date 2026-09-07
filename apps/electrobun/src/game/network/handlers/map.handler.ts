@@ -8,7 +8,6 @@ import type { Connection } from "@/game/network/connection";
 import type { MessageHandler } from "@/game/network/message-handler";
 import type { Battlefield } from "@/game/scene";
 import { harvestSoundsFor } from "@/game/audio/harvest-sounds";
-import { getMapTransitionDirection } from "@/game/input/map-coordinates";
 import {
   encodeClient,
   GameActionAckSchema,
@@ -20,6 +19,7 @@ import {
 } from "@/game/network/protocol";
 import { numericId } from "@/game/network/sprite-id";
 import { closeNpcDialog, hudStore } from "@/game/stores";
+import { fightStore } from "@/game/stores/fight-store";
 import {
   beginHarvest,
   endHarvest,
@@ -137,6 +137,15 @@ export class MapHandler {
 
   // Messages that arrive before the Battlefield is ready are buffered and
   // replayed by `flushPending()` once the renderer attaches.
+  private readonly combatPaths = new Map<string, Promise<void>>();
+  private fightPresentationGate: () => Promise<void> = () => Promise.resolve();
+
+  setFightPresentationGate(gate: () => Promise<void>): void {
+    this.fightPresentationGate = gate;
+  }
+
+  private deferredWorld: Array<() => Promise<void>> = [];
+
   private pendingMapData: GameMapData | null = null;
   private pendingMovements: SpriteMovementEntry[] = [];
 
@@ -148,6 +157,21 @@ export class MapHandler {
     private getBattlefield: () => Battlefield | null
   ) {
     this.register();
+    fightStore.subscribe(() => {
+      if (
+        fightStore.getSnapshot().finishing ||
+        this.deferredWorld.length === 0
+      ) {
+        return;
+      }
+      const pending = this.deferredWorld.splice(0);
+      queueMicrotask(() => {
+        void pending.reduce(
+          (tail, action) => tail.then(action),
+          Promise.resolve()
+        );
+      });
+    });
   }
 
   /**
@@ -183,8 +207,12 @@ export class MapHandler {
     return this.pathfinding;
   }
 
+  whenMovementsComplete(): Promise<void> {
+    return Promise.all([...this.combatPaths.values()]).then(() => {});
+  }
+
   isCharacterMoving(): boolean {
-    return this.isMoving;
+    return this.isMoving || this.combatPaths.size > 0;
   }
 
   setCharacterMoving(moving: boolean): void {
@@ -284,11 +312,26 @@ export class MapHandler {
 
   private register(): void {
     this.messageHandler.on("gameMapData", (payload) => {
+      if (fightStore.getSnapshot().finishing) {
+        this.deferredWorld.push(() => this.handleMapData(payload));
+        return;
+      }
       void this.handleMapData(payload);
     });
 
     this.messageHandler.on("gameMovement", (payload) => {
-      void this.handleMovement(payload.entries);
+      const fight = fightStore.getSnapshot();
+      if (fight.finishing) {
+        this.deferredWorld.push(() => this.handleMovement(payload.entries));
+        return;
+      }
+      const entries =
+        fight.mode === "fighting" || fight.mode === "placement"
+          ? payload.entries.filter(
+              (entry) => entry.lpMax > 0 || fight.fighters.has(entry.spriteId)
+            )
+          : payload.entries;
+      void this.handleMovement(entries);
     });
 
     // `GDF` — interactive elements changing state. Nothing else on the wire
@@ -312,7 +355,33 @@ export class MapHandler {
       if (payload.actionType === 1 && payload.actionData.case === "movement") {
         const spriteId = payload.spriteId;
         const path = payload.actionData.value.pathCells;
-        void this.handleActorPath(spriteId, path, payload.sequenceId);
+        const fight = fightStore.getSnapshot();
+        if (fight.mode === "fighting" || fight.mode === "spectating") {
+          if (!fight.fighters.has(spriteId)) {
+            return;
+          }
+          const previous = this.combatPaths.get(spriteId) ?? Promise.resolve();
+          const effects = this.fightPresentationGate();
+          const next = previous
+            .then(async () => {
+              await effects;
+              await this.handleActorPath(
+                spriteId,
+                path,
+                payload.sequenceId,
+                true
+              );
+            })
+            .catch((error) => log.warn(String(error)));
+          this.combatPaths.set(spriteId, next);
+          void next.finally(() => {
+            if (this.combatPaths.get(spriteId) === next) {
+              this.combatPaths.delete(spriteId);
+            }
+          });
+        } else {
+          void this.handleActorPath(spriteId, path, payload.sequenceId);
+        }
       } else if (
         payload.actionType === ACTION_HARVEST &&
         payload.actionData.case === "harvest"
@@ -476,10 +545,6 @@ export class MapHandler {
       this.selfMoveInterrupted = false;
       this.truncateNextSelfPath = false;
 
-      const direction = oldMapId
-        ? (getMapTransitionDirection(oldMapId, mapId) ?? undefined)
-        : undefined;
-
       // Reset the world-actor container BEFORE the new map's actors
       // arrive — server sends GM REMOVE for self only to other players
       // on the origin map, never to self. Without a reset our own
@@ -487,7 +552,7 @@ export class MapHandler {
       // map hits a duplicate id, which the renderer drops silently.
       battlefield.prepareWorldActors();
 
-      this.mapLoadPromise = battlefield.loadMapFromData(mapData, direction);
+      this.mapLoadPromise = battlefield.loadMapFromData(mapData);
       hudStore.setState({
         minimapMapId: mapId,
         currentSubareaId: payload.subareaId > 0 ? payload.subareaId : null,
@@ -600,7 +665,8 @@ export class MapHandler {
   private async handleActorPath(
     spriteId: string,
     rawPath: number[],
-    sequenceId: number
+    sequenceId: number,
+    combat = false
   ): Promise<void> {
     const current = this.characterHandler.getCurrentCharacter();
     const numeric = numericId(spriteId);
@@ -611,7 +677,7 @@ export class MapHandler {
     // sprite would have stopped had the interruption arrived mid-walk.
     let path = rawPath;
 
-    if (isSelf && this.truncateNextSelfPath) {
+    if (!combat && isSelf && this.truncateNextSelfPath) {
       this.truncateNextSelfPath = false;
       path = rawPath.slice(0, 2);
       log.debug(
@@ -682,6 +748,10 @@ export class MapHandler {
             ? ""
             : ` (expected ${path[path.length - 1]})`)
       );
+      if (combat) {
+        this.onSelfMoveComplete?.();
+        return;
+      }
       this.characterHandler.setMapPosition(
         this.currentMapId ?? 0,
         this.currentCellId

@@ -412,6 +412,8 @@ export type NewSpellTemplate = Insertable<SpellTemplatesTable>;
 export type SpellTemplateUpdate = Updateable<SpellTemplatesTable>;
 
 export interface SpellLevelsTable {
+  requiredStates: Generated<Json>;
+  forbiddenStates: Generated<Json>;
   spellId: number;
   level: number;
   effects: Json;

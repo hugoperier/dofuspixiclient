@@ -17,6 +17,8 @@ import { LangsService } from "@modules/langs/langs.service";
 import { SpellsRepository } from "@modules/spells/spells.repository";
 import { Injectable, Logger } from "@nestjs/common";
 
+import { combatUnavailableReason, stateIds } from "./spells.combat-data";
+
 @Injectable()
 export class SpellsService implements SpellPort {
   private readonly logger = new Logger(SpellsService.name);
@@ -28,14 +30,28 @@ export class SpellsService implements SpellPort {
 
   async spellLevel(
     spellId: number,
-    level: number
+    level: number,
+    visited: Set<number> = new Set()
   ): Promise<SpellLevel | undefined> {
+    if (visited.has(spellId)) {
+      return undefined;
+    }
+    visited = new Set([...visited, spellId]);
     const row = await this.repo.findLevel(spellId, level);
     if (!row) {
       return undefined;
     }
+    const effects = parseEffects(row.effects);
+    const criticalEffects = parseEffects(row.criticalEffects);
     return {
       ...row,
+      requiredStates: stateIds(row.requiredStates),
+      forbiddenStates: stateIds(row.forbiddenStates),
+      combatUnavailableReason: await this.availability(
+        [...effects, ...criticalEffects],
+        level,
+        visited
+      ),
       effects: parseEffects(row.effects),
       criticalEffects: parseEffects(row.criticalEffects),
       // Coalesce NULL → spellId so downstream code (cast handler,
@@ -46,8 +62,36 @@ export class SpellsService implements SpellPort {
     };
   }
 
-  async playerHasSpell(playerId: string, spellId: number): Promise<boolean> {
-    return this.repo.playerHasSpell(playerId, spellId);
+  async playerSpellRank(
+    playerId: string,
+    spellId: number
+  ): Promise<number | undefined> {
+    return (await this.repo.findPlayerSpell(playerId, spellId))?.level;
+  }
+
+  private async availability(
+    effects: SpellEffect[],
+    rank: number,
+    visited = new Set<number>()
+  ): Promise<string> {
+    const reason = combatUnavailableReason(effects);
+    if (reason) {
+      return reason;
+    }
+    for (const effect of effects) {
+      if (effect.id !== 400 && effect.id !== 401) {
+        continue;
+      }
+      const trigger = await this.spellLevel(effect.min, rank, visited);
+      if (
+        !trigger ||
+        trigger.combatUnavailableReason ||
+        trigger.effects.some((entry) => entry.id < 96 || entry.id > 100)
+      ) {
+        return "Les effets déclenchés de ce sort ne sont pas encore disponibles.";
+      }
+    }
+    return "";
   }
 
   /**
@@ -100,49 +144,58 @@ export class SpellsService implements SpellPort {
     // the cache latched, re-allocating a 2091-entry Map each time for a
     // total of ~23 s. Now it's one Map.get per row, ~O(1) each.
     const tLang = performance.now();
-    const out = rows.map((row) => {
-      const effects = parseEffects(row.effects);
-      const primary = effects[0];
-      const lang = this.langs.getSpellSync(row.spellId);
-      return create(SpellDataSchema, {
-        spellId: row.spellId,
-        level: row.level,
-        position: row.position,
-        apCost: row.apCost,
-        rangeMin: row.rangeMin,
-        rangeMax: row.rangeMax,
-        lineOfSight: row.lineOfSight,
-        modifiableRange: row.modifiableRange,
-        emptyCell: row.emptyCell,
-        lineOnly: row.lineOnly,
-        castPerTurn: row.castPerTurn,
-        castPerTarget: row.castPerTarget,
-        cooldown: row.cooldown,
-        criticalRate: row.criticalRate,
-        failureRate: row.failureRate,
-        // Primary-effect shape. When there is no effect (rare), the
-        // proto default (AREA_KIND_NONE = 0, size 0) is correct.
-        areaKind: (primary?.areaKind ?? 0) as AreaKind,
-        areaSize: primary?.areaSize ?? 0,
-        targetMask: primary?.targetMask ?? 0,
-        // Glyph (401) / Trap (400) / Summon (185) primary effects
-        // describe their spawned entity's trigger zone, NOT a
-        // cast-time AOE — the client uses this flag to render only
-        // the placement cell on hover instead of expanding the area.
-        singleTargetSpawn:
-          primary !== undefined &&
-          (primary.id === 400 || primary.id === 401 || primary.id === 185),
-        // Falls back to 1 when the level-1 row is missing: an unknown
-        // learn level sorts with the starters rather than off the end.
-        learnLevel: row.learnLevel ?? 1,
-        name: lang?.name ?? row.templateName,
-        description: lang?.description ?? "",
-        // The hotbar icon is now a per-spell_id dofasset composed at build
-        // time (`/assets/dofassets/spells/icons/<spellId>.dofasset`) with
-        // the 3-layer tinted icon already baked in. Nothing icon-related
-        // needs to travel on the wire anymore.
-      });
-    });
+    const out = await Promise.all(
+      rows.map(async (row) => {
+        const effects = parseEffects(row.effects);
+        const primary = effects[0];
+        const lang = this.langs.getSpellSync(row.spellId);
+        return create(SpellDataSchema, {
+          requiredStates: stateIds(row.requiredStates),
+          forbiddenStates: stateIds(row.forbiddenStates),
+          combatUnavailableReason: await this.availability(
+            [...effects, ...parseEffects(row.criticalEffects)],
+            row.level,
+            new Set([row.spellId])
+          ),
+          spellId: row.spellId,
+          level: row.level,
+          position: row.position,
+          apCost: row.apCost,
+          rangeMin: row.rangeMin,
+          rangeMax: row.rangeMax,
+          lineOfSight: row.lineOfSight,
+          modifiableRange: row.modifiableRange,
+          emptyCell: row.emptyCell,
+          lineOnly: row.lineOnly,
+          castPerTurn: row.castPerTurn,
+          castPerTarget: row.castPerTarget,
+          cooldown: row.cooldown,
+          criticalRate: row.criticalRate,
+          failureRate: row.failureRate,
+          // Primary-effect shape. When there is no effect (rare), the
+          // proto default (AREA_KIND_NONE = 0, size 0) is correct.
+          areaKind: (primary?.areaKind ?? 0) as AreaKind,
+          areaSize: primary?.areaSize ?? 0,
+          targetMask: primary?.targetMask ?? 0,
+          // Glyph (401) / Trap (400) / Summon (185) primary effects
+          // describe their spawned entity's trigger zone, NOT a
+          // cast-time AOE — the client uses this flag to render only
+          // the placement cell on hover instead of expanding the area.
+          singleTargetSpawn:
+            primary !== undefined &&
+            (primary.id === 400 || primary.id === 401 || primary.id === 185),
+          // Falls back to 1 when the level-1 row is missing: an unknown
+          // learn level sorts with the starters rather than off the end.
+          learnLevel: row.learnLevel ?? 1,
+          name: lang?.name ?? row.templateName,
+          description: lang?.description ?? "",
+          // The hotbar icon is now a per-spell_id dofasset composed at build
+          // time (`/assets/dofassets/spells/icons/<spellId>.dofasset`) with
+          // the 3-layer tinted icon already baked in. Nothing icon-related
+          // needs to travel on the wire anymore.
+        });
+      })
+    );
     const tEnd = performance.now();
     this.logger.log(
       `buildSpellList player=${playerId} spells=${rows.length} ` +
@@ -181,26 +234,38 @@ export class SpellsService implements SpellPort {
       name: lang?.name ?? template?.name ?? `Spell ${spellId}`,
       description: lang?.description ?? "",
       playerLevel: owned?.level ?? 0,
-      levels: rows.map((row) =>
-        create(SpellLevelDetailSchema, {
-          level: row.level,
-          apCost: row.apCost,
-          rangeMin: row.rangeMin,
-          rangeMax: row.rangeMax,
-          criticalRate: row.criticalRate,
-          failureRate: row.failureRate,
-          lineOfSight: row.lineOfSight,
-          emptyCell: row.emptyCell,
-          modifiableRange: row.modifiableRange,
-          lineOnly: row.lineOnly,
-          castPerTurn: row.castPerTurn,
-          castPerTarget: row.castPerTarget,
-          cooldown: row.cooldown,
-          minPlayerLevel: row.minPlayerLevel,
-          critFailureEndsTurn: row.critFailureEndsTurn,
-          effects: toEffectData(parseEffects(row.effects)),
-          criticalEffects: toEffectData(parseEffects(row.criticalEffects)),
-        })
+      levels: await Promise.all(
+        rows.map(async (row) =>
+          create(SpellLevelDetailSchema, {
+            requiredStates: stateIds(row.requiredStates),
+            forbiddenStates: stateIds(row.forbiddenStates),
+            combatUnavailableReason: await this.availability(
+              [
+                ...parseEffects(row.effects),
+                ...parseEffects(row.criticalEffects),
+              ],
+              row.level,
+              new Set([row.spellId])
+            ),
+            level: row.level,
+            apCost: row.apCost,
+            rangeMin: row.rangeMin,
+            rangeMax: row.rangeMax,
+            criticalRate: row.criticalRate,
+            failureRate: row.failureRate,
+            lineOfSight: row.lineOfSight,
+            emptyCell: row.emptyCell,
+            modifiableRange: row.modifiableRange,
+            lineOnly: row.lineOnly,
+            castPerTurn: row.castPerTurn,
+            castPerTarget: row.castPerTarget,
+            cooldown: row.cooldown,
+            minPlayerLevel: row.minPlayerLevel,
+            critFailureEndsTurn: row.critFailureEndsTurn,
+            effects: toEffectData(parseEffects(row.effects)),
+            criticalEffects: toEffectData(parseEffects(row.criticalEffects)),
+          })
+        )
       ),
     });
   }
@@ -226,26 +291,15 @@ function parseEffects(raw: unknown): SpellEffect[] {
   if (!Array.isArray(raw)) {
     return [];
   }
-  // Migration 0039's `normalizeEffect` swapped `duration` and
-  // `probability` when seeding from the canonical lang JSON: position
-  // [offset+2] in the Ankama format is the random-gate percentage and
-  // position [offset+3] is the per-effect duration in turns, but the
-  // parser stored them in the opposite columns. The data evidence is
-  // unambiguous — random `duration` values like 25/50/75/100 only make
-  // sense as percentages, and `probability` values like 2/3/4 only
-  // make sense as turn counts (4-turn buffs, 2-turn glyphs, etc.).
-  // Swap on read so handlers see the field names with their canonical
-  // 1.29 semantics (effect.duration = turns, effect.probability =
-  // random gate 0-100). Re-running the migration will eventually do
-  // this at the source.
   return raw.map((e) => ({
+    dice: typeof e?.dice === "string" ? e.dice : "",
     param: typeof e?.param === "string" ? e.param : "",
     id: Number(e?.id ?? 0),
     min: Number(e?.min ?? 0),
     max: Number(e?.max ?? 0),
     special: Number(e?.special ?? 0),
-    duration: Number(e?.probability ?? 0),
-    probability: Number(e?.duration ?? 0),
+    duration: Number(e?.duration ?? 0),
+    probability: Number(e?.probability ?? 0),
     areaKind: Number(e?.areaKind ?? 0) as AreaKind,
     areaSize: Number(e?.areaSize ?? 0),
     targetMask: Number(e?.targetMask ?? 0),

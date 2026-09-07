@@ -1,3 +1,5 @@
+import { assign, setup } from "xstate";
+
 import type {
   GameCreate,
   GameEnd,
@@ -6,7 +8,6 @@ import type {
   GameTurnFinish,
   GameTurnStart,
 } from "@/game/network/protocol";
-import { assign, setup } from "xstate";
 
 /**
  * Per-fighter snapshot projected from the various gameAction /
@@ -40,9 +41,18 @@ export interface FighterSnapshot {
   color2: number;
   color3: number;
   summonedBy?: string;
+  ready?: boolean;
+  rangeBonus?: number;
+  states?: number[];
 }
 
 export interface FightContext {
+  result: GameEnd | null;
+  deadline: number;
+  /** Original duration from the server, used to scale both turn gauges. */
+  turnDurationMs: number;
+  actionPending: boolean;
+  finishing: boolean;
   fightId: number | null;
   mySpriteId: string | null;
   ap: number;
@@ -58,6 +68,8 @@ export interface FightContext {
 }
 
 export type FightMachineEvent =
+  | { type: "ACTION_PENDING"; pending: boolean }
+  | { type: "FINISHING" }
   | {
       type: "FIGHT_INIT";
       payload: GameCreate | GameJoin;
@@ -91,7 +103,17 @@ export type FightMachineEvent =
       patch: Partial<
         Pick<
           FighterSnapshot,
-          "hp" | "maxHp" | "ap" | "maxAp" | "mp" | "maxMp" | "cell" | "dead"
+          | "hp"
+          | "maxHp"
+          | "ap"
+          | "maxAp"
+          | "mp"
+          | "maxMp"
+          | "cell"
+          | "dead"
+          | "ready"
+          | "rangeBonus"
+          | "states"
         >
       >;
     }
@@ -100,6 +122,11 @@ export type FightMachineEvent =
   | { type: "LEAVE" };
 
 const initialContext: FightContext = {
+  result: null,
+  deadline: 0,
+  turnDurationMs: 0,
+  actionPending: false,
+  finishing: false,
   fightId: null,
   mySpriteId: null,
   ap: 0,
@@ -143,6 +170,10 @@ export const fightMachine = setup({
         return {};
       }
       return {
+        ...initialContext,
+        fighters: new Map(),
+        deadline:
+          "timerMs" in event.payload ? Date.now() + event.payload.timerMs : 0,
         fightId: event.fightId ?? null,
         mySpriteId:
           event.type === "FIGHT_INIT" ? (event.mySpriteId ?? null) : null,
@@ -160,13 +191,23 @@ export const fightMachine = setup({
       // incrementing per-fighter or we'd display "Tour 8" after one
       // round of 8 fighters.
       const round = event.payload.tableTurnNum;
+      const duration = Math.max(0, event.payload.timeMs);
       return {
+        deadline: Date.now() + duration,
+        turnDurationMs: duration,
+        actionPending: false,
         turnIndex: round > 0 ? round - 1 : context.turnIndex,
         currentTurnSpriteId: event.payload.spriteId,
       };
     }),
+    clearTurnClock: assign(() => ({
+      deadline: 0,
+      turnDurationMs: 0,
+    })),
     applyStats: assign(({ context, event }) => {
-      if (event.type !== "STATS_UPDATE") return {};
+      if (event.type !== "STATS_UPDATE") {
+        return {};
+      }
       return {
         ap: event.ap ?? context.ap,
         mp: event.mp ?? context.mp,
@@ -175,29 +216,41 @@ export const fightMachine = setup({
       };
     }),
     upsertFighter: assign(({ context, event }) => {
-      if (event.type !== "FIGHTER_UPSERT") return {};
+      if (event.type !== "FIGHTER_UPSERT") {
+        return {};
+      }
       const next = new Map(context.fighters);
       const existing = next.get(event.fighter.spriteId);
-      // Preserve maxAp / maxMp once we've seen a positive baseline —
-      // gameTurnMiddle doesn't ship apMax/mpMax (only lpMax), so we
-      // anchor on the first non-zero reading and carry it forward.
+      // GM can omit resource maxima; retain the baseline until GTM supplies them.
       const merged: FighterSnapshot = existing
         ? {
             ...existing,
             ...event.fighter,
-            maxAp:
-              existing.maxAp > 0 ? existing.maxAp : event.fighter.maxAp,
-            maxMp:
-              existing.maxMp > 0 ? existing.maxMp : event.fighter.maxMp,
+            maxAp: existing.maxAp > 0 ? existing.maxAp : event.fighter.maxAp,
+            maxMp: existing.maxMp > 0 ? existing.maxMp : event.fighter.maxMp,
           }
         : event.fighter;
       next.set(merged.spriteId, merged);
-      return { fighters: next };
+      return {
+        fighters: next,
+        ...(merged.spriteId === context.mySpriteId
+          ? {
+              ap: merged.ap,
+              mp: merged.mp,
+              maxAp: merged.maxAp,
+              maxMp: merged.maxMp,
+            }
+          : {}),
+      };
     }),
     updateFighter: assign(({ context, event }) => {
-      if (event.type !== "FIGHTER_UPDATE") return {};
+      if (event.type !== "FIGHTER_UPDATE") {
+        return {};
+      }
       const existing = context.fighters.get(event.spriteId);
-      if (!existing) return {};
+      if (!existing) {
+        return {};
+      }
       const next = new Map(context.fighters);
       const patched: FighterSnapshot = { ...existing, ...event.patch };
       // Same baseline-anchor logic for maxAp/maxMp — if the patch
@@ -213,8 +266,12 @@ export const fightMachine = setup({
       return { fighters: next };
     }),
     removeFighter: assign(({ context, event }) => {
-      if (event.type !== "FIGHTER_REMOVE") return {};
-      if (!context.fighters.has(event.spriteId)) return {};
+      if (event.type !== "FIGHTER_REMOVE") {
+        return {};
+      }
+      if (!context.fighters.has(event.spriteId)) {
+        return {};
+      }
       const next = new Map(context.fighters);
       next.delete(event.spriteId);
       return { fighters: next };
@@ -224,7 +281,14 @@ export const fightMachine = setup({
     ),
     applyEnd: assign(({ event }) =>
       event.type === "FIGHT_END"
-        ? { winnerTeam: event.payload.winnerTeam }
+        ? {
+            winnerTeam: event.payload.winnerTeam,
+            result: event.payload,
+            finishing: false,
+            deadline: 0,
+            turnDurationMs: 0,
+            actionPending: false,
+          }
         : {}
     ),
     resetContext: assign(() => ({ ...initialContext })),
@@ -233,6 +297,19 @@ export const fightMachine = setup({
   id: "fight",
   initial: "none",
   context: initialContext,
+  on: {
+    ACTION_PENDING: {
+      actions: assign(({ event }) => ({ actionPending: event.pending })),
+    },
+    FINISHING: {
+      actions: assign(() => ({
+        finishing: true,
+        actionPending: true,
+        deadline: 0,
+        turnDurationMs: 0,
+      })),
+    },
+  },
   states: {
     none: {
       on: {
@@ -242,7 +319,9 @@ export const fightMachine = setup({
     },
     placement: {
       on: {
-        FIGHT_START: { target: "fighting" },
+        STATS_UPDATE: { actions: "applyStats" },
+        FIGHT_START: { target: "fighting", actions: "clearTurnClock" },
+        FIGHT_END: { target: "ended", actions: "applyEnd" },
         TIMELINE_UPDATE: { actions: "applyTimeline" },
         PLACEMENT_READY: {},
         FIGHTER_UPSERT: { actions: "upsertFighter" },
@@ -267,10 +346,14 @@ export const fightMachine = setup({
           },
         },
         myTurn: {
-          on: { TURN_END: { target: "waitingForTurn" } },
+          on: {
+            TURN_END: { target: "waitingForTurn", actions: "clearTurnClock" },
+          },
         },
         opponentTurn: {
-          on: { TURN_END: { target: "waitingForTurn" } },
+          on: {
+            TURN_END: { target: "waitingForTurn", actions: "clearTurnClock" },
+          },
         },
       },
       on: {
@@ -286,6 +369,7 @@ export const fightMachine = setup({
     spectating: {
       on: {
         TURN_START: { actions: "applyTurnStart" },
+        TURN_END: { actions: "clearTurnClock" },
         TIMELINE_UPDATE: { actions: "applyTimeline" },
         STATS_UPDATE: { actions: "applyStats" },
         FIGHTER_UPSERT: { actions: "upsertFighter" },
@@ -296,7 +380,10 @@ export const fightMachine = setup({
       },
     },
     ended: {
-      on: { LEAVE: { target: "none", actions: "resetContext" } },
+      on: {
+        LEAVE: { target: "none", actions: "resetContext" },
+        FIGHT_INIT: { target: "placement", actions: "applyInit" },
+      },
     },
   },
 });

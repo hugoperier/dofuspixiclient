@@ -59,6 +59,7 @@ export class Runner {
       return;
     }
     this.stopped = true;
+    this.fight.turnEpoch++;
     if (this.turnTimer !== null) {
       clearTimeout(this.turnTimer);
       this.turnTimer = null;
@@ -73,7 +74,7 @@ export class Runner {
     if (this.stopped) {
       return;
     }
-    if (!this.turn || this.turn.fighter.id !== fighterId) {
+    if (!this.turn || this.turn.ended || this.turn.fighter.id !== fighterId) {
       return;
     }
     this.endTurn(this.turn);
@@ -87,7 +88,7 @@ export class Runner {
   }
 
   private advanceTurn(): void {
-    if (this.stopped) {
+    if (this.stopped || this.fight.ending) {
       return;
     }
     const endCheck = this.fight.checkFightEnd();
@@ -96,22 +97,16 @@ export class Runner {
       this.stop();
       return;
     }
-    const { next: fighter, rounded } = this.active.turnList.advance();
+    const { next: fighter } = this.active.turnList.advance();
     if (!fighter) {
       this.sink.broadcast(this.fight, "GE", null);
       return;
     }
 
-    // Deployed objects age by the round, not by the turn. Ticking them
-    // at every turn end burned a 3-round glyph in well under one round
-    // of a four-fighter fight, which read in play as "glyphs vanish
-    // immediately".
-    if (rounded) {
-      this.expireObjects();
-    }
+    // Ground objects expire at their caster's turn, before triggering.
+    this.expireObjects(fighter.id);
 
-    this.refreshFighter(fighter);
-
+    this.fight.turnEpoch++;
     const turn = new Turn(
       fighter,
       this.active.turnList.round + 1,
@@ -126,24 +121,31 @@ export class Runner {
       if (this.stopped) {
         return;
       }
-      this.requestEnd(fighter.id);
+      void this.fight.runAction(() => {
+        if (this.turn === turn && !turn.ended) {
+          this.requestEnd(fighter.id);
+        }
+      });
     }, this.turnDurationMs);
-
-    this.fight.modules.fireTurnStart(this.fight, fighter);
-
-    this.fight.fightMap.fireTurnStartTriggers(this.fight, fighter);
 
     const expiredBuffs = fighter.buffs.tickDown();
     for (const b of expiredBuffs) {
       b.onRemove?.(this.fight, fighter);
     }
     fighter.states.tickDown();
+    this.refreshFighter(fighter);
+    this.fight.modules.fireTurnStart(this.fight, fighter);
+    this.fight.fightMap.fireTurnStartTriggers(this.fight, fighter);
 
     // After expired buffs + states tickdown, check for fight end
     const postBuffEnd = this.fight.checkFightEnd();
     if (postBuffEnd.ended) {
       this.sink.broadcast(this.fight, "GE", null);
       this.stop();
+      return;
+    }
+    if (fighter.dead) {
+      this.endTurn(turn);
       return;
     }
 
@@ -165,6 +167,9 @@ export class Runner {
   }
 
   private endTurn(turn: Turn): void {
+    if (turn.ended || this.stopped || this.fight.ending) {
+      return;
+    }
     turn.end();
     if (this.turnTimer !== null) {
       clearTimeout(this.turnTimer);
@@ -188,8 +193,8 @@ export class Runner {
    * drawn on the battlefield for the rest of the fight — a zone the
    * player could see and reason about that no longer did anything.
    */
-  private expireObjects(): void {
-    for (const expired of this.fight.fightMap.objects.tickDown()) {
+  private expireObjects(casterId: number): void {
+    for (const expired of this.fight.fightMap.objects.tickDown(casterId)) {
       this.sink.broadcast(this.fight, "GDZ", {
         cellId: expired.cell,
       } satisfies ZoneRemovePayload);
@@ -197,8 +202,7 @@ export class Runner {
   }
 
   private refreshFighter(f: Fighter): void {
-    f.resetAp(6);
-    f.resetMp(3);
+    f.refreshResources();
     this.fight.spellUsage.resetTurn(f.id);
   }
 

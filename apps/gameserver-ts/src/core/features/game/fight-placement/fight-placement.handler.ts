@@ -4,12 +4,12 @@ import { create } from "@bufbuild/protobuf";
 import { SpriteType } from "@dofus/proto/common_pb";
 import {
   GameMovementSchema,
-  GamePositionStartSchema,
   GameReadySchema,
   type GameSetPosition,
   GameSetPositionSchema,
   type GameSetReady,
   GameSetReadySchema,
+  SpriteMovementEntry_Operation,
   SpriteMovementEntrySchema,
 } from "@dofus/proto/game_pb";
 import { DofusMessageSchema } from "@dofus/proto/server_messages_pb";
@@ -18,6 +18,8 @@ import { PlacementState } from "@modules/fight/core/fight.states";
 import { FightLifecycleService } from "@modules/fight/engine/fight.lifecycle.service";
 import { FighterKind, StateName } from "@modules/fight/fight.types";
 import { FightRegistryService } from "@modules/fight/registry/fight.registry";
+import { PlayerPresenceService } from "@modules/player-presence/player-presence.service";
+import { toSpriteEntry } from "@modules/player-presence/player-presence.sprite-entry";
 import { Injectable } from "@nestjs/common";
 import { GatewayFrameService } from "@shared/gateway-adapter/gateway-frame.service";
 import { MessageHandler } from "@shared/gateway-adapter/message-handler.decorator";
@@ -29,7 +31,8 @@ export class FightPlacementHandler {
     readonly _sessions: SessionRegistry,
     private readonly frames: GatewayFrameService,
     private readonly fightRegistry: FightRegistryService,
-    private readonly lifecycle: FightLifecycleService
+    private readonly lifecycle: FightLifecycleService,
+    private readonly presence: PlayerPresenceService
   ) {}
 
   @MessageHandler(GameSetPositionSchema)
@@ -50,6 +53,7 @@ export class FightPlacementHandler {
     }
 
     // Broadcast updated position to all fight participants
+    const appearance = this.presence.getByCharacter(String(fighter.id));
     const targets = this.fightSessions(fight);
     this.frames.broadcast(
       targets,
@@ -59,6 +63,13 @@ export class FightPlacementHandler {
           value: create(GameMovementSchema, {
             entries: [
               create(SpriteMovementEntrySchema, {
+                accessories: appearance
+                  ? toSpriteEntry(
+                      appearance,
+                      SpriteMovementEntry_Operation.UPDATE
+                    ).accessories
+                  : [],
+                sex: appearance?.sex ?? 0,
                 operation: 3, // UPDATE
                 spriteType: SpriteType.CHARACTER,
                 spriteId: String(fighter.id),
@@ -85,21 +96,6 @@ export class FightPlacementHandler {
                 colors: fighterColors(fighter),
               }),
             ],
-          }),
-        },
-      })
-    );
-
-    // Broadcast updated placement cells
-    this.frames.broadcast(
-      targets,
-      create(DofusMessageSchema, {
-        payload: {
-          case: "gamePositionStart",
-          value: create(GamePositionStartSchema, {
-            team1Cells: fight.fightMap.teamCells[0],
-            team2Cells: fight.fightMap.teamCells[1],
-            currentTeam: fighter.team?.side ?? 0,
           }),
         },
       })

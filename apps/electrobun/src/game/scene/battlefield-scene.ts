@@ -14,10 +14,7 @@ import type { AtlasLoader } from "@/game/render/atlas-loader";
 import type { PickingSystem } from "@/game/render/picking-system";
 import type { SpellVelloRenderer } from "@/game/render/spell-vello-renderer";
 import type { SpellAnimationConfig } from "@/game/scene/fight/spell-view";
-import type {
-  MapTransition,
-  TransitionDirection,
-} from "@/game/scene/map/transition";
+import type { MapTransition } from "@/game/scene/map/transition";
 import type { DebugOverlay } from "@/game/scene/overlays/debug";
 import type { GridOverlay } from "@/game/scene/overlays/grid";
 import type { PlayerRenderer } from "@/game/scene/player/renderer";
@@ -51,7 +48,7 @@ import { MapHandler } from "@/game/scene/map/handler";
 import { Scene } from "@/game/scene/scene";
 import { characterStore } from "@/game/stores/character-store";
 import { hideContextMenu } from "@/game/stores/context-menu-store";
-import { fightActor } from "@/game/stores/fight-store";
+import { fightActor, fightStore } from "@/game/stores/fight-store";
 import { FightUI } from "@/hud/fight/fight-ui";
 import {
   setTacticalMode as setTacticalModeStore,
@@ -530,10 +527,7 @@ export class Battlefield {
     });
   }
 
-  async loadMapFromData(
-    mapData: MapData,
-    direction?: TransitionDirection
-  ): Promise<void> {
+  async loadMapFromData(mapData: MapData): Promise<void> {
     if (
       !this.mapContainer ||
       !this.mapHandler ||
@@ -544,7 +538,7 @@ export class Battlefield {
     }
 
     // Non-blocking snapshot of the old map; new tiles render behind it.
-    this.mapTransition?.startTransition(direction);
+    this.mapTransition?.startTransition();
 
     this.currentMapData = mapData;
     this.cellDataMap.clear();
@@ -672,13 +666,6 @@ export class Battlefield {
     maps: Array<{ mapId: number; dx: number; dy: number; mapData: MapData }>
   ): void {
     this.adjacentMapCache?.loadAdjacentMaps(maps);
-  }
-
-  /**
-   * Get the transition direction for a target map from the adjacent cache.
-   */
-  getAdjacentDirection(mapId: number): TransitionDirection | null {
-    return this.adjacentMapCache?.getDirection(mapId) ?? null;
   }
 
   /** Set the player character ID (used for tracking). */
@@ -951,6 +938,13 @@ export class Battlefield {
       this.picking.setHoverByCell(null);
     }
     this.onCellHoverCallback?.(cellId);
+  }
+
+  hoverFightFighter(spriteId: string | null): void {
+    const fighter = spriteId
+      ? fightStore.getSnapshot().fighters.get(spriteId)
+      : undefined;
+    this.picking.setHoverByCell(fighter && !fighter.dead ? fighter.cell : null);
   }
 
   setOnCellHover(callback: (cellId: number | null) => void): void {

@@ -4,10 +4,13 @@ import type { Fighter } from "@modules/fight/core/fight.fighter";
 import type { LootRoll } from "@modules/fight/engine/fight.loot";
 import type { ExperienceGain } from "@modules/jobs/jobs.service";
 import type { TransactionalAdapterKysely } from "@nestjs-cls/transactional-adapter-kysely";
-import type { DB } from "@shared/db/schema";
+import type { DB, ItemRow } from "@shared/db/schema";
 import { create } from "@bufbuild/protobuf";
 import {
+  FightChallengeResultSchema,
+  FightExperienceProgressSchema,
   FightItemDropSchema,
+  type FightResult,
   FightResultSchema,
   GameEndSchema,
   GameMovementSchema,
@@ -45,6 +48,11 @@ import { monsterGroupToSpriteEntry } from "@modules/monsters/map-monster.sprite-
 import { MonstersRepository } from "@modules/monsters/monsters.repository";
 import { PlayerPresenceService } from "@modules/player-presence/player-presence.service";
 import { toSpriteEntry } from "@modules/player-presence/player-presence.sprite-entry";
+import {
+  MAX_LEVEL,
+  xpForLevel,
+  xpForNextLevel,
+} from "@modules/players/players.progression.constants";
 import { PlayersProgressionService } from "@modules/players/players.progression.service";
 import { PlayersRepository } from "@modules/players/players.repository";
 import { SpellsService } from "@modules/spells/spells.service";
@@ -67,6 +75,11 @@ interface HunterGainOutcome {
   gain: ExperienceGain;
 }
 
+interface GrantedItem {
+  sessionId: string;
+  item: ItemRow;
+}
+
 interface RolledRewards {
   loot: Map<number, LootRoll[]>;
   hunterExperience: Map<number, number>;
@@ -75,6 +88,7 @@ interface RolledRewards {
 @Injectable()
 export class FightEndService {
   private readonly logger = new Logger(FightEndService.name);
+  private readonly outcomes = new WeakMap<Fight, Promise<void>>();
 
   constructor(
     private readonly registry: FightRegistryService,
@@ -95,7 +109,20 @@ export class FightEndService {
     private readonly txHost: TransactionHost<TransactionalAdapterKysely<DB>>
   ) {}
 
-  async endFight(fight: Fight): Promise<void> {
+  endFight(fight: Fight): Promise<void> {
+    const existing = this.outcomes.get(fight);
+    if (existing) {
+      return existing;
+    }
+    fight.ending = true;
+    fight.cancelPlacementTimer();
+    this.registry.getRunner(fight.id)?.stop();
+    const outcome = this.finish(fight);
+    this.outcomes.set(fight, outcome);
+    return outcome;
+  }
+
+  private async finish(fight: Fight): Promise<void> {
     const winner = this.detectWinner(fight);
     const durationMs = Date.now() - fight.startedAt;
 
@@ -114,6 +141,7 @@ export class FightEndService {
     }
 
     // Apply challenge bonuses
+    const challenges = [];
     let challengeXpBonus = 0;
     let challengeDropBonus = 0;
     for (const mod of fight.modules.all()) {
@@ -125,10 +153,22 @@ export class FightEndService {
         "xpBonusPct" in mod
       ) {
         const challenge = mod as FightChallenge;
+        // Resolve final constraints (e.g. Sharing) before calculating bonuses.
+        // Challenges run before rewards are rolled, so no rewards exist yet.
+        challenge.onFightEnd?.(fight, winner, []);
         // Auto-succeed surviving challenges at fight end
         if (challenge.alive) {
           challenge.succeed();
         }
+        challenges.push(
+          create(FightChallengeResultSchema, {
+            challengeId: challenge.challengeId,
+            name: challenge.challengeName,
+            succeeded: challenge.won,
+            xpBonusPct: challenge.xpBonusPct,
+            dropBonusPct: challenge.dropBonusPct,
+          })
+        );
         if (challenge.won) {
           challengeXpBonus += challenge.xpBonusPct;
           challengeDropBonus += challenge.dropBonusPct;
@@ -163,15 +203,20 @@ export class FightEndService {
     // payout the database never took is the worst possible failure here:
     // the player believes they earned it. Writing first means a failed
     // transaction shows nothing rather than a lie.
-    const { levelledUp, hunterGains } = await this.persistOutcome({
-      fight,
-      winner,
-      durationMs,
-      xpPerPlayer,
-      kamasPerPlayer,
-      loot,
-      hunterExperience,
-    });
+    const { levelledUp, hunterGains, grantedItems, playerResults } =
+      await this.persistOutcome({
+        fight,
+        winner,
+        durationMs,
+        xpPerPlayer,
+        kamasPerPlayer,
+        loot,
+        hunterExperience,
+      });
+
+    for (const granted of grantedItems) {
+      this.items.sendItemAdd(granted.sessionId, granted.item);
+    }
 
     // Build results
     const results = fight.fighters().map((f) => {
@@ -179,7 +224,13 @@ export class FightEndService {
       return create(FightResultSchema, {
         spriteId: String(f.id),
         name: f.name,
-        level: f.player?.level ?? f.monsterLevel ?? 1,
+        level:
+          playerResults.get(f.id)?.level ??
+          f.player?.level ??
+          f.monsterLevel ??
+          1,
+        isPlayer: Boolean(f.player),
+        experience: playerResults.get(f.id)?.experience,
         isDead: f.dead,
         team: f.team?.side ?? 0,
         xpWon: BigInt(isWinner && f.sessionId ? xpPerPlayer : 0),
@@ -195,6 +246,34 @@ export class FightEndService {
 
     // Broadcast GE to all fight participants
     const targets = fight.allSessions();
+    const dropTemplates = [
+      ...new Set(
+        results.flatMap((result) => result.itemsWon.map((item) => item.itemId))
+      ),
+    ];
+    await Promise.all(
+      targets.flatMap((sessionId) =>
+        dropTemplates.map((id) => this.items.sendTemplateFor(sessionId, id))
+      )
+    );
+
+    this.frames.broadcast(
+      targets,
+      create(DofusMessageSchema, {
+        payload: {
+          case: "gameEnd",
+          value: create(GameEndSchema, {
+            durationMs,
+            winnerTeam: winner,
+            initId: 0,
+            fightType: fight.type,
+            starBonus: 0,
+            results,
+            challenges,
+          }),
+        },
+      })
+    );
 
     const removeEntries = fight.fighters().map((f) =>
       create(SpriteMovementEntrySchema, {
@@ -214,27 +293,18 @@ export class FightEndService {
       );
     }
 
-    this.frames.broadcast(
-      targets,
-      create(DofusMessageSchema, {
-        payload: {
-          case: "gameEnd",
-          value: create(GameEndSchema, {
-            durationMs,
-            winnerTeam: winner,
-            initId: 0,
-            fightType: fight.type,
-            starBonus: 0,
-            results,
-          }),
-        },
-      })
-    );
-
     // After the result screen, so the panels the player opens next are
     // already showing the new level, capital and spells.
     await this.announceLevelUps(levelledUp);
     await this.announceHunterGains(hunterGains);
+    for (const fighter of fight.fighters()) {
+      if (fighter.sessionId && fighter.player) {
+        await this.stats.sendStats(
+          fighter.sessionId,
+          String(fighter.player.id)
+        );
+      }
+    }
 
     // Clean buffs and states for all fighters
     for (const f of fight.fighters()) {
@@ -476,6 +546,8 @@ export class FightEndService {
   }): Promise<{
     levelledUp: LevelUpOutcome[];
     hunterGains: HunterGainOutcome[];
+    grantedItems: GrantedItem[];
+    playerResults: Map<number, Pick<FightResult, "level" | "experience">>;
   }> {
     const {
       fight,
@@ -492,6 +564,11 @@ export class FightEndService {
     // is the same lie the payout screen is careful not to tell.
     const levelledUp: LevelUpOutcome[] = [];
     const hunterGains: HunterGainOutcome[] = [];
+    const grantedItems: GrantedItem[] = [];
+    const playerResults = new Map<
+      number,
+      Pick<FightResult, "level" | "experience">
+    >();
 
     await this.txHost.withTransaction(async () => {
       const historyResult = await this.historyRepo.insertHistory({
@@ -544,6 +621,10 @@ export class FightEndService {
         );
 
         if (!isWinner) {
+          const persisted = await this.players.findById(playerId);
+          if (persisted) {
+            playerResults.set(fighter.id, resultProgress(persisted));
+          }
           continue;
         }
 
@@ -552,6 +633,10 @@ export class FightEndService {
         // Every level the experience now covers, not just the first one,
         // plus the spells they unlock — see `PlayersProgressionService`.
         const progress = await this.progression.applyExperience(playerId);
+        const persisted = await this.players.findById(playerId);
+        if (persisted) {
+          playerResults.set(fighter.id, resultProgress(persisted));
+        }
 
         if (
           fighter.sessionId &&
@@ -565,7 +650,15 @@ export class FightEndService {
           });
         }
 
-        await this.grantLoot(fighter, playerId, loot.get(fighter.id) ?? []);
+        const items = await this.grantLoot(
+          playerId,
+          loot.get(fighter.id) ?? []
+        );
+        if (fighter.sessionId) {
+          grantedItems.push(
+            ...items.map((item) => ({ sessionId: fighter.sessionId, item }))
+          );
+        }
 
         const hunterXp = hunterExperience.get(fighter.id) ?? 0;
         if (fighter.sessionId && hunterXp > 0) {
@@ -585,7 +678,7 @@ export class FightEndService {
       }
     });
 
-    return { levelledUp, hunterGains };
+    return { levelledUp, hunterGains, grantedItems, playerResults };
   }
 
   private async announceHunterGains(
@@ -624,8 +717,6 @@ export class FightEndService {
           })
         );
       }
-
-      await this.stats.sendStats(entry.sessionId, entry.playerId);
     }
   }
 
@@ -639,10 +730,10 @@ export class FightEndService {
    * wired up all along and simply never received one.
    */
   private async grantLoot(
-    fighter: Fighter,
     playerId: string,
     won: readonly LootRoll[]
-  ): Promise<void> {
+  ): Promise<ItemRow[]> {
+    const granted: ItemRow[] = [];
     for (const roll of won) {
       const template = await this.inventory.findTemplate(roll.templateId);
 
@@ -660,10 +751,9 @@ export class FightEndService {
         effects: rollItemEffects(template.effects),
       });
 
-      if (fighter.sessionId) {
-        this.items.sendItemAdd(fighter.sessionId, row);
-      }
+      granted.push(row);
     }
+    return granted;
   }
 
   private detectWinner(fight: Fight): TeamSide {
@@ -673,4 +763,18 @@ export class FightEndService {
     }
     return 0 as TeamSide;
   }
+}
+
+/** Snapshot from the transaction, never from the stale fight-start player. */
+function resultProgress(player: { level: number; experience: string }) {
+  return {
+    level: player.level,
+    experience: create(FightExperienceProgressSchema, {
+      current: BigInt(player.experience),
+      levelFloor: BigInt(xpForLevel(player.level)),
+      ...(player.level < MAX_LEVEL
+        ? { nextLevelFloor: BigInt(xpForNextLevel(player.level)) }
+        : {}),
+    }),
+  };
 }

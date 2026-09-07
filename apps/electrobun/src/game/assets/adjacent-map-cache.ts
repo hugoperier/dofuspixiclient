@@ -44,12 +44,6 @@ export class AdjacentMapCache {
     return this.cache.get(mapId) ?? null;
   }
 
-  getDirection(mapId: number): { dx: number; dy: number } | null {
-    const entry = this.cache.get(mapId);
-    if (!entry) return null;
-    return { dx: entry.dx, dy: entry.dy };
-  }
-
   clear(): void {
     this.prefetchAbort?.abort();
     this.prefetchAbort = null;

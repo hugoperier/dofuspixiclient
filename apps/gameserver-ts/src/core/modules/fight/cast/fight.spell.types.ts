@@ -21,9 +21,16 @@ export interface SpellEffect {
    * spell book's effect-description formatter does.
    */
   param?: string;
+  dice?: string;
 }
 
-export type SpellLevel = Omit<SpellLevelRow, "effects" | "criticalEffects"> & {
+export type SpellLevel = Omit<
+  SpellLevelRow,
+  "effects" | "criticalEffects" | "requiredStates" | "forbiddenStates"
+> & {
+  requiredStates?: number[];
+  forbiddenStates?: number[];
+  combatUnavailableReason?: string;
   effects: SpellEffect[];
   criticalEffects: SpellEffect[];
   /**

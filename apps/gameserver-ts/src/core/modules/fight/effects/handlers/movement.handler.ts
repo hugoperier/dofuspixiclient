@@ -1,137 +1,128 @@
-import type { Fighter } from "@modules/fight/core/fight.fighter";
 import type { Scope } from "@modules/fight/effects/fight.effect-registry.types";
+import { cellToCoord, fightDistance } from "@dofus/grid";
+import { applyDamageToTarget } from "@modules/fight/effects/fight.damage";
 import { EffectHandler } from "@modules/fight/effects/fight.effect-handler.decorator";
 import { rollEffect } from "@modules/fight/effects/fight.effect-registry";
+import { Element, FightStateId } from "@modules/fight/fight.types";
 import { Injectable } from "@nestjs/common";
-import { match } from "ts-pattern";
 
 @Injectable()
 export class MovementEffectHandler {
   @EffectHandler(4)
   handleTeleport(scope: Scope): void {
-    const { caster } = scope;
-    const fromCell = caster.cell;
-    const toCell = scope.targetCell;
-    scope.fight.fightMap.free(fromCell, caster.id);
-    caster.cell = toCell;
-    scope.fight.fightMap.occupy(toCell, caster.id);
-    scope.emitter.emitTeleport(scope.fight, caster.id, fromCell, toCell);
+    const { caster, fight, targetCell } = scope;
+    if (
+      !fight.fightMap.isWalkable(targetCell) ||
+      !fight.fightMap.isFree(targetCell)
+    ) {
+      return;
+    }
+    const from = caster.cell;
+    fight.fightMap.free(from, caster.id);
+    caster.cell = targetCell;
+    fight.fightMap.occupy(targetCell, caster.id);
+    scope.emitter.emitTeleport(fight, caster.id, from, targetCell);
+    fight.fightMap.fireArrivalTriggers(fight, caster, targetCell);
   }
 
   @EffectHandler(5)
   handlePush(scope: Scope): void {
-    const target = scope.target;
-    if (!target || target.dead) {
-      return;
-    }
-    const steps = rollEffect(scope);
-    this.moveAway(scope, target, scope.caster.cell, steps);
+    this.displace(scope, false);
   }
 
   @EffectHandler(6)
   handlePull(scope: Scope): void {
-    const target = scope.target;
-    if (!target || target.dead) {
-      return;
-    }
-    const steps = rollEffect(scope);
-    this.moveToward(scope, target, scope.caster.cell, steps);
+    this.displace(scope, true);
   }
 
   @EffectHandler(8)
   handleSwap(scope: Scope): void {
-    const target = scope.target;
-    if (!target || target.dead) {
+    const { target, caster, fight } = scope;
+    if (
+      !target ||
+      target.dead ||
+      caster.dead ||
+      target.states.has(FightStateId.Rooted) ||
+      caster.states.has(FightStateId.Rooted)
+    ) {
       return;
     }
-    const { caster } = scope;
-    const fmap = scope.fight.fightMap;
-    const cCell = caster.cell;
-    const tCell = target.cell;
-    fmap.free(cCell, caster.id);
-    fmap.free(tCell, target.id);
-    caster.cell = tCell;
-    target.cell = cCell;
-    fmap.occupy(tCell, caster.id);
-    fmap.occupy(cCell, target.id);
-    scope.emitter.emitTeleport(scope.fight, caster.id, cCell, tCell);
-    scope.emitter.emitTeleport(scope.fight, target.id, tCell, cCell);
+    const from = caster.cell;
+    const to = target.cell;
+    fight.fightMap.free(from, caster.id);
+    fight.fightMap.free(to, target.id);
+    caster.cell = to;
+    target.cell = from;
+    fight.fightMap.occupy(to, caster.id);
+    fight.fightMap.occupy(from, target.id);
+    scope.emitter.emitTeleport(fight, caster.id, from, to);
+    scope.emitter.emitTeleport(fight, target.id, to, from);
+    fight.fightMap.fireArrivalTriggers(fight, caster, to);
+    fight.fightMap.fireArrivalTriggers(fight, target, from);
   }
 
-  private moveAway(
-    scope: Scope,
-    target: Fighter,
-    fromCell: number,
-    steps: number
-  ): void {
-    const fmap = scope.fight.fightMap;
-    const delta = target.cell - fromCell;
-    if (delta === 0) {
+  private displace(scope: Scope, pull: boolean): void {
+    const { target, caster, fight, emitter } = scope;
+    if (!target || target.dead || target.states.has(FightStateId.Rooted)) {
       return;
     }
-    const dir = this.inferDirection(fmap.width, delta);
-    const origCell = target.cell;
-    let cell = target.cell;
-    const total = fmap.width * fmap.height * 2;
-    for (let i = 0; i < steps; i++) {
-      const next = cell + dir;
-      if (next < 0 || next >= total || !fmap.isFree(next)) {
-        break;
-      }
-      cell = next;
-    }
-    if (cell !== origCell) {
-      fmap.free(origCell, target.id);
-      target.cell = cell;
-      fmap.occupy(cell, target.id);
-      scope.emitter.emitTeleport(scope.fight, target.id, origCell, cell);
-    }
-  }
-
-  private moveToward(
-    scope: Scope,
-    target: Fighter,
-    towardCell: number,
-    steps: number
-  ): void {
-    const fmap = scope.fight.fightMap;
-    const delta = towardCell - target.cell;
-    if (delta === 0) {
+    const map = fight.fightMap;
+    const origin =
+      scope.castTargetCell !== undefined && scope.castTargetCell !== target.cell
+        ? scope.castTargetCell
+        : caster.cell;
+    const a = cellToCoord(origin, map.width);
+    const b = cellToCoord(target.cell, map.width);
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    if ((dx === 0 && dy === 0) || (dx !== 0 && dy !== 0)) {
       return;
     }
-    const dir = this.inferDirection(fmap.width, delta);
-    const origCell = target.cell;
-    let cell = target.cell;
-    const total = fmap.width * fmap.height * 2;
-    for (let i = 0; i < steps; i++) {
-      const next = cell + dir;
+    const delta =
+      (dx !== 0 ? Math.sign(dx) * map.width : Math.sign(dy) * (map.width - 1)) *
+      (pull ? -1 : 1);
+    const steps = rollEffect(scope);
+    for (let step = 0; step < steps; step++) {
+      const from = target.cell;
+      const next = from + delta;
       if (
-        next < 0 ||
-        next >= total ||
-        !fmap.isFree(next) ||
-        next === towardCell
+        fightDistance(map, from, next) !== 1 ||
+        !map.isWalkable(next) ||
+        !map.isFree(next)
       ) {
+        if (!pull) {
+          const remaining = steps - step;
+          const amount = Math.max(
+            1,
+            Math.floor(
+              (8 +
+                (1 + Math.floor(fight.random() * 8)) *
+                  Math.max(0.1, caster.level / 50)) *
+                remaining
+            )
+          );
+          applyDamageToTarget(scope, amount, Element.Neutral);
+          const blocker = fight
+            .fighters()
+            .find((fighter) => !fighter.dead && fighter.cell === next);
+          if (blocker) {
+            applyDamageToTarget(
+              { ...scope, target: blocker },
+              Math.floor(amount / 2),
+              Element.Neutral
+            );
+          }
+        }
         break;
       }
-      cell = next;
+      map.free(from, target.id);
+      target.cell = next;
+      map.occupy(next, target.id);
+      emitter.emitTeleport(fight, target.id, from, next);
+      map.fireArrivalTriggers(fight, target, next);
+      if (target.dead || target.cell !== next) {
+        break;
+      }
     }
-    if (cell !== origCell) {
-      fmap.free(origCell, target.id);
-      target.cell = cell;
-      fmap.occupy(cell, target.id);
-      scope.emitter.emitTeleport(scope.fight, target.id, origCell, cell);
-    }
-  }
-
-  private inferDirection(width: number, delta: number): number {
-    const stride = 2 * width - 1;
-    const absDelta = Math.abs(delta);
-    const sign = delta > 0 ? 1 : -1;
-    return match(absDelta)
-      .with(1, () => sign)
-      .with(width, () => sign * width)
-      .with(stride, () => sign * stride)
-      .with(width - 1, () => sign * (width - 1))
-      .otherwise(() => sign);
   }
 }

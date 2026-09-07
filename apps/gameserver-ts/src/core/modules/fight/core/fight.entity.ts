@@ -32,6 +32,27 @@ export class Fight {
   modules: ModuleList;
   readonly startedAt: number;
   readonly spellUsage = new SpellUsageTracker();
+  ending = false;
+  turnEpoch = 0;
+  private actionTail: Promise<void> = Promise.resolve();
+  placementTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** All network actions, AI actions and deadlines share this queue. */
+  runAction<T>(action: () => T | Promise<T>): Promise<T> {
+    const result = this.actionTail.then(action);
+    this.actionTail = result.then(
+      () => {},
+      () => {}
+    );
+    return result;
+  }
+
+  cancelPlacementTimer(): void {
+    if (this.placementTimer !== null) {
+      clearTimeout(this.placementTimer);
+    }
+    this.placementTimer = null;
+  }
 
   lockedTeam = false;
   lockedSpectators = false;
@@ -46,7 +67,8 @@ export class Fight {
     type: FightType,
     mapId: number,
     fightMap: FightMap,
-    teamOpts: [TeamOptions, TeamOptions]
+    teamOpts: [TeamOptions, TeamOptions],
+    readonly random: () => number = Math.random
   ) {
     fightIdCounter++;
     this.id = fightIdCounter;

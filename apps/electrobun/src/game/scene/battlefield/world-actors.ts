@@ -103,6 +103,7 @@ export interface BattlefieldWorldActorsDeps {
 export class BattlefieldWorldActors {
   private container: Container | null = null;
   private renderer: PlayerRenderer | null = null;
+  private readonly npcIds = new Set<number>();
 
   constructor(private readonly deps: BattlefieldWorldActorsDeps) {}
 
@@ -112,6 +113,7 @@ export class BattlefieldWorldActors {
 
   /** Recreate the renderer (e.g. after map change, before MAP_ACTORS batch). */
   reset(): void {
+    this.npcIds.clear();
     this.init();
   }
 
@@ -246,7 +248,19 @@ export class BattlefieldWorldActors {
       }
     }
 
+    if (data.npcTemplateId !== undefined) {
+      this.npcIds.add(data.id);
+      this.syncNpcVisibility();
+    }
     this.deps.markPickingDirty();
+  }
+
+  private syncNpcVisibility(): void {
+    const mode = fightStore.getSnapshot().mode;
+    const visible = mode === "none" || mode === "ended";
+    for (const id of this.npcIds) {
+      this.renderer?.setPlayerRenderable(id, visible);
+    }
   }
 
   /** Look changes (equip/unequip) — re-render the actor with new accessories. */
@@ -255,6 +269,7 @@ export class BattlefieldWorldActors {
   }
 
   remove(id: number): void {
+    this.npcIds.delete(id);
     // A monster group's members are linked children of the leader, so
     // `PlayerRenderer.cleanupPlayer` already removes their sprites when the
     // leader goes. Their picking entries are ours to drop, though — the
@@ -277,6 +292,7 @@ export class BattlefieldWorldActors {
   }
 
   clear(): void {
+    this.npcIds.clear();
     this.renderer?.clear();
   }
 
@@ -338,15 +354,22 @@ export class BattlefieldWorldActors {
     // out of sync (was the user's "HP bar goes to 0 after any damage"
     // bug — onDamage's local delta computation was racing with the
     // store update fired right after).
-    let lastHpKey = new Map<string, string>();
+    const lastHpKey = new Map<string, string>();
     this.fightStoreUnsub = fightStore.subscribe(() => {
+      this.syncNpcVisibility();
       const renderer = this.renderer;
-      if (!renderer) return;
+      if (!renderer) {
+        return;
+      }
       for (const f of fightStore.getSnapshot().fighters.values()) {
         const numericId = Number(f.spriteId);
-        if (!Number.isFinite(numericId)) continue;
+        if (!Number.isFinite(numericId)) {
+          continue;
+        }
         const key = `${f.hp}/${f.maxHp}`;
-        if (lastHpKey.get(f.spriteId) === key) continue;
+        if (lastHpKey.get(f.spriteId) === key) {
+          continue;
+        }
         lastHpKey.set(f.spriteId, key);
         renderer.updatePlayer(numericId, { hp: f.hp, maxHp: f.maxHp });
       }

@@ -1,11 +1,11 @@
 import type { MonsterSpell } from "@modules/fight/cast/fight.spell";
 import type { PlayerSnapshot } from "@modules/fight/core/fight.fighter.types";
 import type { FightTeam } from "@modules/fight/core/fight.team";
+import { clampFightDirection } from "@dofus/grid";
 import { FightStateBitmap } from "@modules/fight/core/fight.state-bitmap";
 import { BuffList } from "@modules/fight/effects/fight.buff";
 import { CharacteristicStack } from "@modules/fight/effects/fight.characteristic-stack";
 import { Characteristic, FighterKind } from "@modules/fight/fight.types";
-import { clampFightDirection } from "@dofus/grid";
 
 export type { PlayerSnapshot } from "@modules/fight/core/fight.fighter.types";
 
@@ -61,6 +61,8 @@ export class Fighter {
     this.buffs = new BuffList();
     this.states = new FightStateBitmap();
     this.stats = new CharacteristicStack();
+    this.stats.setBase(Characteristic.ActionPoints, ap);
+    this.stats.setBase(Characteristic.MovementPoints, mp);
     this.lp = lp;
     this.lpMax = lp;
     this.ap = ap;
@@ -97,13 +99,13 @@ export class Fighter {
     f.stats.setBase(Characteristic.Intelligence, p.stats.intelligence);
     f.stats.setBase(Characteristic.Chance, p.stats.chance);
     f.stats.setBase(Characteristic.Agility, p.stats.agility);
-    f.stats.setBase(Characteristic.ActionPoints, 6);
+    f.stats.setBase(Characteristic.ActionPoints, p.level >= 100 ? 7 : 6);
     f.stats.setBase(Characteristic.MovementPoints, 3);
     return f;
   }
 
   setLp(v: number): void {
-    this.lp = v;
+    this.lp = Math.max(0, Math.min(v, this.lpMax));
     if (v <= 0) {
       this.dead = true;
     }
@@ -148,6 +150,11 @@ export class Fighter {
 
   resetMp(v: number): void {
     this.mp = v;
+  }
+
+  refreshResources(): void {
+    this.resetAp(Math.max(0, this.stats.get(Characteristic.ActionPoints)));
+    this.resetMp(Math.max(0, this.stats.get(Characteristic.MovementPoints)));
   }
 
   markLeftFight(): void {

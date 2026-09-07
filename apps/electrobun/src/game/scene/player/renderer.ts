@@ -665,6 +665,14 @@ export class PlayerRenderer {
     return this.players.get(id)?.look ?? null;
   }
 
+  /** Keep exploration NPCs out of combat without destroying their sprites. */
+  setPlayerRenderable(id: number, renderable: boolean): void {
+    const player = this.players.get(id);
+    if (player) {
+      player.container.renderable = renderable;
+    }
+  }
+
   getPlayerPickingData(
     id: number
   ): { sprite: Sprite; container: Container } | null {

@@ -6,6 +6,7 @@ import {
   ActionAPChangeSchema,
   ActionDamageSchema,
   ActionDeathSchema,
+  ActionEffectApplySchema,
   ActionGlyphSchema,
   ActionMovementSchema,
   ActionMPChangeSchema,
@@ -34,16 +35,7 @@ export class FightFrameEmitter implements Emitter {
     amount: number,
     element: number
   ): void {
-    const elementActionId =
-      element === 1
-        ? 96
-        : element === 2
-          ? 97
-          : element === 3
-            ? 98
-            : element === 4
-              ? 99
-              : 100;
+    const elementActionId = [100, 97, 99, 96, 98][element] ?? 100;
 
     this.frames.broadcast(
       this.targets(fight),
@@ -87,7 +79,7 @@ export class FightFrameEmitter implements Emitter {
               case: "damage",
               value: create(ActionDamageSchema, {
                 spriteId: String(targetId),
-                amount,
+                amount: -amount,
                 element: 0,
               }),
             },
@@ -187,6 +179,15 @@ export class FightFrameEmitter implements Emitter {
             actionType: buff.effectId,
             spriteId: String(casterId),
             rawParams: `${targetId},${buff.value},${buff.remaining}`,
+            actionData: {
+              case: "effectApply",
+              value: create(ActionEffectApplySchema, {
+                effectId: buff.effectId,
+                targetSpriteId: String(targetId),
+                value: buff.value,
+                duration: buff.remaining,
+              }),
+            },
           }),
         },
       })

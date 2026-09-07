@@ -1,26 +1,26 @@
-import { useSyncExternalStore } from "react";
+import { useEffect, useRef } from "react";
 
+import type { FighterSnapshot } from "@/game/machines/fight.machine";
 import { Button } from "@/components/ui/button";
 import { Forfeit } from "@/components/ui/icons/fight/forfeit";
-import { PassTurn } from "@/components/ui/icons/fight/pass-turn";
 import { Tactical } from "@/components/ui/icons/fight/tactical";
-import { ResourceGauge } from "@/components/ui/resource-gauge";
 import {
   TurnTimeline,
   type TurnTimelineEntry,
 } from "@/components/ui/turn-timeline";
-import { characterStore } from "@/game/stores/character-store";
+import { getFighterPortraitRenderer } from "@/game/render/fighter-portrait-renderer";
 import { useTacticalMode } from "@/hud/fight/tactical-mode-store";
 import { useFightMode } from "@/hud/fight/useFightMode";
 
 import { FightPlacementPanel } from "./FightPlacementPanel";
 import { TurnChangeBanner } from "./TurnChangeBanner";
+import { useFightClock } from "./useFightClock";
 
 export interface FightOverlayActions {
-  onPassTurn: () => void;
   onForfeit: () => void;
   onReady: () => void;
   onSelectSpell: (spellId: number) => void;
+  onHoverFighter: (spriteId: string | null) => void;
 }
 
 interface FightOverlayProps {
@@ -29,33 +29,20 @@ interface FightOverlayProps {
 
 /**
  * React fight HUD layered above the canvas. Mounted whenever fightStore
- * reports placement/fighting/spectating. Renders the timeline + gauges
- * + buttons + spell bar; placement state additionally shows the Ready
- * panel and hides the spell bar.
+ * reports placement/fighting/spectating. The banner owns resources,
+ * spells and pass-turn; this overlay owns the timeline and placement.
  */
 export function FightOverlay({ actions }: FightOverlayProps) {
   const fight = useFightMode();
-  const character = useSyncExternalStore(
-    characterStore.subscribe,
-    characterStore.getSnapshot
-  );
   const { tactical, toggleTactical } = useTacticalMode();
+  const { seconds, remainingFraction } = useFightClock(
+    fight.deadline,
+    fight.turnDurationMs
+  );
 
   if (!fight.isFighting) {
     return null;
   }
-
-  // Live fight LP: read from fightStore (updated by FIGHTER_UPSERT
-  // on placement and FIGHTER_UPDATE on every damage / heal / GTM).
-  // characterStore.stats is a roleplay snapshot taken at login and
-  // never refreshed mid-fight, so it'd freeze the gauge at pre-fight
-  // values. Outside combat the fightStore mirror is empty, so we
-  // fall back to the character snapshot.
-  const myFighter = fight.mySpriteId
-    ? fight.fighters.get(fight.mySpriteId)
-    : undefined;
-  const hp = myFighter?.hp ?? character.stats?.hp ?? 0;
-  const maxHp = myFighter?.maxHp ?? character.stats?.maxHp ?? hp;
 
   // The server-truth roster lives on fightStore.fighters. For every
   // sprite on the timeline we look up its FighterSnapshot; team
@@ -76,6 +63,8 @@ export function FightOverlay({ actions }: FightOverlayProps) {
       name: f?.name ?? spriteId,
       level: f?.level,
       team,
+      color: f?.team === 1 ? "blue" : "red",
+      portrait: f ? <TimelinePortrait fighter={f} /> : undefined,
       active: fight.currentTurnSpriteId === spriteId,
       dead: f?.dead,
       ...(hp !== undefined ? { hpFraction: hp } : {}),
@@ -92,21 +81,29 @@ export function FightOverlay({ actions }: FightOverlayProps) {
           UI_StringCourse — name + level + portrait + colour zones,
           slides in on every TURN_START). */}
       <TurnChangeBanner />
+      {fight.isPlacement && fight.deadline > 0 && (
+        <div
+          role="timer"
+          aria-label="Temps restant"
+          className="absolute right-2 top-2 rounded bg-[#eee5cc] px-3 py-1 font-bold text-[#514a3c]"
+        >
+          {seconds} s
+        </div>
+      )}
 
-      {/* Top-center: turn timeline */}
-      <div className="pointer-events-auto absolute top-[calc(8px*var(--resolution-factor))] left-1/2 -translate-x-1/2">
-        <TurnTimeline entries={entries} currentTurn={fight.turnIndex + 1} />
-      </div>
-
-      {/* Top-right: HP/AP/MP gauges */}
-      <div className="pointer-events-auto absolute top-[calc(8px*var(--resolution-factor))] right-[calc(8px*var(--resolution-factor))] flex flex-col gap-[calc(4px*var(--resolution-factor))]">
-        <ResourceGauge variant="hp" value={hp} max={maxHp} />
-        <ResourceGauge variant="ap" value={fight.ap} max={fight.maxAp} />
-        <ResourceGauge variant="mp" value={fight.mp} max={fight.maxMp} />
+      {/* Timeline above the banner. */}
+      <div className="pointer-events-auto absolute bottom-[calc(170px*var(--resolution-factor))] right-[calc(8px*var(--resolution-factor))]">
+        <TurnTimeline
+          entries={entries}
+          currentTurn={fight.turnIndex + 1}
+          remainingFraction={remainingFraction}
+          onSelect={actions.onHoverFighter}
+          onHover={actions.onHoverFighter}
+        />
       </div>
 
       {/* Bottom-right (above banner): tactical / forfeit always visible
-          during placement + combat; pass-turn only inside combat. */}
+          during placement + combat. */}
       <div className="pointer-events-auto absolute right-[calc(8px*var(--resolution-factor))] bottom-[calc(140px*var(--resolution-factor))] flex gap-[calc(4px*var(--resolution-factor))]">
         <Button
           variant="rectangle"
@@ -123,16 +120,6 @@ export function FightOverlay({ actions }: FightOverlayProps) {
         >
           <Forfeit className="h-[calc(16px*var(--resolution-factor))] w-[calc(16px*var(--resolution-factor))]" />
         </Button>
-        {fight.isCombat && (
-          <Button
-            variant="pill"
-            onClick={actions.onPassTurn}
-            disabled={!fight.isMyTurn}
-            title="Passer le tour"
-          >
-            <PassTurn className="h-[calc(16px*var(--resolution-factor))] w-[calc(22px*var(--resolution-factor))]" />
-          </Button>
-        )}
       </div>
 
       {/* Bottom-center: placement panel during prep. Spell selection
@@ -143,4 +130,28 @@ export function FightOverlay({ actions }: FightOverlayProps) {
       {fight.isPlacement && <FightPlacementPanel onReady={actions.onReady} />}
     </div>
   );
+}
+
+/** Copy the cached artwork: equal monster portraits must not share a DOM canvas. */
+function TimelinePortrait({ fighter }: { fighter: FighterSnapshot }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const { gfxId, color1, color2, color3 } = fighter;
+  useEffect(() => {
+    let cancelled = false;
+    void getFighterPortraitRenderer()
+      .getCanvas(gfxId, 96, [color1, color2, color3])
+      .then((source) => {
+        const canvas = ref.current;
+        if (cancelled || !source || !canvas) {
+          return;
+        }
+        canvas.width = source.width;
+        canvas.height = source.height;
+        canvas.getContext("2d")?.drawImage(source, 0, 0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [gfxId, color1, color2, color3]);
+  return <canvas ref={ref} className="h-full w-full object-contain" />;
 }

@@ -124,7 +124,13 @@ export class TrapGlyphEffectHandler {
           return true;
         }
 
-        damage(scope, trigger, victim);
+        // Remove before resolving victims so a forced displacement cannot retrigger it.
+        fight.fightMap.objects.remove(trap.id);
+        for (const fighter of fight.fighters()) {
+          if (!fighter.dead && zone.has(fighter.cell)) {
+            damage(scope, trigger, fighter);
+          }
+        }
         scope.emitter.emitTrapRemove(fight, scope.targetCell);
         fight.checkFightEnd();
 
@@ -174,10 +180,6 @@ export class TrapGlyphEffectHandler {
           return;
         }
 
-        if (owner.team?.side === scope.caster.team?.side) {
-          return;
-        }
-
         scope.emitter.emitGlyphTrigger(
           fight,
           scope.caster.id,
@@ -220,15 +222,16 @@ function damage(
     return;
   }
 
-  const damageScope: Scope = {
-    ...scope,
-    effect: trigger.effect,
-    target: victim,
-  };
-
-  applyDamageToTarget(
-    damageScope,
-    calculateDamage(damageScope, trigger.element),
-    trigger.element
-  );
+  for (const effect of scope.triggerSpell?.effects ?? [trigger.effect]) {
+    const element = effectIdToElement(effect.id);
+    if (element === null || victim.dead) {
+      continue;
+    }
+    const damageScope: Scope = { ...scope, effect, target: victim };
+    applyDamageToTarget(
+      damageScope,
+      calculateDamage(damageScope, element),
+      element
+    );
+  }
 }

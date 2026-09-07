@@ -22,6 +22,7 @@ function resolveCharacteristic(effectId: number): {
     }))
     .with(112, 121, () => ({ char: Characteristic.DamageBonus, negate: false }))
     .with(115, () => ({ char: Characteristic.CriticalHit, negate: false }))
+    .with(116, () => ({ char: Characteristic.Range, negate: true }))
     .with(117, () => ({ char: Characteristic.Range, negate: false }))
     .with(118, () => ({ char: Characteristic.Strength, negate: false }))
     .with(119, () => ({ char: Characteristic.Agility, negate: false }))
@@ -46,6 +47,7 @@ export class StatBoostEffectHandler {
     111,
     112,
     115,
+    116,
     117,
     118,
     119,
@@ -74,6 +76,14 @@ export class StatBoostEffectHandler {
     const value = negate ? -roll : roll;
 
     target.stats.addBuff(char, value);
+    if (char === Characteristic.ActionPoints) {
+      target.ap = Math.max(0, target.ap + value);
+      scope.emitter.emitAPLoss(scope.fight, scope.caster.id, target.id, -value);
+    }
+    if (char === Characteristic.MovementPoints) {
+      target.mp = Math.max(0, target.mp + value);
+      scope.emitter.emitMPLoss(scope.fight, scope.caster.id, target.id, -value);
+    }
 
     const buff: Buff = {
       id: 0,

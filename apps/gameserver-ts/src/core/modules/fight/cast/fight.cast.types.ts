@@ -1,12 +1,15 @@
 import type { SpellLevel } from "@modules/fight/cast/fight.spell";
 import type { ActiveState } from "@modules/fight/core/fight.active-state";
-import type { CastContext } from "@modules/fight/effects/fight.buff.types";
 import type { Fight } from "@modules/fight/core/fight.entity";
 import type { Fighter } from "@modules/fight/core/fight.fighter";
+import type { CastContext } from "@modules/fight/effects/fight.buff.types";
 
 export interface SpellPort {
   spellLevel(spellId: number, level: number): Promise<SpellLevel | undefined>;
-  playerHasSpell?(playerId: string, spellId: number): Promise<boolean>;
+  playerSpellRank(
+    playerId: string,
+    spellId: number
+  ): Promise<number | undefined>;
 }
 
 export interface FightRegistry {
@@ -46,6 +49,8 @@ export interface CastResult {
  * of gating behind the spell visual.
  */
 export interface CastResolution {
+  turnEpoch: number;
+  targetId: number;
   fight: Fight;
   active: ActiveState;
   caster: Fighter;

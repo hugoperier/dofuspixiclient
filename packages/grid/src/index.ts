@@ -1,5 +1,7 @@
 export {
   AreaKind,
+  type CastGeometry,
+  castGeometryError,
   cellsInArea,
   type FightMapDims,
   type FightMapLos,

@@ -8,6 +8,7 @@ export interface Scope {
   caster: Fighter;
   target: Fighter | null;
   targetCell: number;
+  castTargetCell?: number;
   effect: SpellEffect;
   spell: SpellLevel;
   critical: boolean;
