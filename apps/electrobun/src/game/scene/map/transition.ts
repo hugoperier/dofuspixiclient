@@ -8,6 +8,10 @@ import {
   Ticker,
 } from "pixi.js";
 
+import { createLogger } from "@/utils/logger";
+
+const log = createLogger("MapTransition");
+
 /**
  * Smooth map-to-map transition using snapshot + crossfade blur.
  *
@@ -18,6 +22,7 @@ import {
  *     The snapshot fades out while the new map unblurs. Both stay in place.
  */
 export class MapTransition {
+  private generation = 0;
   private app: Application;
   private mapContainer: Container;
 
@@ -73,21 +78,26 @@ export class MapTransition {
 
     const pad = Math.ceil(this.MAX_BLUR) + 4;
 
-    this.snapshotTexture = RenderTexture.create({
-      width: this.app.screen.width + pad * 2,
-      height: this.app.screen.height + pad * 2,
-    });
-
     const origX = this.mapContainer.x;
     const origY = this.mapContainer.y;
-    this.mapContainer.position.set(origX + pad, origY + pad);
-
-    this.app.renderer.render({
-      container: this.mapContainer,
-      target: this.snapshotTexture,
-    });
-
-    this.mapContainer.position.set(origX, origY);
+    try {
+      this.snapshotTexture = RenderTexture.create({
+        width: this.app.screen.width + pad * 2,
+        height: this.app.screen.height + pad * 2,
+      });
+      this.mapContainer.position.set(origX + pad, origY + pad);
+      this.app.renderer.render({
+        container: this.mapContainer,
+        target: this.snapshotTexture,
+      });
+    } catch (error) {
+      // The snapshot is cosmetic; a GPU failure must not abort the map load.
+      log.error("Map snapshot failed; continuing without transition", error);
+      this.cleanup();
+      return;
+    } finally {
+      this.mapContainer.position.set(origX, origY);
+    }
 
     this.snapshot = new Sprite(this.snapshotTexture);
     this.snapshot.label = "map-transition-snapshot";
@@ -114,6 +124,7 @@ export class MapTransition {
       return;
     }
 
+    const generation = this.generation;
     const elapsed = performance.now() - this.transitionStartTime;
     const remaining = this.MIN_COVER_MS - elapsed;
 
@@ -121,10 +132,15 @@ export class MapTransition {
       await this.delay(remaining);
     }
 
+    if (generation !== this.generation) {
+      return;
+    }
     this.cancelAnimations();
 
     await this.revealWithCrossfade();
-    this.finishTransition();
+    if (generation === this.generation) {
+      this.finishTransition();
+    }
   }
 
   isTransitioning(): boolean {
@@ -132,6 +148,7 @@ export class MapTransition {
   }
 
   cleanup(): void {
+    this.generation++;
     this.cancelAnimations();
     this.removeSnapshot();
     this.removeMapBlur();

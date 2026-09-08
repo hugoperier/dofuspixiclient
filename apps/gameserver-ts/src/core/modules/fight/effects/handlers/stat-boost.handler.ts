@@ -1,43 +1,117 @@
-import type { Buff } from "@modules/fight/effects/fight.buff.types";
-import type { Scope } from "@modules/fight/effects/fight.effect-registry.types";
-import { emptyStatModifier } from "@modules/fight/effects/fight.buff.types";
-import { EffectHandler } from "@modules/fight/effects/fight.effect-handler.decorator";
-import { rollEffect } from "@modules/fight/effects/fight.effect-registry";
-import { Characteristic } from "@modules/fight/fight.types";
 import { Injectable } from "@nestjs/common";
-import { match } from "ts-pattern";
 
-function resolveCharacteristic(effectId: number): {
-  char: Characteristic;
-  negate: boolean;
-} {
-  return match(effectId)
-    .with(78, 128, () => ({
-      char: Characteristic.MovementPoints,
-      negate: false,
-    }))
-    .with(111, 120, () => ({
-      char: Characteristic.ActionPoints,
-      negate: false,
-    }))
-    .with(112, 121, () => ({ char: Characteristic.DamageBonus, negate: false }))
-    .with(115, () => ({ char: Characteristic.CriticalHit, negate: false }))
-    .with(116, () => ({ char: Characteristic.Range, negate: true }))
-    .with(117, () => ({ char: Characteristic.Range, negate: false }))
-    .with(118, () => ({ char: Characteristic.Strength, negate: false }))
-    .with(119, () => ({ char: Characteristic.Agility, negate: false }))
-    .with(123, () => ({ char: Characteristic.Chance, negate: false }))
-    .with(124, () => ({ char: Characteristic.Wisdom, negate: false }))
-    .with(125, () => ({ char: Characteristic.Vitality, negate: false }))
-    .with(126, () => ({ char: Characteristic.Intelligence, negate: false }))
-    .with(138, () => ({ char: Characteristic.DamagePercent, negate: false }))
-    .with(145, () => ({ char: Characteristic.DamageBonus, negate: true }))
-    .with(152, () => ({ char: Characteristic.Chance, negate: true }))
-    .with(153, () => ({ char: Characteristic.Vitality, negate: true }))
-    .with(154, () => ({ char: Characteristic.Agility, negate: true }))
-    .with(155, () => ({ char: Characteristic.Intelligence, negate: true }))
-    .with(157, () => ({ char: Characteristic.Strength, negate: true }))
-    .otherwise(() => ({ char: Characteristic.Strength, negate: false }));
+import type { Scope } from "../fight.effect-registry.types";
+import { Characteristic as C } from "../../fight.types";
+import { emptyStatModifier } from "../fight.buff.types";
+import { EffectHandler } from "../fight.effect-handler.decorator";
+import { addEffectBuff, killFighter } from "../fight.effect-lifecycle";
+import { rollEffect } from "../fight.effect-registry";
+
+const STATS: Record<number, readonly [C, number]> = {
+  78: [C.MovementPoints, 1],
+  111: [C.ActionPoints, 1],
+  112: [C.DamageBonus, 1],
+  115: [C.CriticalHit, 1],
+  116: [C.Range, -1],
+  117: [C.Range, 1],
+  118: [C.Strength, 1],
+  119: [C.Agility, 1],
+  120: [C.ActionPoints, 1],
+  121: [C.DamageBonus, 1],
+  122: [C.CriticalFailure, 1],
+  123: [C.Chance, 1],
+  124: [C.Wisdom, 1],
+  125: [C.Vitality, 1],
+  126: [C.Intelligence, 1],
+  128: [C.MovementPoints, 1],
+  138: [C.DamagePercent, 1],
+  142: [C.DamagePhysical, 1],
+  145: [C.DamageBonus, -1],
+  152: [C.Chance, -1],
+  153: [C.Vitality, -1],
+  154: [C.Agility, -1],
+  155: [C.Intelligence, -1],
+  157: [C.Strength, -1],
+  160: [C.DodgeAP, 1],
+  161: [C.DodgeMP, 1],
+  162: [C.DodgeAP, -1],
+  163: [C.DodgeMP, -1],
+  171: [C.CriticalHit, -1],
+  176: [C.Prospection, 1],
+  178: [C.HealBonus, 1],
+  182: [C.MaxSummons, 1],
+  186: [C.DamagePercent, -1],
+};
+
+export function applyStatBoost(
+  scope: Scope,
+  characteristic: C,
+  value: number
+): void {
+  const target = scope.target;
+  if (!target || target.dead) {
+    return;
+  }
+  const life = characteristic === C.Vitality;
+  addEffectBuff(scope, {
+    value,
+    statModifier: { ...emptyStatModifier(), vitality: life ? value : 0 },
+    onApply: () => {
+      target.stats.addBuff(characteristic, value);
+      if (life) {
+        target.lpMax = Math.max(1, target.lpMax + value);
+        target.setLp(target.lp + value);
+      }
+      if (characteristic === C.ActionPoints) {
+        target.ap = Math.max(0, target.ap + value);
+        scope.emitter.emitAPLoss(
+          scope.fight,
+          scope.caster.id,
+          target.id,
+          -value
+        );
+      }
+      if (characteristic === C.MovementPoints) {
+        target.mp = Math.max(0, target.mp + value);
+        scope.emitter.emitMPLoss(
+          scope.fight,
+          scope.caster.id,
+          target.id,
+          -value
+        );
+      }
+    },
+    onRemove: () => {
+      target.stats.removeBuff(characteristic, value);
+      if (characteristic === C.ActionPoints) {
+        const before = target.ap;
+        target.ap = Math.max(0, target.ap - value);
+        scope.emitter.emitAPLoss(
+          scope.fight,
+          scope.caster.id,
+          target.id,
+          before - target.ap
+        );
+      }
+      if (characteristic === C.MovementPoints) {
+        const before = target.mp;
+        target.mp = Math.max(0, target.mp - value);
+        scope.emitter.emitMPLoss(
+          scope.fight,
+          scope.caster.id,
+          target.id,
+          before - target.mp
+        );
+      }
+      if (life) {
+        target.lpMax = Math.max(1, target.lpMax - value);
+        target.setLp(target.lp - value);
+        if (target.dead) {
+          killFighter(scope, target);
+        }
+      }
+    },
+  });
 }
 
 @Injectable()
@@ -53,51 +127,34 @@ export class StatBoostEffectHandler {
     119,
     120,
     121,
+    122,
     123,
     124,
     125,
     126,
     128,
     138,
+    142,
     145,
     152,
     153,
     154,
     155,
-    157
+    157,
+    160,
+    161,
+    162,
+    163,
+    171,
+    176,
+    178,
+    182,
+    186
   )
   handle(scope: Scope): void {
-    const target = scope.target;
-    if (!target || target.dead) {
-      return;
+    const stat = STATS[scope.effect.id];
+    if (stat) {
+      applyStatBoost(scope, stat[0], rollEffect(scope) * stat[1]);
     }
-    const { char, negate } = resolveCharacteristic(scope.effect.id);
-    const roll = rollEffect(scope);
-    const value = negate ? -roll : roll;
-
-    target.stats.addBuff(char, value);
-    if (char === Characteristic.ActionPoints) {
-      target.ap = Math.max(0, target.ap + value);
-      scope.emitter.emitAPLoss(scope.fight, scope.caster.id, target.id, -value);
-    }
-    if (char === Characteristic.MovementPoints) {
-      target.mp = Math.max(0, target.mp + value);
-      scope.emitter.emitMPLoss(scope.fight, scope.caster.id, target.id, -value);
-    }
-
-    const buff: Buff = {
-      id: 0,
-      effectId: scope.effect.id,
-      casterId: scope.caster.id,
-      targetId: target.id,
-      remaining: scope.effect.duration,
-      value,
-      statModifier: emptyStatModifier(),
-      onRemove: (_fight, t) => {
-        t.stats.removeBuff(char, value);
-      },
-    };
-    target.buffs.add(buff);
-    scope.emitter.emitBuff(scope.fight, scope.caster.id, target.id, buff);
   }
 }

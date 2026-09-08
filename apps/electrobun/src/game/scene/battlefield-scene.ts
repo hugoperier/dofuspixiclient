@@ -87,6 +87,7 @@ function projectFightMode(value: unknown): string {
 }
 
 export class Battlefield {
+  private mapLoadGeneration = 0;
   private engine: Engine;
   private app: Application | null = null;
   private mapContainer: Container | null = null;
@@ -149,6 +150,7 @@ export class Battlefield {
   private onResizeEndCallback?: () => void;
 
   private readonly picking = new BattlefieldPicking({
+    isCombatFighter: (id) => fightActor.getSnapshot().context.fighters.has(String(id)),
     pickingSystem: () => this.pickingSystem,
     interactiveObjects: () => this.interactiveObjectsData,
     npcLang: () => this.npcLangData,
@@ -359,6 +361,7 @@ export class Battlefield {
    * appear the moment combat actually starts.
    */
   enterFightMode(mode: string): void {
+    this.picking.setCombatMode(true);
     // Circles appear once combat actually starts; during placement we
     // show the unadorned sprites like the original client. Spectators
     // always drop into an in-progress fight, so they keep the rings.
@@ -400,6 +403,7 @@ export class Battlefield {
   }
 
   exitFightMode(): void {
+    this.picking.setCombatMode(false);
     const renderer = this.worldActors.getRenderer();
     renderer?.setActiveTurnPlayer(null);
     renderer?.setFightMode(false);
@@ -537,6 +541,7 @@ export class Battlefield {
       return;
     }
 
+    const generation = ++this.mapLoadGeneration;
     // Non-blocking snapshot of the old map; new tiles render behind it.
     this.mapTransition?.startTransition();
 
@@ -590,6 +595,8 @@ export class Battlefield {
       this.getViewport()
     );
 
+    if (generation !== this.mapLoadGeneration) return;
+    this.fightUI?.updateFightMapDimensions(mapData.width);
     this.positionGridBelowObject2();
 
     this.gridOverlay?.setMapData(

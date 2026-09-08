@@ -179,6 +179,7 @@ export function emitJoinFrames(
           isSpectator: false,
           timerMs: 45000,
           fightType: fight.type,
+          fightId: fight.id,
         }),
       },
     })

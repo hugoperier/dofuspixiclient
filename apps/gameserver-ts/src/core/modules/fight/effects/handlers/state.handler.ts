@@ -1,74 +1,170 @@
-import type { Buff } from "@modules/fight/effects/fight.buff.types";
-import type { Scope } from "@modules/fight/effects/fight.effect-registry.types";
-import { emptyStatModifier } from "@modules/fight/effects/fight.buff.types";
-import { EffectHandler } from "@modules/fight/effects/fight.effect-handler.decorator";
-import { FightStateId } from "@modules/fight/fight.types";
 import { Injectable } from "@nestjs/common";
+
+import type { Scope } from "../fight.effect-registry.types";
+import { FightStateId } from "../../fight.types";
+import { EffectHandler } from "../fight.effect-handler.decorator";
+import {
+  addEffectBuff,
+  removeEffectBuff,
+  revealFighter,
+  syncBuffs,
+} from "../fight.effect-lifecycle";
 
 @Injectable()
 export class StateEffectHandler {
   @EffectHandler(140)
   handleSkipTurn(scope: Scope): void {
-    if (!scope.target || scope.target.dead) {
+    const target = scope.target;
+    if (!target || target.dead) {
       return;
     }
-    scope.target.states.set(FightStateId.SkipTurn, 1);
+    target.skipTurns++;
+    addEffectBuff(scope, {
+      remaining: 1,
+      periodic: true,
+      onRemove: () => {
+        target.skipTurns = 0;
+      },
+    });
   }
 
   @EffectHandler(150)
   handleInvisibility(scope: Scope): void {
-    if (!scope.target || scope.target.dead) {
+    const target = scope.target;
+    if (
+      !target ||
+      target.dead ||
+      target.carriedById !== null ||
+      target.carryingId !== null
+    ) {
       return;
     }
-    scope.target.states.set(FightStateId.Stealth, scope.effect.duration);
-    const buff: Buff = {
-      id: 0,
-      effectId: 150,
-      casterId: scope.caster.id,
-      targetId: scope.target.id,
-      remaining: scope.effect.duration,
-      value: 0,
-      statModifier: emptyStatModifier(),
-      onRemove: (_fight, t) => {
-        t.states.clear(FightStateId.Stealth);
+    addEffectBuff(scope, {
+      onApply: () => {
+        target.invisible = true;
+        scope.emitter.emitVisibility?.(scope.fight, target);
       },
-    };
-    scope.target.buffs.add(buff);
-    scope.emitter.emitBuff(scope.fight, scope.caster.id, scope.target.id, buff);
+      onRemove: () => {
+        if (!target.buffs.has(150)) {
+          target.invisible = false;
+          scope.emitter.emitVisibility?.(scope.fight, target);
+        }
+      },
+    });
   }
 
-  @EffectHandler(781)
-  handleMinimize(scope: Scope): void {
-    if (!scope.target || scope.target.dead) {
-      return;
+  @EffectHandler(202)
+  handleReveal(scope: Scope): void {
+    if (scope.target) {
+      revealFighter(scope, scope.target);
     }
-    scope.target.states.set(FightStateId.RollMinimize, scope.effect.duration);
+    for (const object of scope.fight.fightMap.objects.snapshot()) {
+      if (
+        object.cellEligible?.(scope.targetCell) ||
+        object.cell === scope.targetCell
+      ) {
+        object.visibleToTeams?.add(scope.caster.team?.side ?? 0);
+        if (object.kind === 1) {
+          scope.emitter.emitTrapAdd(
+            scope.fight,
+            object.casterId,
+            object.cell,
+            object.size,
+            object.color,
+            object.areaKind ?? 7
+          );
+        }
+      }
+    }
   }
 
-  @EffectHandler(782)
-  handleMaximize(scope: Scope): void {
-    if (!scope.target || scope.target.dead) {
+  @EffectHandler(781, 782)
+  handleForcedRoll(scope: Scope): void {
+    addEffectBuff(scope);
+  }
+
+  @EffectHandler(149)
+  handleAppearance(scope: Scope): void {
+    const target = scope.target;
+    if (!target || target.dead) {
       return;
     }
-    scope.target.states.set(FightStateId.RollMaximize, scope.effect.duration);
+    if (scope.effect.special < 0) {
+      for (const buff of target.buffs.all()) {
+        if (
+          buff.effectId === 149 &&
+          (scope.effect.special === -1 || buff.value === -scope.effect.special)
+        ) {
+          removeEffectBuff(scope, target, buff);
+        }
+      }
+      syncBuffs(scope, target);
+      return;
+    }
+    const gfx =
+      scope.spell.spellId === 686 && target.player?.sex === 1
+        ? 8011
+        : scope.effect.special;
+    addEffectBuff(scope, {
+      value: gfx,
+      onApply: () => {
+        target.appearanceGfx = gfx;
+        scope.emitter.emitAppearance?.(scope.fight, target);
+      },
+      onRemove: () => {
+        target.appearanceGfx =
+          target.buffs
+            .all()
+            .filter((buff) => buff.effectId === 149)
+            .at(-1)?.value ?? null;
+        scope.emitter.emitAppearance?.(scope.fight, target);
+      },
+    });
   }
 
   @EffectHandler(950)
   handleSetState(scope: Scope): void {
-    if (!scope.target || scope.target.dead) {
+    const target = scope.target;
+    if (!target || target.dead) {
       return;
     }
-    scope.target.states.set(
-      scope.effect.special as FightStateId,
-      scope.effect.duration
-    );
+    const state = scope.effect.special as FightStateId;
+    addEffectBuff(scope, {
+      dispellable: false,
+      onApply: () => {
+        target.states.set(state, -1);
+        scope.emitter.emitState?.(scope.fight, target.id, state, true);
+      },
+      onRemove: () => {
+        if (
+          !target.buffs
+            .all()
+            .some(
+              (buff) =>
+                buff.effectId === 950 && buff.sourceEffect?.special === state
+            )
+        ) {
+          target.states.clear(state);
+          scope.emitter.emitState?.(scope.fight, target.id, state, false);
+        }
+      },
+    });
   }
 
   @EffectHandler(951)
   handleRemoveState(scope: Scope): void {
-    if (!scope.target || scope.target.dead) {
+    const target = scope.target;
+    if (!target) {
       return;
     }
-    scope.target.states.clear(scope.effect.special as FightStateId);
+    const state = scope.effect.special as FightStateId;
+    for (const buff of target.buffs.all()) {
+      if (buff.effectId === 950 && buff.sourceEffect?.special === state) {
+        removeEffectBuff(scope, target, buff);
+      }
+    }
+    target.states.clear(state);
+    scope.emitter.emitState?.(scope.fight, target.id, state, false);
+    syncBuffs(scope, target);
   }
 }

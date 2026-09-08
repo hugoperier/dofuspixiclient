@@ -59,7 +59,7 @@ export class FightUI {
    */
   enterFightMode(_mode: string): void {
     if (this.fightContainer) {
-      this.exitFightMode();
+      return;
     }
 
     if (!this.mapContainer) {
@@ -129,7 +129,7 @@ export class FightUI {
     this.rendererRegistry.register("cell-highlighter", (e) =>
       this.cellHighlighter?.onResize(e)
     );
-    this.rendererRegistry.register("player-renderer", (e) =>
+    this.rendererRegistry.register("fight-player-renderer", (e) =>
       this.playerRenderer?.onResize(e)
     );
     this.rendererRegistry.register("damage-renderer", (e) =>
@@ -157,12 +157,14 @@ export class FightUI {
     this.playerRenderer?.destroy();
     this.playerRenderer = null;
 
-    this.cellHighlighter?.destroy();
+    if (this.cellHighlighter) {
+      this.scene.remove(this.cellHighlighter.id);
+    }
     this.cellHighlighter = null;
 
     // Clean up fight renderer registrations
     this.rendererRegistry.unregister("cell-highlighter");
-    this.rendererRegistry.unregister("player-renderer");
+    this.rendererRegistry.unregister("fight-player-renderer");
     this.rendererRegistry.unregister("damage-renderer");
     this.rendererRegistry.unregister("spell-renderer");
 

@@ -18,6 +18,10 @@ import {
   type SpriteMovementEntry,
 } from "@/game/network/protocol";
 import { numericId } from "@/game/network/sprite-id";
+import {
+  CombatPresentation,
+  type PresentationScope,
+} from "@/game/scene/fight/combat-presentation";
 import { closeNpcDialog, hudStore } from "@/game/stores";
 import { fightStore } from "@/game/stores/fight-store";
 import {
@@ -76,6 +80,7 @@ const HARVEST_SOUND_GRACE_MS = 2_000;
  * both are loaded directly from the client-side dofasset bundle.
  */
 export class MapHandler {
+  private mapGeneration = 0;
   private currentMapId: number | null = null;
   private currentCellId: number | null = null;
   private pathfinding: DofusPathfinding | null = null;
@@ -137,11 +142,10 @@ export class MapHandler {
 
   // Messages that arrive before the Battlefield is ready are buffered and
   // replayed by `flushPending()` once the renderer attaches.
-  private readonly combatPaths = new Map<string, Promise<void>>();
-  private fightPresentationGate: () => Promise<void> = () => Promise.resolve();
+  private presentation = new CombatPresentation();
 
-  setFightPresentationGate(gate: () => Promise<void>): void {
-    this.fightPresentationGate = gate;
+  setCombatPresentation(presentation: CombatPresentation): void {
+    this.presentation = presentation;
   }
 
   private deferredWorld: Array<() => Promise<void>> = [];
@@ -154,7 +158,8 @@ export class MapHandler {
     private readonly connection: Connection,
     private readonly audioManager: AudioManager,
     private readonly characterHandler: CharacterHandler,
-    private getBattlefield: () => Battlefield | null
+    private getBattlefield: () => Battlefield | null,
+    private readonly onMapAudio?: (map: GameMapData) => void
   ) {
     this.register();
     fightStore.subscribe(() => {
@@ -208,11 +213,11 @@ export class MapHandler {
   }
 
   whenMovementsComplete(): Promise<void> {
-    return Promise.all([...this.combatPaths.values()]).then(() => {});
+    return this.presentation.whenIdle();
   }
 
   isCharacterMoving(): boolean {
-    return this.isMoving || this.combatPaths.size > 0;
+    return this.isMoving || this.presentation.busy;
   }
 
   setCharacterMoving(moving: boolean): void {
@@ -360,25 +365,15 @@ export class MapHandler {
           if (!fight.fighters.has(spriteId)) {
             return;
           }
-          const previous = this.combatPaths.get(spriteId) ?? Promise.resolve();
-          const effects = this.fightPresentationGate();
-          const next = previous
-            .then(async () => {
-              await effects;
-              await this.handleActorPath(
-                spriteId,
-                path,
-                payload.sequenceId,
-                true
-              );
-            })
-            .catch((error) => log.warn(String(error)));
-          this.combatPaths.set(spriteId, next);
-          void next.finally(() => {
-            if (this.combatPaths.get(spriteId) === next) {
-              this.combatPaths.delete(spriteId);
-            }
-          });
+          this.presentation.move(spriteId, path, (cells, scope) =>
+            this.handleActorPath(
+              spriteId,
+              cells,
+              payload.sequenceId,
+              true,
+              scope
+            )
+          );
         } else {
           void this.handleActorPath(spriteId, path, payload.sequenceId);
         }
@@ -522,10 +517,15 @@ export class MapHandler {
       return;
     }
 
+    const generation = ++this.mapGeneration;
     const oldMapId = this.currentMapId;
     this.currentMapId = mapId;
-    void this.audioManager.playMusic(payload.musicId);
-    void this.audioManager.playEnvironment(payload.ambianceId);
+    if (this.onMapAudio) {
+      this.onMapAudio(payload);
+    } else {
+      void this.audioManager.playMusic(payload.musicId);
+      void this.audioManager.playEnvironment(payload.ambianceId);
+    }
     this.isMoving = false;
 
     try {
@@ -559,7 +559,10 @@ export class MapHandler {
       });
 
       await this.mapLoadPromise;
-      battlefield.revealMap();
+      if (generation !== this.mapGeneration) {
+        return;
+      }
+      void battlefield.revealMap();
 
       // Tell the server we're ready to receive sprites on this map.
       this.connection.send(
@@ -584,7 +587,11 @@ export class MapHandler {
   }
 
   private async handleMovement(entries: SpriteMovementEntry[]): Promise<void> {
+    const generation = this.mapGeneration;
     await this.mapLoadPromise;
+    if (generation !== this.mapGeneration) {
+      return;
+    }
 
     const battlefield = this.getBattlefield();
     if (!battlefield) {
@@ -596,6 +603,9 @@ export class MapHandler {
     const current = this.characterHandler.getCurrentCharacter();
 
     for (const entry of entries) {
+      if (generation !== this.mapGeneration) {
+        return;
+      }
       const isSelf = entry.spriteId === current?.spriteId;
 
       if (entry.operation === 2 /* REMOVE */) {
@@ -651,6 +661,9 @@ export class MapHandler {
         // per-placement number.
         ...(isNpc ? { npcTemplateId: entry.npcId } : {}),
       });
+      if (generation !== this.mapGeneration) {
+        return;
+      }
 
       if (isSelf) {
         this.currentCellId = entry.cellId;
@@ -666,8 +679,10 @@ export class MapHandler {
     spriteId: string,
     rawPath: number[],
     sequenceId: number,
-    combat = false
+    combat = false,
+    scope?: PresentationScope
   ): Promise<void> {
+    const generation = this.mapGeneration;
     const current = this.characterHandler.getCurrentCharacter();
     const numeric = numericId(spriteId);
     const isSelf = spriteId === current?.spriteId;
@@ -718,13 +733,14 @@ export class MapHandler {
     }
 
     await battlefield?.moveWorldActor(numeric, path);
-
-    if (isSelf && path.length > 0 && this.currentMapId !== mapAtStart) {
+    if (generation !== this.mapGeneration || this.currentMapId !== mapAtStart) {
       log.warn(
-        `walk finished on a different map than it started: ` +
-          `seq=${sequenceId} start=${mapAtStart} now=${this.currentMapId} — ` +
-          `the landing cell and the ack below belong to the old map`
+        `walk finished on a different map or load: seq=${sequenceId} start=${mapAtStart} now=${this.currentMapId} — discarded stale position and acknowledgement`
       );
+      return;
+    }
+    if (scope && !scope.isCurrent()) {
+      return;
     }
 
     if (isSelf && path.length > 0) {
@@ -843,7 +859,7 @@ function cellFromProto(c: MapCell): CellData {
  * Monster groups carry their colors on the leader member, not on
  * `entry.colors`, so we read from `monsters[0]` when present.
  */
-function encodeLook(entry: SpriteMovementEntry): string {
+export function encodeLook(entry: SpriteMovementEntry): string {
   const isMonsterGroup =
     entry.spriteType === 3 /* SPRITE_TYPE_MONSTER_GROUP */ &&
     entry.monsters.length > 0;

@@ -1,26 +1,25 @@
-import type { FightStateId } from "@modules/fight/fight.types";
-
 export class FightStateBitmap {
-  private active = new Map<FightStateId, number>();
+  // Catalogue states are not limited to the named engine constants.
+  private active = new Map<number, number>();
 
-  set(id: FightStateId, rounds: number): void {
+  set(id: number, rounds: number): void {
     this.active.set(id, rounds);
   }
 
-  clear(id: FightStateId): void {
+  clear(id: number): void {
     this.active.delete(id);
   }
 
-  has(id: FightStateId): boolean {
+  has(id: number): boolean {
     return this.active.has(id);
   }
 
-  snapshot(): Map<FightStateId, number> {
+  snapshot(): Map<number, number> {
     return new Map(this.active);
   }
 
-  tickDown(): FightStateId[] {
-    const expired: FightStateId[] = [];
+  tickDown(): number[] {
+    const expired: number[] = [];
     for (const [id, rounds] of this.active) {
       if (rounds < 0) {
         continue;

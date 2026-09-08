@@ -71,4 +71,8 @@ export class ObjectRegistry {
   snapshot(): FightObject[] {
     return [...this.items];
   }
+
+  clear(): void {
+    this.items = [];
+  }
 }

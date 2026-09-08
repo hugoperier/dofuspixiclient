@@ -17,12 +17,14 @@ export class SpellActor extends Actor implements Tickable {
   readonly [TICKABLE] = true as const;
 
   complete = false;
+  private elapsedMs = 0;
 
   constructor(
     private readonly scene: Scene,
     readonly spell: ISpellAnimation,
     private readonly resolve: () => void,
-    private readonly onDispose: (actor: SpellActor) => void
+    private readonly onDispose: (actor: SpellActor) => void,
+    private readonly onError?: (error: Error) => void
   ) {
     super();
     this.id = freshActorId();
@@ -30,9 +32,16 @@ export class SpellActor extends Actor implements Tickable {
 
   update(dt: number): void {
     try {
+      this.elapsedMs += dt;
+      if (this.elapsedMs > 30_000) {
+        throw new Error(
+          `Spell ${this.spell.spellId} did not finish after 30 seconds`
+        );
+      }
       this.spell.update(dt, 0);
     } catch (err) {
-      console.warn("Spell update error:", err);
+      this.onError?.(err instanceof Error ? err : new Error(String(err)));
+      this.markComplete();
     }
 
     if (this.spell.isComplete() || this.complete) {

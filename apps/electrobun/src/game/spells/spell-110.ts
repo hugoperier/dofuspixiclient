@@ -63,7 +63,7 @@ export class Spell110 extends RuntimeSpell {
     this.sprite5Sym = {
       name: "sprite5",
       totalFrames: 67,
-      frames: textures.getFrames("sprite5"),
+      frames: [],
       anchorX: 0.5,
       anchorY: 0.5,
       frameScripts: new Map([

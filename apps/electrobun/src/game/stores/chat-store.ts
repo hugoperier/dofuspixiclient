@@ -6,6 +6,7 @@ import {
   SIDE_CHAT_FILTER_CHANNELS,
   type SideChatChannel,
 } from "@/components/ui/side-chat-panel.channels";
+import { playAudioEvent } from "@/game/audio/audio-events";
 import { cooldownMsFor, styleFor } from "@/game/chat/chat-channels";
 
 import { ExternalStore } from "./game-store";
@@ -129,6 +130,7 @@ export function appendInfoMessage(text: string): void {
  * rejection. Rendered in the retail error red and never hidden by a filter.
  */
 export function appendErrorMessage(text: string): void {
+  playAudioEvent("error");
   appendChatMessage({
     text,
     color: "var(--color-side-chat-channel-errors)",

@@ -34,6 +34,7 @@ import { traceInspector } from "./trace-inspector";
  */
 
 export interface SpellCastContext {
+  selectionVersion: number;
   spell: SpellEntry | null;
   casterCellId: number | null;
   targetCellId: number | null;
@@ -66,6 +67,7 @@ export type SpellCastEvent =
   | { type: "RESET" };
 
 const initialContext: SpellCastContext = {
+  selectionVersion: 0,
   spell: null,
   casterCellId: null,
   targetCellId: null,
@@ -81,9 +83,10 @@ export const spellCastMachine = setup({
     events: {} as SpellCastEvent,
   },
   actions: {
-    applySelect: assign(({ event }) =>
+    applySelect: assign(({ event, context }) =>
       event.type === "SELECT_SPELL"
         ? {
+            selectionVersion: context.selectionVersion + 1,
             spell: event.spell,
             casterCellId: event.casterCellId,
             targetingCells: event.targetingCells,
@@ -112,13 +115,18 @@ export const spellCastMachine = setup({
     applyRejection: assign(({ event }) =>
       event.type === "SERVER_REJECTED" ? { rejectionReason: event.reason } : {}
     ),
-    reset: assign(() => ({ ...initialContext })),
+    reset: assign(({ context }) => ({
+      ...initialContext,
+      selectionVersion: context.selectionVersion + 1,
+    })),
   },
 }).createMachine({
   id: "spellCast",
   initial: "idle",
   context: initialContext,
   on: {
+    SELECT_SPELL: { target: ".targeting", actions: "applySelect" },
+    DESELECT: { target: ".idle", actions: "reset" },
     // TURN_ENDED / RESET cancel the whole flow regardless of substate —
     // server won't accept a cast after the turn flips, so the UI must
     // drop any pending selection.

@@ -146,6 +146,10 @@ export class BattlefieldWorldActors {
     if (!this.renderer) {
       this.init();
     }
+    const renderer = this.renderer;
+    if (!renderer) {
+      return;
+    }
 
     // Prefer the server's authoritative team (fight mode sets it from
     // SpriteMovementEntry.team). In roleplay no team is shipped, so we
@@ -185,7 +189,7 @@ export class BattlefieldWorldActors {
           }))
         : data.linkedChildren;
 
-    await (this.renderer?.addPlayer({
+    await renderer.addPlayer({
       id: data.id,
       name: data.name,
       team,
@@ -203,7 +207,10 @@ export class BattlefieldWorldActors {
       linkedChildren,
       mount: data.mount,
       ...(data.scale !== undefined ? { scale: data.scale } : {}),
-    }) ?? Promise.resolve());
+    });
+    if (this.renderer !== renderer) {
+      return;
+    }
 
     // If the player already existed (addPlayer short-circuits on
     // duplicate ids), make sure the team mirrors whatever the server

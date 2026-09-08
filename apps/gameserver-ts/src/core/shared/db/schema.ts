@@ -1993,6 +1993,11 @@ export type DB = {
   itemSuperTypes: ItemSuperTypesTable;
   spellTemplates: SpellTemplatesTable;
   spellLevels: SpellLevelsTable;
+  summonGrades: {
+    templateId: number;
+    grade: number;
+    data: import("@modules/spells/combat-catalog.types").SummonTemplate;
+  };
   monsterAiProfiles: MonsterAiProfilesTable;
   monsterTemplates: MonsterTemplatesTable;
   monsterLevels: MonsterLevelsTable;

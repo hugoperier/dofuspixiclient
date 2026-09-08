@@ -1,7 +1,6 @@
 import type { Scope } from "@modules/fight/effects/fight.effect-registry.types";
 import {
-  applyDamageToTarget,
-  calculateDamage,
+  dealSpellDamage,
   healTarget,
 } from "@modules/fight/effects/fight.damage";
 import { EffectHandler } from "@modules/fight/effects/fight.effect-handler.decorator";
@@ -21,11 +20,7 @@ export class LifeStealEffectHandler {
       .with(95, () => Element.Neutral)
       .otherwise(() => Element.Neutral);
 
-    const damage = applyDamageToTarget(
-      scope,
-      calculateDamage(scope, element),
-      element
-    );
+    const damage = dealSpellDamage(scope, element);
 
     if (damage > 0 && !scope.caster.dead) {
       const heal = Math.floor(damage / 2);

@@ -34,6 +34,18 @@ export class Fight {
   readonly spellUsage = new SpellUsageTracker();
   ending = false;
   turnEpoch = 0;
+  turnOpen = false;
+  actionSequence = 0;
+  activeActionId: number | null = null;
+  deathSequence = 0;
+  private nextSummonId = -10000;
+
+  allocateSummonId(): number {
+    while (this.fighters().some((f) => f.id === this.nextSummonId)) {
+      this.nextSummonId--;
+    }
+    return this.nextSummonId--;
+  }
   private actionTail: Promise<void> = Promise.resolve();
   placementTimer: ReturnType<typeof setTimeout> | null = null;
 

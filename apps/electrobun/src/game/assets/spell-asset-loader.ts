@@ -1,13 +1,13 @@
+import type {
+  SpellAnimationInfo,
+  SpellTextureProvider,
+} from "@dofus/spell-runtime";
+import type { Texture } from "pixi.js";
 import {
   readSpellExtras,
   type SpellExtras,
   type SpellExtrasAnimation,
 } from "@dofus/dofasset-format";
-import type {
-  SpellAnimationInfo,
-  SpellTextureProvider,
-} from "@dofus/spell-runtime";
-import { Texture } from "pixi.js";
 
 import type {
   SpellAnimation,
@@ -32,6 +32,8 @@ export interface SpellMeta {
     string,
     {
       stopFrame?: number;
+      hitFrame?: number;
+      removeFrame?: number;
       fadingFrame?: number;
       isComposite?: boolean;
       hasMorphShapes?: boolean;
@@ -79,7 +81,7 @@ class VelloSpellTextureProvider implements SpellTextureProvider {
         }
       }
     }
-    return this.getFrames("anim1")[0] ?? Texture.EMPTY;
+    throw new Error(`Visuel ${this.spellId} : texture ${name} introuvable.`);
   }
 
   getFrames(prefix: string): Texture[] {
@@ -88,16 +90,22 @@ class VelloSpellTextureProvider implements SpellTextureProvider {
       return cached?.frames ?? [];
     }
     if (!(prefix in this.manifest.animations)) {
-      this.anims.set(prefix, null);
-      return [];
+      throw new Error(
+        `Visuel ${this.spellId} : symbole ${prefix} absent du fichier compilé.`
+      );
     }
     const anim = this.vello.buildAnimation(
       this.spellId,
       prefix,
       this.resolution
     );
+    if (!anim?.frames.length) {
+      throw new Error(
+        `Visuel ${this.spellId} : conversion vide pour ${prefix}.`
+      );
+    }
     this.anims.set(prefix, anim);
-    return anim?.frames ?? [];
+    return anim.frames;
   }
 
   hasTexture(name: string): boolean {
@@ -110,11 +118,16 @@ class VelloSpellTextureProvider implements SpellTextureProvider {
   }
 
   getAnimationInfo(name: string): SpellAnimationInfo | null {
+    // Container-only symbols are intentionally absent from the texture table.
+    // Only getFrames/getTexture request an actual drawing and must fail loudly.
+    if (!(name in this.manifest.animations)) {
+      return null;
+    }
     const cached = this.anims.get(name);
-    const anim =
-      cached !== undefined
-        ? cached
-        : (this.getFrames(name), this.anims.get(name) ?? null);
+    if (cached === undefined) {
+      this.getFrames(name);
+    }
+    const anim = this.anims.get(name);
     if (!anim) {
       return null;
     }
@@ -169,14 +182,9 @@ export class SpellAssetLoader {
   }
 
   async loadSpell(spellId: number): Promise<LoadedSpell | null> {
-    // visualGfxId === 0 means "no spell-specific visual" (StarLoco's
-    // sorts.sprite=0 — common for glyphs / buffs / area effects where
-    // the canonical client just plays the cast pose + shows the
-    // server-driven GameZoneData overlay). Don't fetch /spells/0.dofasset
-    // for these — that file is the close-combat punch placeholder, not
-    // a fallback, and trying to parse it pollutes the spell-cast
-    // pipeline with an "Uncaught (in promise)" rejection.
-    if (spellId <= 0) {
+    // Callers skip pose-only catalogue spells. Graphic zero remains the
+    // existing close-combat animation when explicitly requested.
+    if (spellId < 0) {
       return null;
     }
     const cached = this.loaded.get(spellId);

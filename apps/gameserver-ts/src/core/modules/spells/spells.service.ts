@@ -17,6 +17,8 @@ import { LangsService } from "@modules/langs/langs.service";
 import { SpellsRepository } from "@modules/spells/spells.repository";
 import { Injectable, Logger } from "@nestjs/common";
 
+import type { SummonTemplate } from "./combat-catalog.types";
+import { prepareCombatData } from "./combat-dependencies";
 import { combatUnavailableReason, stateIds } from "./spells.combat-data";
 
 @Injectable()
@@ -30,13 +32,30 @@ export class SpellsService implements SpellPort {
 
   async spellLevel(
     spellId: number,
-    level: number,
-    visited: Set<number> = new Set()
+    level: number
   ): Promise<SpellLevel | undefined> {
-    if (visited.has(spellId)) {
-      return undefined;
+    const spell = await this.loadSpellLevel(spellId, level);
+    if (!spell) {
+      return;
     }
-    visited = new Set([...visited, spellId]);
+    const prepared = await prepareCombatData(spell, {
+      spellLevel: (id, rank) => this.loadSpellLevel(id, rank),
+      summonTemplate: (id, grade) => this.summonTemplate(id, grade),
+    });
+    return { ...spell, combatUnavailableReason: prepared.reason };
+  }
+
+  async summonTemplate(
+    templateId: number,
+    grade: number
+  ): Promise<SummonTemplate | undefined> {
+    return (await this.repo.findSummonGrade(templateId, grade))?.data;
+  }
+
+  private async loadSpellLevel(
+    spellId: number,
+    level: number
+  ): Promise<SpellLevel | undefined> {
     const row = await this.repo.findLevel(spellId, level);
     if (!row) {
       return undefined;
@@ -47,13 +66,8 @@ export class SpellsService implements SpellPort {
       ...row,
       requiredStates: stateIds(row.requiredStates),
       forbiddenStates: stateIds(row.forbiddenStates),
-      combatUnavailableReason: await this.availability(
-        [...effects, ...criticalEffects],
-        level,
-        visited
-      ),
-      effects: parseEffects(row.effects),
-      criticalEffects: parseEffects(row.criticalEffects),
+      effects,
+      criticalEffects,
       // Coalesce NULL → spellId so downstream code (cast handler,
       // FrameEmitter, client) never has to branch. Pre-StarLoco-import
       // every spell uses spellId as its gfx; once the canonical sorts
@@ -74,24 +88,14 @@ export class SpellsService implements SpellPort {
     rank: number,
     visited = new Set<number>()
   ): Promise<string> {
-    const reason = combatUnavailableReason(effects);
-    if (reason) {
-      return reason;
+    const id = [...visited][0];
+    if (id === undefined) {
+      return combatUnavailableReason(effects);
     }
-    for (const effect of effects) {
-      if (effect.id !== 400 && effect.id !== 401) {
-        continue;
-      }
-      const trigger = await this.spellLevel(effect.min, rank, visited);
-      if (
-        !trigger ||
-        trigger.combatUnavailableReason ||
-        trigger.effects.some((entry) => entry.id < 96 || entry.id > 100)
-      ) {
-        return "Les effets déclenchés de ce sort ne sont pas encore disponibles.";
-      }
-    }
-    return "";
+    return (
+      (await this.spellLevel(id, rank))?.combatUnavailableReason ??
+      "Rang absent du catalogue."
+    );
   }
 
   /**
@@ -150,6 +154,13 @@ export class SpellsService implements SpellPort {
         const primary = effects[0];
         const lang = this.langs.getSpellSync(row.spellId);
         return create(SpellDataSchema, {
+          effectIds: [
+            ...new Set(
+              [...effects, ...parseEffects(row.criticalEffects)].map(
+                (e) => e.id
+              )
+            ),
+          ],
           requiredStates: stateIds(row.requiredStates),
           forbiddenStates: stateIds(row.forbiddenStates),
           combatUnavailableReason: await this.availability(
@@ -183,7 +194,7 @@ export class SpellsService implements SpellPort {
           // the placement cell on hover instead of expanding the area.
           singleTargetSpawn:
             primary !== undefined &&
-            (primary.id === 400 || primary.id === 401 || primary.id === 185),
+            [180, 181, 185, 400, 401, 780].includes(primary.id),
           // Falls back to 1 when the level-1 row is missing: an unknown
           // learn level sorts with the starters rather than off the end.
           learnLevel: row.learnLevel ?? 1,
@@ -283,6 +294,7 @@ function toEffectData(effects: readonly SpellEffect[]): SpellEffectData[] {
       areaKind: e.areaKind,
       areaSize: e.areaSize,
       param: e.param ?? "",
+      targetFilter: e.targetFilter ?? 0,
     })
   );
 }
@@ -303,5 +315,6 @@ function parseEffects(raw: unknown): SpellEffect[] {
     areaKind: Number(e?.areaKind ?? 0) as AreaKind,
     areaSize: Number(e?.areaSize ?? 0),
     targetMask: Number(e?.targetMask ?? 0),
+    targetFilter: Number(e?.targetFilter ?? 0),
   }));
 }

@@ -25,6 +25,7 @@ export interface FightState {
   deadline: number;
   turnDurationMs: number;
   actionPending: boolean;
+  presentationPending: boolean;
   finishing: boolean;
   mode: FightMode;
   ap: number;
@@ -44,6 +45,7 @@ const initialState: FightState = {
   deadline: 0,
   turnDurationMs: 0,
   actionPending: false,
+  presentationPending: false,
   finishing: false,
   mode: "none",
   ap: 0,
@@ -103,6 +105,7 @@ fightActor.subscribe((snap) => {
     deadline: ctx.deadline,
     turnDurationMs: ctx.turnDurationMs,
     actionPending: ctx.actionPending,
+    presentationPending: ctx.presentationPending,
     finishing: ctx.finishing,
     mode,
     ap: ctx.ap,

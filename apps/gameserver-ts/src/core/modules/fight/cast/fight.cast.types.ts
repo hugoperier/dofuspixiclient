@@ -3,8 +3,13 @@ import type { ActiveState } from "@modules/fight/core/fight.active-state";
 import type { Fight } from "@modules/fight/core/fight.entity";
 import type { Fighter } from "@modules/fight/core/fight.fighter";
 import type { CastContext } from "@modules/fight/effects/fight.buff.types";
+import type { SummonTemplate } from "@modules/spells/combat-catalog.types";
 
 export interface SpellPort {
+  summonTemplate?(
+    id: number,
+    grade: number
+  ): Promise<SummonTemplate | undefined>;
   spellLevel(spellId: number, level: number): Promise<SpellLevel | undefined>;
   playerSpellRank(
     playerId: string,
@@ -65,6 +70,7 @@ export interface CastResolution {
    * summon). Resolved here so apply() stays synchronous around the
    * per-effect handler dispatch.
    */
-  triggerCache: Map<number, SpellLevel>;
+  triggerCache: Map<string, SpellLevel>;
+  summonCache: Map<string, SummonTemplate>;
   castCtx: CastContext;
 }

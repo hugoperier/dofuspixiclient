@@ -2,6 +2,7 @@ import type { SpellEffect, SpellLevel } from "@modules/fight/cast/fight.spell";
 import type { Fight } from "@modules/fight/core/fight.entity";
 import type { Fighter } from "@modules/fight/core/fight.fighter";
 import type { Buff } from "@modules/fight/effects/fight.buff";
+import type { SummonTemplate } from "@modules/spells/combat-catalog.types";
 
 export interface Scope {
   fight: Fight;
@@ -24,9 +25,53 @@ export interface Scope {
    * default tint.
    */
   triggerSpell?: SpellLevel;
+  triggerCache?: Map<string, SpellLevel>;
+  summonCache?: Map<string, SummonTemplate>;
+  applyEffect?: (scope: Scope) => void;
+  applySpell?: (scope: Scope, spell: SpellLevel, targets?: Fighter[]) => void;
+  cause?:
+    | "direct"
+    | "poison"
+    | "trap"
+    | "glyph"
+    | "reflection"
+    | "life-cost"
+    | "push";
+  immediate?: boolean;
 }
 
 export interface Emitter {
+  emitSummon?(fight: Fight, casterId: number, fighter: Fighter): void;
+  emitRoster?(fight: Fight): void;
+  emitState?(
+    fight: Fight,
+    targetId: number,
+    stateId: number,
+    enabled: boolean
+  ): void;
+  emitVisibility?(fight: Fight, fighter: Fighter): void;
+  emitAppearance?(fight: Fight, fighter: Fighter): void;
+  emitCarry?(fight: Fight, carrier: Fighter, carried: Fighter): void;
+  emitUncarry?(
+    fight: Fight,
+    carrier: Fighter,
+    carried: Fighter,
+    thrown: boolean
+  ): void;
+  emitDispel?(fight: Fight, targetId: number): void;
+  emitReduction?(fight: Fight, targetId: number, amount: number): void;
+  emitReflection?(
+    fight: Fight,
+    targetId: number,
+    amount: number,
+    spell: boolean
+  ): void;
+  emitGold?(
+    fight: Fight,
+    casterId: number,
+    targetId: number,
+    amount: number
+  ): void;
   emitDamage(
     fight: Fight,
     attackerId: number,
@@ -82,7 +127,10 @@ export interface Emitter {
     fight: Fight,
     casterId: number,
     cell: number,
-    spellId: number
+    spellId: number,
+    visualGfxId?: number,
+    rank?: number,
+    hiddenPositionOwnerId?: number
   ): void;
 }
 

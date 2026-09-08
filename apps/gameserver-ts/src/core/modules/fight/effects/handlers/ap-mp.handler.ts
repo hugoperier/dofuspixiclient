@@ -1,9 +1,11 @@
 import type { Scope } from "@modules/fight/effects/fight.effect-registry.types";
-import { emptyStatModifier } from "@modules/fight/effects/fight.buff";
 import { EffectHandler } from "@modules/fight/effects/fight.effect-handler.decorator";
 import { rollEffect } from "@modules/fight/effects/fight.effect-registry";
 import { Characteristic } from "@modules/fight/fight.types";
 import { Injectable } from "@nestjs/common";
+
+import { addEffectBuff } from "../fight.effect-lifecycle";
+import { applyStatBoost } from "./stat-boost.handler";
 
 @Injectable()
 export class ApMpEffectHandler {
@@ -25,6 +27,17 @@ export class ApMpEffectHandler {
   }
 
   private remove(scope: Scope, ap: boolean, steal: boolean): void {
+    if (
+      (scope.cause ?? "direct") === "direct" &&
+      scope.target &&
+      scope.target !== scope.caster &&
+      scope.target.buffs
+        .all()
+        .some((b) => b.effectId === 106 && b.value >= scope.spell.level)
+    ) {
+      scope.emitter.emitReflection?.(scope.fight, scope.target.id, 1, true);
+      scope = { ...scope, target: scope.caster };
+    }
     const { target, caster, fight, emitter, effect } = scope;
     if (!target || target.dead) {
       return;
@@ -65,7 +78,7 @@ export class ApMpEffectHandler {
       return;
     }
     if (ap) {
-      target.spendAp(loss);
+      target.ap -= loss;
       emitter.emitAPLoss(fight, caster.id, target.id, loss);
     } else {
       target.spendMp(loss);
@@ -73,18 +86,25 @@ export class ApMpEffectHandler {
     }
     if (effect.duration > 0) {
       target.stats.addBuff(stat, -loss);
-      target.buffs.add({
-        id: 0,
-        effectId: effect.id,
-        casterId: caster.id,
-        targetId: target.id,
-        remaining: effect.duration,
+      addEffectBuff(scope, {
         value: -loss,
-        statModifier: emptyStatModifier(),
-        onRemove: (_fight, fighter) => fighter.stats.removeBuff(stat, -loss),
+        onRemove: (_fight, fighter) => {
+          fighter.stats.removeBuff(stat, -loss);
+          if (ap) {
+            fighter.ap += loss;
+            emitter.emitAPLoss(fight, caster.id, fighter.id, -loss);
+          } else {
+            fighter.mp += loss;
+            emitter.emitMPLoss(fight, caster.id, fighter.id, -loss);
+          }
+        },
       });
     }
     if (steal) {
+      if (effect.duration > 0) {
+        applyStatBoost({ ...scope, target: caster }, stat, loss);
+        return;
+      }
       if (ap) {
         caster.ap += loss;
         emitter.emitAPLoss(fight, caster.id, caster.id, -loss);

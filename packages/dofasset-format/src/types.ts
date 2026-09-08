@@ -9,14 +9,14 @@ export interface PathSegment {
 
 // ===== Draw Commands =====
 
-export const enum DrawCommandType {
+export enum DrawCommandType {
   Fill = 0,
   Stroke = 1,
   PatternFill = 2,
   GradientFill = 3,
 }
 
-export const enum StrokeWidthMode {
+export enum StrokeWidthMode {
   Fixed = 0,
   /** Legacy `stroke-width="__RESOLUTION__"` placeholder. Flash-twip max rule. */
   Resolution = 1,
@@ -24,7 +24,7 @@ export const enum StrokeWidthMode {
   NonScaling = 2,
 }
 
-export const enum FillRule {
+export enum FillRule {
   NonZero = 0,
   EvenOdd = 1,
 }
@@ -129,7 +129,11 @@ export interface ClipMask {
   transform: AffineTransform;
 }
 
-export type DrawCommand = FillDrawCommand | StrokeDrawCommand | PatternFillDrawCommand | GradientFillDrawCommand;
+export type DrawCommand =
+  | FillDrawCommand
+  | StrokeDrawCommand
+  | PatternFillDrawCommand
+  | GradientFillDrawCommand;
 
 // ===== Transforms =====
 
@@ -162,7 +166,7 @@ export interface ExtractedImage {
  * replacement for this zone. Kept as a tight u8 enum so the binary can carry
  * per-zone mode without growing the ColorZoneTable layout.
  */
-export const enum TintMode {
+export enum TintMode {
   /** Default — 3-color player look (body, trim, accent). */
   Player = 0,
   /** 2-color guild emblem (background, foreground). */
@@ -226,6 +230,7 @@ export interface Animation {
 // ===== Atlas JSON (input format) =====
 
 export interface AtlasFrame {
+  page?: number;
   id: string;
   x: number;
   y: number;
@@ -236,6 +241,7 @@ export interface AtlasFrame {
 }
 
 export interface AtlasJson {
+  pages?: Array<{ file: string; width: number; height: number }>;
   version: number;
   animation: string;
   width: number;
@@ -422,6 +428,7 @@ export interface ParsedAccessorySlot {
 }
 
 export interface ParsedFrame {
+  page?: number;
   clipPathId: string;
   clipRect: ParsedClipRect;
   offsetTransform: AffineTransform;
@@ -485,11 +492,11 @@ export const MAGIC = new Uint8Array([0x44, 0x41, 0x53, 0x46]); // "DASF"
  */
 export const FORMAT_VERSION = 2;
 
-export const enum AssetType {
+export enum AssetType {
   Sprite = 0,
 }
 
-export const enum SectionType {
+export enum SectionType {
   PathTable = 0,
   DrawCmdTable = 1,
   BodyPartTable = 2,
@@ -524,7 +531,7 @@ export const enum SectionType {
   ClipMaskTable = 10,
 }
 
-export const enum ExtrasKind {
+export enum ExtrasKind {
   None = 0,
   Spell = 1,
   Tile = 2,

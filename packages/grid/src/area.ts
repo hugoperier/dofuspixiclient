@@ -158,7 +158,7 @@ function dominantDirection(
   // (N/E/S/W in pixels = STRAIGHT_DIRECTIONS in cellId terms).
   // D (DiagonalLine) zones extend along a screen-diagonal axis
   // (NE/SE/SW/NW = CARDINAL_DIRECTIONS in cellId terms).
-  const candidates = diagonal ? CARDINAL_DIRECTIONS : STRAIGHT_DIRECTIONS;
+  const candidates = diagonal ? STRAIGHT_DIRECTIONS : CARDINAL_DIRECTIONS;
   let best: number = candidates[0] ?? 0;
   let bestScore = -1;
 
@@ -216,11 +216,9 @@ function crossCells(
   origin: number,
   size: number
 ): number[] {
-  // X zones (Xa, Xb, …) draw a "+" on screen: 4 lines extending
-  // visually N / E / S / W. Those visual axes correspond to the
-  // 2-cell-jump directions on the iso grid (cellId offsets ±1, ±stride).
+  // Retail Zone.drawCross walks ±width and ±(width-1), adjacent diamonds.
   const out = [origin];
-  for (const dir of STRAIGHT_DIRECTIONS) {
+  for (const dir of CARDINAL_DIRECTIONS) {
     out.push(...projectLine(fmap, origin, dir, size));
   }
   return out;
@@ -235,7 +233,7 @@ function perpCrossCells(
   // NE / SE / SW / NW (the iso-screen diagonals). Those map to the
   // adjacent-cell directions on the iso grid (cellId offsets ±W, ±(W-1)).
   const out = [origin];
-  for (const dir of CARDINAL_DIRECTIONS) {
+  for (const dir of STRAIGHT_DIRECTIONS) {
     out.push(...projectLine(fmap, origin, dir, size));
   }
   return out;

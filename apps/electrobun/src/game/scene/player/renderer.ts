@@ -630,7 +630,166 @@ export class PlayerRenderer {
   // ── Accessors ───────────────────────────────────────────────────────
 
   getPlayerCell(id: number): number | undefined {
+    if (this.combatVisibility.get(id) === 2) {
+      return undefined;
+    }
     return this.players.get(id)?.cellId;
+  }
+
+  private readonly combatVisibility = new Map<number, number>();
+  private readonly carriedParents = new Map<number, number>();
+  private readonly originalCombatLooks = new Map<number, string>();
+  private readonly throws = new Map<
+    number,
+    {
+      fromX: number;
+      fromY: number;
+      toX: number;
+      toY: number;
+      elapsed: number;
+      duration: number;
+      resolve: () => void;
+    }
+  >();
+
+  setCombatVisibility(id: number, visibility: number): void {
+    this.combatVisibility.set(id, visibility);
+    const player = this.players.get(id);
+    if (!player) {
+      return;
+    }
+    player.container.visible = visibility !== 2;
+    player.container.alpha = visibility === 1 ? 0.5 : 1;
+    if (visibility === 2) {
+      player.overhead.setVisible(false);
+      this.visibleNameplateIds.delete(id);
+      hidePlayerNameplate(id);
+      hideChatBubble(id);
+    }
+  }
+
+  setCombatAppearance(id: number, gfxId: number): void {
+    const player = this.players.get(id);
+    if (!player) {
+      return;
+    }
+    if (!this.originalCombatLooks.has(id)) {
+      this.originalCombatLooks.set(id, player.look);
+    }
+    const original = this.originalCombatLooks.get(id) ?? player.look;
+    const originalGfx = parseGfxId(original);
+    this.updatePlayer(id, {
+      look:
+        gfxId <= 0 || gfxId === originalGfx ? original : `${gfxId}|-1|-1|-1`,
+    });
+  }
+
+  carryPlayer(carrierId: number, carriedId: number): void {
+    this.carriedParents.set(carriedId, carrierId);
+    const carrier = this.players.get(carrierId);
+    if (carrier) {
+      carrier.carrying = true;
+    }
+    this.setAnimation(carrierId, PlayerAnimation.CARRY, {
+      revertTo: PlayerAnimation.IDLE,
+    });
+    const child = this.players.get(carriedId);
+    if (child?.groundCircle) {
+      child.groundCircle.visible = false;
+    }
+    this.updateCarriedPlayers();
+  }
+
+  uncarryPlayer(id: number, cellId: number, thrown: boolean): Promise<void> {
+    const child = this.players.get(id);
+    const carrier = this.carriedParents.get(id);
+    this.carriedParents.delete(id);
+    const parent =
+      carrier === undefined ? undefined : this.players.get(carrier);
+    if (parent) {
+      parent.carrying = false;
+    }
+    if (!child) {
+      return Promise.resolve();
+    }
+    const fromX = child.container.x;
+    const fromY = child.container.y;
+    this.teleportPlayer(id, cellId);
+    if (carrier !== undefined) {
+      this.setAnimation(
+        carrier,
+        thrown ? PlayerAnimation.THROW : PlayerAnimation.IDLE,
+        { revertTo: PlayerAnimation.IDLE }
+      );
+    }
+    if (!thrown) {
+      if (child.groundCircle) {
+        child.groundCircle.visible = this.fightMode;
+      }
+      return Promise.resolve();
+    }
+    const toX = child.container.x;
+    const toY = child.container.y;
+    child.container.position.set(fromX, fromY);
+    this.throws.get(id)?.resolve();
+    return new Promise((resolve) =>
+      this.throws.set(id, {
+        fromX,
+        fromY,
+        toX,
+        toY,
+        elapsed: 0,
+        duration: Math.max(
+          250,
+          Math.min(900, Math.hypot(toX - fromX, toY - fromY) * 2)
+        ),
+        resolve,
+      })
+    );
+  }
+
+  private updateCarriedPlayers(): void {
+    for (const [childId, parentId] of this.carriedParents) {
+      const child = this.players.get(childId);
+      const parent = this.players.get(parentId);
+      if (!child || !parent) {
+        continue;
+      }
+      child.cellId = parent.cellId;
+      const anchor = this.spriteLoader.getCarriedAnchor(
+        parent.gfxId,
+        parent.currentAnimName,
+        parent.frameIndex,
+        parent.currentAnimData?.fps ?? 60
+      );
+      if (anchor) {
+        child.container.position.set(
+          parent.container.x +
+            anchor.x * (parent.sprite?.scale.x ?? 1) * parent.container.scale.x,
+          parent.container.y + anchor.y * parent.container.scale.y
+        );
+      }
+      child.container.zIndex = parent.container.zIndex + 1;
+      if (child.groundCircle) {
+        child.groundCircle.visible = false;
+      }
+    }
+    for (const [id, arc] of this.throws) {
+      const player = this.players.get(id);
+      arc.elapsed += Math.min(100, Ticker.shared.deltaMS);
+      const t = Math.min(1, arc.elapsed / arc.duration);
+      player?.container.position.set(
+        arc.fromX + (arc.toX - arc.fromX) * t,
+        arc.fromY + (arc.toY - arc.fromY) * t - 100 * t * (1 - t)
+      );
+      if (t === 1 || !player) {
+        if (player?.groundCircle) {
+          player.groundCircle.visible = this.fightMode;
+        }
+        this.throws.delete(id);
+        arc.resolve();
+      }
+    }
   }
 
   getPlayerIds(): number[] {
@@ -678,7 +837,7 @@ export class PlayerRenderer {
   ): { sprite: Sprite; container: Container } | null {
     const f = this.players.get(id);
 
-    if (!f?.sprite) {
+    if (!f?.sprite || this.combatVisibility.get(id) === 2) {
       return null;
     }
 
@@ -1270,6 +1429,11 @@ export class PlayerRenderer {
   }
 
   private cleanupPlayer(id: number): void {
+    this.combatVisibility.delete(id);
+    this.carriedParents.delete(id);
+    this.originalCombatLooks.delete(id);
+    this.throws.get(id)?.resolve();
+    this.throws.delete(id);
     const player = this.players.get(id);
 
     if (!player) {
@@ -1305,6 +1469,10 @@ export class PlayerRenderer {
   }
 
   private onPostTick(): void {
+    this.updateCarriedPlayers();
+    for (const [id, visibility] of this.combatVisibility) {
+      this.setCombatVisibility(id, visibility);
+    }
     this.perf.endAnim();
 
     const flushT0 = performance.now();

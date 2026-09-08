@@ -44,6 +44,21 @@ export interface FighterSnapshot {
   ready?: boolean;
   rangeBonus?: number;
   states?: number[];
+  invisible?: boolean;
+  hidden?: boolean;
+  carryingId?: string;
+  carriedById?: string;
+  appearanceGfx?: number;
+  maxSummons?: number;
+  staticFighter?: boolean;
+  resurrectable?: boolean;
+  buffs?: Array<{
+    id: number;
+    spellId: number;
+    effectId: number;
+    value: number;
+    duration: number;
+  }>;
 }
 
 export interface FightContext {
@@ -52,6 +67,7 @@ export interface FightContext {
   /** Original duration from the server, used to scale both turn gauges. */
   turnDurationMs: number;
   actionPending: boolean;
+  presentationPending: boolean;
   finishing: boolean;
   fightId: number | null;
   mySpriteId: string | null;
@@ -69,6 +85,7 @@ export interface FightContext {
 
 export type FightMachineEvent =
   | { type: "ACTION_PENDING"; pending: boolean }
+  | { type: "PRESENTATION_PENDING"; pending: boolean }
   | { type: "FINISHING" }
   | {
       type: "FIGHT_INIT";
@@ -114,6 +131,15 @@ export type FightMachineEvent =
           | "ready"
           | "rangeBonus"
           | "states"
+          | "invisible"
+          | "hidden"
+          | "carryingId"
+          | "carriedById"
+          | "appearanceGfx"
+          | "maxSummons"
+          | "staticFighter"
+          | "resurrectable"
+          | "buffs"
         >
       >;
     }
@@ -126,6 +152,7 @@ const initialContext: FightContext = {
   deadline: 0,
   turnDurationMs: 0,
   actionPending: false,
+  presentationPending: false,
   finishing: false,
   fightId: null,
   mySpriteId: null,
@@ -300,6 +327,9 @@ export const fightMachine = setup({
   on: {
     ACTION_PENDING: {
       actions: assign(({ event }) => ({ actionPending: event.pending })),
+    },
+    PRESENTATION_PENDING: {
+      actions: assign(({ event }) => ({ presentationPending: event.pending })),
     },
     FINISHING: {
       actions: assign(() => ({

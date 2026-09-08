@@ -29,6 +29,22 @@ export class Fighter {
   monsterKamasMax = 0;
   monsterLevel = 0;
   invocatorId = 0;
+  initialCell = -1;
+  carryingId: number | null = null;
+  carriedById: number | null = null;
+  revivedById: number | null = null;
+  deathOrder = 0;
+  appearanceGfx: number | null = null;
+  invisible = false;
+  skipTurns = 0;
+  aiProfile = 0;
+  summonGrade = 0;
+  stolenKamas = 0;
+  kamasRemaining: number | null = null;
+  apUsedThisTurn = 0;
+  turnCount = 0;
+  readonly punishmentGains = new Map<number, number>();
+  baseLifeMax: number;
 
   team: FightTeam | null = null;
   cell = -1;
@@ -65,6 +81,7 @@ export class Fighter {
     this.stats.setBase(Characteristic.MovementPoints, mp);
     this.lp = lp;
     this.lpMax = lp;
+    this.baseLifeMax = lp;
     this.ap = ap;
     this.mp = mp;
     // Clamp to fight directions {1,3,5,7} on entry — keeps the
@@ -91,6 +108,7 @@ export class Fighter {
     // doesn't have their cap clamped down to the current LP. When
     // lifeMax is omitted (test fixtures), keep lpMax = life.
     f.lpMax = Math.max(p.lifeMax ?? p.life, p.life);
+    f.baseLifeMax = f.lpMax;
     f.sessionId = sessionId;
     f.player = p;
     f.stats.setBase(Characteristic.Strength, p.stats.strength);
@@ -118,6 +136,7 @@ export class Fighter {
     const clamped = Math.max(1, Math.min(amount, this.lpMax));
     this.lp = clamped;
     this.dead = false;
+    this.deathOrder = 0;
     return clamped;
   }
 
@@ -138,6 +157,7 @@ export class Fighter {
 
   spendAp(n: number): void {
     this.ap -= n;
+    this.apUsedThisTurn += Math.max(0, n);
   }
 
   spendMp(n: number): void {
@@ -159,5 +179,28 @@ export class Fighter {
 
   markLeftFight(): void {
     this.hasLeftFight = true;
+  }
+
+  lifeAfterCombat(): number {
+    const temporary = this.buffs
+      .all()
+      .reduce((sum, buff) => sum + buff.statModifier.vitality, 0);
+    return this.dead ? 1 : Math.max(1, this.lp - temporary);
+  }
+
+  finishCombat(): void {
+    this.lp = this.dead ? 0 : this.lifeAfterCombat();
+    this.lpMax = this.baseLifeMax;
+    this.buffs.clear();
+    this.states.clearAll();
+    this.stats.resetBuffs();
+    this.carryingId = null;
+    this.carriedById = null;
+    this.revivedById = null;
+    this.invisible = false;
+    this.appearanceGfx = null;
+    this.skipTurns = 0;
+    this.punishmentGains.clear();
+    this.refreshResources();
   }
 }

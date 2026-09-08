@@ -132,11 +132,16 @@ export class FightEndService {
     if (fight.type === FightType.PvM) {
       const loserTeam = winner === 0 ? 1 : 0;
       for (const f of fight.teams[loserTeam].fighters()) {
+        if (f.isInvocation()) {
+          continue;
+        }
         totalXp += f.monsterXp;
-        totalKamas += Math.floor(
-          f.monsterKamasMin +
-            Math.random() * (f.monsterKamasMax - f.monsterKamasMin + 1)
-        );
+        totalKamas +=
+          f.kamasRemaining ??
+          Math.floor(
+            f.monsterKamasMin +
+              fight.random() * (f.monsterKamasMax - f.monsterKamasMin + 1)
+          );
       }
     }
 
@@ -234,7 +239,10 @@ export class FightEndService {
         isDead: f.dead,
         team: f.team?.side ?? 0,
         xpWon: BigInt(isWinner && f.sessionId ? xpPerPlayer : 0),
-        kamaWon: BigInt(isWinner && f.sessionId ? kamasPerPlayer : 0),
+        kamaWon: BigInt(
+          (isWinner && f.sessionId ? kamasPerPlayer : 0) +
+            (f.player ? f.stolenKamas : 0)
+        ),
         itemsWon: (loot.get(f.id) ?? []).map((won) =>
           create(FightItemDropSchema, {
             itemId: won.templateId,
@@ -308,9 +316,9 @@ export class FightEndService {
 
     // Clean buffs and states for all fighters
     for (const f of fight.fighters()) {
-      f.buffs.clear();
-      f.states.clearAll();
+      f.finishCombat();
     }
+    fight.fightMap.objects.clear();
     // Clean spell usage tracker
     fight.spellUsage.clear();
 
@@ -446,6 +454,7 @@ export class FightEndService {
     const loserTeam = winner === 0 ? 1 : 0;
     const monsterIds = fight.teams[loserTeam]
       .fighters()
+      .filter((f) => !f.isInvocation())
       .map((f) => f.monsterTemplateId)
       .filter((id) => id > 0);
 
@@ -475,24 +484,55 @@ export class FightEndService {
       // start folds the equipment stats in via `applyEquipmentStats`.
       // Reading it here rather than re-querying is both cheaper and more
       // honest — it is the chance the player actually fought with.
-      const rolled = rollLoot({
-        drops: ordinaryDrops,
-        prospection: prospection(fighter.stats.get(Characteristic.Chance), 0),
-        challengeBonusPct: challengeDropBonus,
-      });
+      const rolled = rollLoot(
+        {
+          drops: ordinaryDrops,
+          prospection:
+            prospection(fighter.stats.get(Characteristic.Chance), 0) +
+            fighter.stats.get(Characteristic.Prospection),
+          challengeBonusPct: challengeDropBonus,
+        },
+        fight.random
+      );
+      for (const chest of fight
+        .fighters()
+        .filter(
+          (f) =>
+            !f.dead &&
+            f.invocatorId === fighter.id &&
+            f.monsterTemplateId === 285
+        )) {
+        rolled.push(
+          ...rollLoot(
+            {
+              drops: ordinaryDrops,
+              prospection:
+                prospection(chest.stats.get(Characteristic.Chance), 0) +
+                chest.stats.get(Characteristic.Prospection),
+              challengeBonusPct: challengeDropBonus,
+            },
+            fight.random
+          )
+        );
+      }
 
       const playerId = String(fighter.player.id);
       const hunter = await this.jobsRepo.findPlayerJob(playerId, HUNTER_JOB_ID);
       const huntingWeapon = hunter
         ? await this.hasHuntingWeapon(playerId)
         : false;
-      const hunted = rollHunterMeat({
-        hasHuntingWeapon: huntingWeapon,
-        hunterLevel: hunter?.level ?? 0,
-        monsterIds,
-        drops,
-        prospection: prospection(fighter.stats.get(Characteristic.Chance), 0),
-      });
+      const hunted = rollHunterMeat(
+        {
+          hasHuntingWeapon: huntingWeapon,
+          hunterLevel: hunter?.level ?? 0,
+          monsterIds,
+          drops,
+          prospection:
+            prospection(fighter.stats.get(Characteristic.Chance), 0) +
+            fighter.stats.get(Characteristic.Prospection),
+        },
+        fight.random
+      );
 
       rolled.push(...hunted.items);
       if (hunted.experience > 0) {
@@ -583,7 +623,9 @@ export class FightEndService {
       for (const fighter of fight.fighters()) {
         const isWinner = fighter.team?.side === winner;
         const xpGained = isWinner && fighter.sessionId ? xpPerPlayer : 0;
-        const kamasGained = isWinner && fighter.sessionId ? kamasPerPlayer : 0;
+        const kamasGained =
+          (isWinner && fighter.sessionId ? kamasPerPlayer : 0) +
+          (fighter.player ? fighter.stolenKamas : 0);
 
         await this.historyRepo.insertParticipant({
           fightId: historyResult.id,
@@ -616,7 +658,7 @@ export class FightEndService {
         // the end of the fight and not from whenever life was last read.
         await this.players.setLife(
           playerId,
-          fighter.dead ? 1 : Math.max(1, fighter.lp),
+          fighter.lifeAfterCombat(),
           new Date()
         );
 
@@ -652,7 +694,8 @@ export class FightEndService {
 
         const items = await this.grantLoot(
           playerId,
-          loot.get(fighter.id) ?? []
+          loot.get(fighter.id) ?? [],
+          fight.random
         );
         if (fighter.sessionId) {
           grantedItems.push(
@@ -731,7 +774,8 @@ export class FightEndService {
    */
   private async grantLoot(
     playerId: string,
-    won: readonly LootRoll[]
+    won: readonly LootRoll[],
+    random: () => number
   ): Promise<ItemRow[]> {
     const granted: ItemRow[] = [];
     for (const roll of won) {
@@ -748,7 +792,7 @@ export class FightEndService {
         playerId,
         templateId: roll.templateId,
         quantity: roll.quantity,
-        effects: rollItemEffects(template.effects),
+        effects: rollItemEffects(template.effects, random),
       });
 
       granted.push(row);

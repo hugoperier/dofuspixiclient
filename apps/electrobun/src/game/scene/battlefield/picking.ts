@@ -59,6 +59,7 @@ const EXCHANGE_TYPE_BY_NPC_ACTION = new Map<number, number>([
 ]);
 
 export interface BattlefieldPickingDeps {
+  isCombatFighter?: (id: number) => boolean;
   pickingSystem(): PickingSystem | null;
   interactiveObjects(): Map<number, InteractiveObjectData>;
   npcLang(): Map<number, NpcLangData>;
@@ -110,6 +111,23 @@ interface InteractiveCallbacks {
  *   - hover routing to nameplate show/hide
  */
 export class BattlefieldPicking {
+  private combatMode = false;
+
+  setCombatMode(enabled: boolean): void {
+    this.combatMode = enabled;
+    hideContextMenu();
+    clearMonsterGroupHover();
+    this.pixelHoverPickableId = undefined;
+    this.cellHoverPickableId = undefined;
+    this.recomputeEffectiveHover();
+    this.deps.pickingSystem()?.setEligibilityFilter((id) => this.canPick(id));
+  }
+
+  private canPick(id: number): boolean {
+    if (!this.combatMode) return true;
+    const playerId = this.pickableIdToPlayerId.get(id);
+    return playerId !== undefined && Boolean(this.deps.isCombatFighter?.(playerId));
+  }
   /**
    * Monotonic, and deliberately never reset. Ids identify entries in the
    * player tables as much as in the tile ones; restarting the count on a
@@ -223,6 +241,7 @@ export class BattlefieldPicking {
         // to track teleports / death / removal.
         for (const [playerId, pickableId] of this.playerIdToPickableId) {
           if (
+            this.canPick(pickableId) &&
             renderer.getPlayerCell(playerId) === cellId &&
             renderer.getPlayerPickingData(playerId)?.container.renderable
           ) {
@@ -700,6 +719,13 @@ export class BattlefieldPicking {
 
   onObjectClick(result: PickResult): void {
     hideContextMenu();
+    if (!this.canPick(result.object.id)) return;
+    if (this.combatMode) {
+      const playerId = this.pickableIdToPlayerId.get(result.object.id);
+      const cell = playerId === undefined ? undefined : this.deps.worldActorRenderer()?.getPlayerCell(playerId);
+      if (cell !== undefined) this.deps.onCellPickThrough?.(cell);
+      return;
+    }
 
     const cb = this.callbacks.get(result.object.id);
 
@@ -883,7 +909,7 @@ export class BattlefieldPicking {
     // would fire `onHover(false)` here even though canonical 1.29
     // keeps the fighter hovered as long as the cursor is in the
     // cell diamond — the "hitbox doesn't widen" regression.
-    const next = result ? result.object.id : undefined;
+    const next = result && this.canPick(result.object.id) ? result.object.id : undefined;
     if (next === this.pixelHoverPickableId) {
       return;
     }

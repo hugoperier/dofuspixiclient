@@ -59,7 +59,7 @@ export class Spell910 extends RuntimeSpell {
 
   protected registerSymbols(
     textures: SpellTextureProvider,
-    _context: SpellContext,
+    context: SpellContext,
   ): void {
     const shootAnchor = calculateAnchor(SHOOT_BOUNDS);
 
@@ -108,7 +108,7 @@ export class Spell910 extends RuntimeSpell {
 
   protected onSpellStart(
     callbacks: SpellCallbacks,
-    _context: SpellContext,
+    context: SpellContext,
   ): void {
     // Capture the sound callback so it can be invoked from shoot's
     // frame_1 script (where the canonical SOMA.playSound("explosion")
@@ -117,5 +117,7 @@ export class Spell910 extends RuntimeSpell {
     this.playExplosionSound = () => {
       callbacks.playSound("explosion");
     };
+    const shoot = this.registry.resolve("shoot");
+    if (shoot) this.root.attach(shoot, "shoot", 1, context);
   }
 }

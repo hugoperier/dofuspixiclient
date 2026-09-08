@@ -5,6 +5,8 @@ import {
   GameActionType,
   type GameTurnEnd,
   GameTurnEndSchema,
+  type GameTurnOk,
+  GameTurnOkSchema,
 } from "@dofus/proto/game_pb";
 import { CastError } from "@modules/fight/cast/fight.cast";
 import { FightActionsService } from "@modules/fight/engine/fight.actions.service";
@@ -19,6 +21,15 @@ export class FightTurnHandler {
     private readonly fights: FightRegistryService,
     private readonly actions: FightActionsService
   ) {}
+
+  @MessageHandler(GameTurnOkSchema)
+  handleTurnOk(ctx: HandlerContext, msg: GameTurnOk): void {
+    const fight = this.fights.getBySession(ctx.sessionId);
+    if (!fight || fight.id !== msg.fightId) return;
+    const fighter = fight.fighters().find((entry) => entry.sessionId === ctx.sessionId);
+    if (!fighter || String(fighter.id) !== msg.spriteId) return;
+    this.fights.getRunner(fight.id)?.notifyReady(fighter.id, msg.turnEpoch);
+  }
 
   @MessageHandler(GameTurnEndSchema)
   async handleTurnEnd(ctx: HandlerContext, _msg: GameTurnEnd): Promise<void> {

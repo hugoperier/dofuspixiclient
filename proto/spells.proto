@@ -68,6 +68,7 @@ message SpellEffectData {
   int32  area_kind = 7;
   int32  area_size = 8;
   string param = 9;        // Raw lang `param` slot (target filter, state name...)
+  int32 target_filter = 10;
 }
 
 // Everything the spell book needs about ONE level of a spell. Mirrors a

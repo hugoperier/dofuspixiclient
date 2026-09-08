@@ -17,6 +17,8 @@ export const PlayerAnimation = {
   CAST: "cast",
   SIT: "sit",
   HARVEST: "harvest",
+  CARRY: "carry",
+  THROW: "throw",
 } as const;
 
 export type PlayerAnimationValue =
@@ -35,6 +37,8 @@ export const ANIM_TO_SPRITE_BASE: Record<string, string> = {
   [PlayerAnimation.CAST]: "anim1",
   [PlayerAnimation.SIT]: "emoteStatic1",
   [PlayerAnimation.HARVEST]: "anim3",
+  [PlayerAnimation.CARRY]: "carring",
+  [PlayerAnimation.THROW]: "carringThrow",
 };
 
 /**
@@ -48,6 +52,8 @@ const ONE_SHOT_ANIMS: ReadonlySet<PlayerAnimationValue> = new Set([
   PlayerAnimation.HIT,
   PlayerAnimation.DEATH,
   PlayerAnimation.ATTACK,
+  PlayerAnimation.CARRY,
+  PlayerAnimation.THROW,
 ]);
 
 export function isOneShotAnimation(anim: PlayerAnimationValue): boolean {

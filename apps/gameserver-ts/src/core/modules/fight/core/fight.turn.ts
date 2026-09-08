@@ -102,6 +102,16 @@ export class TurnList {
       this.currentIdx--;
     }
   }
+
+  insertAfter(ownerId: number, fighter: Fighter): void {
+    this.remove(fighter.id);
+    const owner = this.entries.findIndex((entry) => entry.id === ownerId);
+    const index = owner < 0 ? this.entries.length : owner + 1;
+    this.entries.splice(index, 0, fighter);
+    if (index <= this.currentIdx) {
+      this.currentIdx++;
+    }
+  }
 }
 
 export class Turn {

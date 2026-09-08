@@ -3,8 +3,9 @@ import { castGeometryError, cellsInArea } from "@dofus/grid";
 
 import type { Battlefield } from "@/game/scene";
 import type { FightUI } from "@/hud/fight/fight-ui";
+import { fightMovementPath } from "@/game/machines/fight-movement-targeting";
 import { spellCastActor } from "@/game/machines/spell-cast.machine";
-import { fightActor, fightStore } from "@/game/stores/fight-store";
+import { fightStore } from "@/game/stores/fight-store";
 
 /**
  * Wires cell-hover events from the battlefield to the fight-UI
@@ -126,12 +127,14 @@ export class HoverPreview {
     // Only preview when we actually can move — off-turn or during
     // placement the reachable tint isn't showing anyway.
     const fight = fightStore.getSnapshot();
-    const fightMachineSnap = fightActor.getSnapshot();
-    const isMyTurn =
-      typeof fightMachineSnap.value === "object" &&
-      fightMachineSnap.value !== null &&
-      (fightMachineSnap.value as { fighting?: string }).fighting === "myTurn";
-    if (fight.mode !== "fighting" || !isMyTurn || fight.mp <= 0) {
+    if (
+      fight.mode !== "fighting" ||
+      !fight.isMyTurn ||
+      fight.actionPending ||
+      fight.presentationPending ||
+      fight.finishing ||
+      fight.mp <= 0
+    ) {
       // mp<=0 matches the original: once the MP is spent the reachable
       // ring disappears and so does the hovered-path hint — showing a
       // trimmed "you could walk here" overlay with zero MP is what
@@ -143,18 +146,17 @@ export class HoverPreview {
     const pf = this.deps.pathfinding();
     const from = this.deps.currentCellId();
     if (!pf || from === null) {
-      return;
-    }
-    this.deps.syncOccupied();
-    const path = pf.findFightPath(from, hoveredCell);
-    if (!path || path.length < 2) {
       ui.clearHighlightType("movement-path");
       return;
     }
-    // Trim to MP budget so we don't draw a path the server will reject.
-    const trimmed = path.slice(0, Math.min(path.length, fight.mp + 1));
+    this.deps.syncOccupied();
+    const path = fightMovementPath(fight, pf, from, hoveredCell);
+    if (!path) {
+      ui.clearHighlightType("movement-path");
+      return;
+    }
     // Skip the caster's current cell — it shouldn't look like a step.
-    ui.highlightCells(trimmed.slice(1), "movement-path" as const);
+    ui.highlightCells(path.slice(1), "movement-path" as const);
   }
 
   private updateSpellPreview(hoveredCell: number): void {

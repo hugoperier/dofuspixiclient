@@ -3,6 +3,7 @@ import { create } from "@bufbuild/protobuf";
 import {
   GameStartToPlaySchema,
   GameTurnFinishSchema,
+  GameTurnReadySchema,
   GameTurnListSchema,
   GameTurnStartSchema,
   GameZoneData_Operation,
@@ -56,7 +57,13 @@ export class FightLifecycleService {
 
     // Start the turn loop runner with monster AI
     const frameSink = this.createFrameSink(fight);
-    const runner = new Runner(fight, active, frameSink, 30_000);
+    const runner = new Runner(
+      fight,
+      active,
+      frameSink,
+      30_000,
+      this.actions.effectEmitter
+    );
 
     const ai = new MonsterAI(
       (fighterId, epoch) => {
@@ -76,7 +83,8 @@ export class FightLifecycleService {
           epoch
         ),
       (fightObj, fighter, pathCells, epoch) =>
-        this.actions.move(fightObj, fighter, pathCells, epoch)
+        this.actions.move(fightObj, fighter, pathCells, epoch),
+      (id, rank) => this.actions.spellLevel(id, rank)
     );
     runner.setObserver(ai);
     this.fightRegistry.addRunner(fight.id, runner);
@@ -121,6 +129,13 @@ export class FightLifecycleService {
                   }),
                 },
               })
+            );
+          })
+          .with("GTR", () => {
+            const p = payload as { spriteId: string; fightId: number; turnEpoch: number };
+            this.frames.broadcast(
+              fight.fighters().filter((fighter) => fighter.sessionId && !fighter.hasLeftFight).map((fighter) => fighter.sessionId),
+              create(DofusMessageSchema, { payload: { case: "gameTurnReady", value: create(GameTurnReadySchema, p) } }),
             );
           })
           .with("GTF", () => {

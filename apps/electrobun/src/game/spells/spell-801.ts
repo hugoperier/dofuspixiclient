@@ -1,3 +1,4 @@
+import { withClipEventParent } from "../scene/fight/placed-event-symbol";
 /**
  * Spell 801 — Vlad (Sacrieur / Sadida area buff).
  *
@@ -550,6 +551,7 @@ export class Spell801 extends RuntimeSpell {
     this.registry.register(this.sprite9Sym);
     this.registry.register(this.sprite10Sym);
     this.registry.register(this.sprite12Sym);
+    this.sprite13Sym = withClipEventParent(this.sprite13Sym);
     this.registry.register(this.sprite13Sym);
     this.registry.register(this.anim1Sym);
   }

@@ -1,3 +1,4 @@
+import { withClipEventParent } from "../scene/fight/placed-event-symbol";
 /**
  * Spell 504 — Maны (many_504).
  *
@@ -626,6 +627,7 @@ export class Spell504 extends RuntimeSpell {
     this.registry.register(this.sprite9Sym);
     this.registry.register(this.sprite10Sym);
     this.registry.register(this.sprite13Sym);
+    this.sprite14Sym = withClipEventParent(this.sprite14Sym);
     this.registry.register(this.sprite14Sym);
     this.registry.register(this.anim1Sym);
   }

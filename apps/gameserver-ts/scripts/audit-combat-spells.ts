@@ -1,137 +1,339 @@
 import { readFile, writeFile } from "node:fs/promises";
 
 import {
-  combatUnavailableReason,
-  decodeCombatEffects,
-} from "../src/core/modules/spells/spells.combat-data";
+  readAnimations,
+  readSpellExtras,
+} from "../../../packages/dofasset-format/src";
+import { combatRegistry } from "../src/core/modules/fight/effects/combat-test-harness";
+import { combatCatalog } from "../src/core/modules/spells/combat-catalog";
+import { prepareCombatData } from "../src/core/modules/spells/combat-dependencies";
 
 const root = new URL("../../../", import.meta.url);
-const spells: Record<string, Record<string, unknown>> = JSON.parse(
-  await readFile(new URL("assets/dist/langs/fr/spells.json", root), "utf8")
-).data.S;
-const classes: Record<string, { sn: string; s: number[] }> = JSON.parse(
+const classes = JSON.parse(
   await readFile(new URL("assets/dist/langs/fr/classes.json", root), "utf8")
-).data.G;
-function inspect(
-  id: number,
-  rank: number,
-  visited = new Set<number>()
-): { reason: string; effects: number[]; triggers: number[] } {
-  const level = spells[id]?.[`l${rank}`];
-  if (!Array.isArray(level) || visited.has(id)) {
-    return {
-      reason: "Données absentes ou dépendance cyclique",
-      effects: [],
-      triggers: [],
-    };
-  }
-  const normal = decodeCombatEffects(level[20], String(level[5] ?? ""));
-  const all = [
-    ...normal,
-    ...decodeCombatEffects(
-      level[19],
-      String(level[5] ?? "").slice(normal.length * 2)
-    ),
-  ];
-  let reason = combatUnavailableReason(all);
-  const triggers = [
-    ...new Set(
-      all.filter((e) => e.id === 400 || e.id === 401).map((e) => e.min)
-    ),
-  ];
-  for (const trigger of triggers) {
-    const child = inspect(trigger, rank, new Set([...visited, id]));
-    const raw = spells[trigger]?.[`l${rank}`];
-    if (
-      !reason &&
-      (child.reason ||
-        !Array.isArray(raw) ||
-        decodeCombatEffects(raw[20], String(raw[5] ?? "")).some(
-          (e) => e.id < 96 || e.id > 100
-        ))
-    ) {
-      reason = "Effets déclenchés indisponibles";
+).data.G as Record<string, { sn: string }>;
+const registry = combatRegistry();
+type PresentationAudit = {
+  id: number;
+  sha256: string;
+  moduleSha256: string;
+  missing: string[];
+  failures: string[];
+  cases: number;
+};
+const presentationFile = Bun.file(
+  new URL("doc/combat/animation-audit.json", root)
+);
+const presentation: { graphics: PresentationAudit[] } =
+  (await presentationFile.exists())
+    ? await presentationFile.json()
+    : { graphics: [] };
+const port = {
+  spellLevel: async (id: number, rank: number) =>
+    combatCatalog.levels[`${id}:${rank}`],
+  summonTemplate: async (id: number, rank: number) =>
+    combatCatalog.summons[`${id}:${rank}`],
+};
+const verify = process.argv.includes("--verify");
+let testResult = "Non relancés par cet audit";
+if (verify) {
+  const run = Bun.spawn(
+    [
+      "bun",
+      "test",
+      "./src/core/modules/fight",
+      "./src/core/modules/spells",
+      "--timeout",
+      "30000",
+    ],
+    {
+      cwd: new URL("../", import.meta.url).pathname,
+      stdout: "pipe",
+      stderr: "pipe",
     }
+  );
+  const [stdout, stderr, code] = await Promise.all([
+    new Response(run.stdout).text(),
+    new Response(run.stderr).text(),
+    run.exited,
+  ]);
+  await writeFile(
+    new URL("doc/combat/mechanical-tests.log", root),
+    stdout + stderr
+  );
+  if (code !== 0) {
+    throw new Error(
+      "Tests mécaniques en échec : voir doc/combat/mechanical-tests.log"
+    );
   }
-  return { reason, effects: [...new Set(all.map((e) => e.id))], triggers };
+  testResult = (
+    stderr.match(/\d+ pass\s+\d+ fail/)?.[0] ?? "Tests réussis"
+  ).replace(/\s+/g, " ");
+}
+type AssetCheck = {
+  category: "spells" | "sprites";
+  id: number;
+  error: string;
+  sha256: string;
+  scriptRequired?: boolean;
+};
+const assetChecks = new Map<string, Promise<AssetCheck>>();
+function inspectAsset(
+  category: AssetCheck["category"],
+  id: number
+): Promise<AssetCheck> {
+  const key = `${category}:${id}`;
+  const existing = assetChecks.get(key);
+  if (existing) {
+    return existing;
+  }
+  const pending = (async () => {
+    const result: AssetCheck = { category, id, error: "", sha256: "" };
+    try {
+      const bytes = new Uint8Array(
+        await Bun.file(
+          new URL(
+            `apps/electrobun/public/assets/spritesheets/${category}/${id}.dofasset`,
+            root
+          )
+        ).arrayBuffer()
+      );
+      if (new TextDecoder().decode(bytes.subarray(0, 4)) !== "DASF") {
+        throw new Error("Binaire DASF invalide");
+      }
+      result.sha256 = new Bun.CryptoHasher("sha256")
+        .update(bytes)
+        .digest("hex");
+      if (category === "spells") {
+        const extras = readSpellExtras(bytes);
+        if (!extras || !Object.keys(extras.animations).length) {
+          throw new Error("Animations ou métadonnées absentes");
+        }
+        const animations = readAnimations(bytes);
+        if (
+          !animations.length ||
+          animations.some(
+            (animation) => !animation.frameIds.length || animation.fps <= 0
+          )
+        ) {
+          throw new Error("Table d’animations compilées vide ou invalide");
+        }
+        const compiled = new Set(animations.map((animation) => animation.name));
+        for (const name of Object.keys(extras.animations)) {
+          if (!compiled.has(name)) {
+            throw new Error(`Animation déclarée mais non compilée : ${name}`);
+          }
+        }
+        result.scriptRequired = extras.requiresTypeScript;
+        if (
+          extras.requiresTypeScript &&
+          !(await Bun.file(
+            new URL(`apps/electrobun/src/game/spells/spell-${id}.ts`, root)
+          ).exists())
+        ) {
+          throw new Error("Script graphique requis absent");
+        }
+        const execution = presentation.graphics.find(
+          (graphic) => graphic.id === id
+        );
+        const moduleBytes = await Bun.file(
+          new URL(
+            extras.requiresTypeScript
+              ? `apps/electrobun/src/game/spells/spell-${id}.ts`
+              : "apps/electrobun/src/game/scene/fight/pre-rendered-spell.ts",
+            root
+          )
+        ).arrayBuffer();
+        const moduleSha256 = new Bun.CryptoHasher("sha256")
+          .update(moduleBytes)
+          .digest("hex");
+        if (
+          !execution ||
+          execution.sha256 !== result.sha256 ||
+          execution.moduleSha256 !== moduleSha256
+        ) {
+          throw new Error(
+            "Audit du module absent ou périmé : relancer apps/electrobun/scripts/audit-spell-animations.ts"
+          );
+        }
+        if (execution.missing.length || execution.failures.length) {
+          throw new Error(
+            [
+              execution.missing.length
+                ? `Symboles absents : ${execution.missing.join(", ")}`
+                : "",
+              execution.failures.length
+                ? `${execution.failures.length} scénarios de terminaison en échec`
+                : "",
+            ]
+              .filter(Boolean)
+              .join("; ")
+          );
+        }
+      }
+    } catch (error) {
+      result.error = `${category}/${id}: ${String(error)}`;
+    }
+    return result;
+  })();
+  assetChecks.set(key, pending);
+  return pending;
+}
+type Row = {
+  classId: number;
+  spellId: number;
+  name: string;
+  ranks: {
+    rank: number;
+    reason: string;
+    dependencies: string[];
+    summons: string[];
+    visual: string;
+    assets: string[];
+  }[];
+};
+const rows: Row[] = [];
+for (const ref of combatCatalog.roots) {
+  const row: Row = {
+    ...ref,
+    name: combatCatalog.names[ref.spellId] ?? String(ref.spellId),
+    ranks: [],
+  };
+  for (let rank = 1; rank <= 6; rank++) {
+    const spell = combatCatalog.levels[`${ref.spellId}:${rank}`];
+    if (!spell) {
+      throw new Error(`Rang absent ${ref.spellId}:${rank}`);
+    }
+    const ready = await prepareCombatData(spell, port, (id) =>
+      Boolean(registry.handler(id))
+    );
+    const graphics = new Set(
+      [...ready.spells.values()]
+        .map((value) => value.visualGfxId)
+        .filter((id) => id > 0)
+    );
+    const sprites = new Set(
+      [...ready.summons.values()].map((value) => value.gfx)
+    );
+    for (const level of ready.spells.values()) {
+      for (const effect of [...level.effects, ...level.criticalEffects]) {
+        if (effect.id === 149 && effect.special > 0) {
+          sprites.add(effect.special);
+        }
+        if (level.spellId === 686) {
+          sprites.add(8011);
+        }
+        if (effect.id === 180) {
+          sprites.add(ref.classId * 10);
+          sprites.add(ref.classId * 10 + 1);
+        }
+      }
+    }
+    const checked = await Promise.all(
+      [...graphics]
+        .map((id) => inspectAsset("spells", id))
+        .concat([...sprites].map((id) => inspectAsset("sprites", id)))
+    );
+    const failures = checked.filter((asset) => asset.error);
+    const visual = failures.length
+      ? failures.map((asset) => asset.error).join("; ")
+      : `${graphics.size} graphiques et ${sprites.size} sprites contrôlés${spell.visualGfxId <= 0 ? "; pose / effets synchronisés" : ""}`;
+    row.ranks.push({
+      rank,
+      reason: ready.reason,
+      dependencies: [...ready.spells.keys()].filter(
+        (key) => key !== `${ref.spellId}:${rank}`
+      ),
+      summons: [...ready.summons.keys()],
+      visual,
+      assets: checked.map((asset) => `${asset.category}:${asset.id}`),
+    });
+  }
+  rows.push(row);
 }
 const lines = [
-  "# Couverture des sorts du premier combat",
+  "# Couverture des sorts des douze classes Retro",
   "",
-  "Généré par `bun run scripts/audit-combat-spells.ts` depuis `apps/gameserver-ts`. Utilise le décodeur et les capacités du serveur. **Disponible signifie pris en charge par ce socle, pas certifié conforme en totalité à 1.29.** Le catalogue local contient aussi des données Retro ultérieures ; ses états et sorts spéciaux ne constituent pas une preuve historique.",
+  "264 sorts de classe (252 sorts de tableaux et douze spéciaux), 1 584 rangs racines. Les sorts communs, maîtrises, armes et acquisition des spéciaux sont hors périmètre.",
   "",
-  "Les sorts incomplets restent consultables avec leur motif et sont refusés avant la dépense de PA. Un effet critique manquant bloque le rang entier.",
+  `Le graphe exact comprend **${Object.keys(combatCatalog.levels).length} rangs** et **${Object.keys(combatCatalog.summons).length} grades d'invocation**. Résolution commune avec le serveur et le grimoire : ` +
+    "`prepareCombatData`.",
+  "",
+  `Tests : **${testResult}**. L'exécution contrôlée normale/critique et les interactions ont des tests distincts. La présence d'un handler et d'un asset ne certifie pas à elle seule la conformité mécanique ni le rendu.`,
+  "",
+  "Les preuves navigateur sont séparées et restent à produire pour les 264 sorts. Aucune ligne ci-dessous n'est certifiée visuellement par cet audit. Voir [règles et sources](retro-rules.md).",
+  "Les tables compilées et les appels des modules sont contrôlés séparément des pixels affichés : [audit des 145 graphiques](animation-audit.json), [vérification des régressions](regression-validation.md). Un symbole absent est un échec même si la timeline atteint sa fin.",
   "",
 ];
-let refs = 0,
-  available = 0,
-  total = 0;
-function row(id: number): void {
-  const enabled: number[] = [],
-    ids = new Set<number>(),
-    deps = new Set<number>(),
-    reasons = new Map<string, number[]>();
-  for (let rank = 1; rank <= 6; rank++) {
-    if (!spells[id]?.[`l${rank}`]) {
-      continue;
-    }
-    total++;
-    const r = inspect(id, rank);
-    for (const effect of r.effects) {
-      ids.add(effect);
-    }
-    for (const trigger of r.triggers) {
-      deps.add(trigger);
-    }
-    if (!r.reason) {
-      enabled.push(rank);
-      available++;
-    } else {
-      reasons.set(r.reason, [...(reasons.get(r.reason) ?? []), rank]);
-    }
-  }
-  lines.push(
-    `| ${id} — ${String(spells[id]?.n ?? "Absent")} | ${enabled.join(", ") || "Aucun"} | ${[...ids].sort((a, b) => a - b).join(", ")} | ${[...deps].join(", ") || "—"} | ${[...reasons].map(([r, ranks]) => `${ranks.join(", ")} : ${r}`).join(" ; ")} |`
-  );
-}
-function header(title: string) {
-  lines.push(
-    `## ${title}`,
-    "",
-    "| Sort | Rangs disponibles | Effets normaux et critiques | Dépendances | Rangs bloqués et motifs |",
-    "| --- | --- | --- | --- | --- |"
-  );
-}
 for (let classId = 1; classId <= 12; classId++) {
-  const breed = classes[classId];
-  if (!breed) {
-    throw new Error(`Missing class ${classId}`);
-  }
-  header(breed.sn);
-  for (const id of breed.s) {
-    refs++;
-    row(id);
+  lines.push(
+    `## ${classes[classId]?.sn ?? classId}`,
+    "",
+    "| Sort | Rangs préparés | Dépendances exactes (sorts / grades) | Exécution mécanique | Audit des assets | Validation visuelle |",
+    "| --- | --- | --- | --- | --- | --- |"
+  );
+  for (const row of rows.filter((r) => r.classId === classId)) {
+    const available = row.ranks.filter((r) => !r.reason).map((r) => r.rank);
+    const dependencies = [...new Set(row.ranks.flatMap((r) => r.dependencies))];
+    const summons = [...new Set(row.ranks.flatMap((r) => r.summons))];
+    const reasons = [
+      ...new Set(row.ranks.map((r) => r.reason).filter(Boolean)),
+    ];
+    lines.push(
+      `| ${row.spellId} — ${row.name} | ${available.join(", ")} | ${dependencies.join(", ") || "—"} / ${summons.join(", ") || "—"} | ${reasons.join("; ") || (verify ? "Normale/critique testées" : "Tests non relancés")} | ${[...new Set(row.ranks.map((r) => r.visual))].join("; ")} | Non vérifiée |`
+    );
   }
   lines.push("");
 }
-lines.splice(
-  5,
-  0,
-  `**${refs} références de classe, ${total} rangs présents, ${available} rangs disponibles.**`,
-  ""
-);
-header("Sorts communs et spéciaux");
-for (const [id, spell] of Object.entries(spells)) {
-  if (
-    /^(Flamiche|Libération|Cawotte|Marteau de Moon|Boomerang perfide|Capture d'âmes|Maîtrise|Apprivoisement)/i.test(
-      String(spell.n)
-    )
-  ) {
-    row(Number(id));
-  }
-}
 await writeFile(
   new URL("doc/combat/spell-coverage.md", root),
-  `${lines.join("\n")}\n`
+  lines.join("\n").trimEnd() + "\n"
 );
-console.log(`Audited ${refs} class references plus common spells`);
+const checkedAssets = await Promise.all(assetChecks.values());
+// Small client index; the authoritative dependency graph remains server-side.
+await writeFile(
+  new URL("apps/electrobun/src/game/assets/combat-spell-graphics.json", root),
+  JSON.stringify(
+    Object.fromEntries(
+      rows.map((row) => [
+        String(row.spellId),
+        [
+          ...new Set(
+            row.ranks
+              .flatMap((rank) => rank.assets)
+              .filter((asset) => asset.startsWith("spells:"))
+              .map((asset) => Number(asset.slice(7)))
+          ),
+        ].sort((a, b) => a - b),
+      ])
+    ),
+    null,
+    2
+  ) + "\n"
+);
+await writeFile(
+  new URL("doc/combat/spell-coverage.json", root),
+  JSON.stringify(
+    {
+      testResult,
+      verifiedMechanics: verify,
+      visualVerified: false,
+      sources: combatCatalog.sources,
+      assets: checkedAssets,
+      rows,
+    },
+    null,
+    2
+  ) + "\n"
+);
+console.log(
+  `Audited ${rows.length} spells, ${rows.reduce((sum, r) => sum + r.ranks.length, 0)} ranks; ${testResult}`
+);
+for (const asset of checkedAssets) {
+  if (asset.error) {
+    console.error(asset.error);
+  }
+}
+if (checkedAssets.some((asset) => asset.error)) {
+  process.exitCode = 1;
+}

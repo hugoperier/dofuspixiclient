@@ -430,6 +430,7 @@ export class Spell906 extends RuntimeSpell {
           // shoot (the parent) here only if it hasn't already completed.
           (clip) => {
             clip.parent?.remove();
+            this.runtime.complete();
           },
         ],
       ]),

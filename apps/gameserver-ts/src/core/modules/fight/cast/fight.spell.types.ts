@@ -13,6 +13,8 @@ export interface SpellEffect {
   areaKind: AreaKind;
   areaSize: number;
   targetMask: number;
+  /** Server-side exclusion flags from the Retro spell definition (not FT). */
+  targetFilter?: number;
   /**
    * Raw lang `param` slot, persisted by migration 0039. Carries the
    * target filter for effects that have one, and the state / item /

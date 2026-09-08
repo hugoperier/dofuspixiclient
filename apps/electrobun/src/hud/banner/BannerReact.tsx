@@ -1,5 +1,5 @@
 import { Tooltip } from "@base-ui/react/tooltip";
-import { useMemo, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 
 import {
   MainBanner,
@@ -13,6 +13,7 @@ import {
   MainBannerRightPanel,
   MainBannerTurnButton,
 } from "@/components/ui/main-banner";
+import { playAudioEvent } from "@/game/audio/audio-events";
 import { useSpellCast } from "@/game/machines/spell-cast-selectors";
 import { togglePanel, toggleWorldMap } from "@/game/stores";
 import { characterStore } from "@/game/stores/character-store";
@@ -67,6 +68,14 @@ function BannerCircle() {
     fight.isMyTurn && !fight.finishing && seconds >= 1 && seconds <= 5
       ? seconds
       : undefined;
+  const lastTick = useRef("");
+  useEffect(() => {
+    const key = `${fight.deadline}:${countdown}`;
+    if (countdown !== undefined && lastTick.current !== key) {
+      lastTick.current = key;
+      playAudioEvent("timer");
+    }
+  }, [fight.deadline, countdown]);
   // Retro fills the ring with elapsed time; an inactive clock stays empty.
   return (
     <MainBannerCircle
@@ -172,8 +181,7 @@ function SpellHotbarCell({
   const clickable =
     fight !== "idle" &&
     fight !== "disabled" &&
-    fight !== "cooldown" &&
-    fight !== "pending";
+    fight !== "cooldown";
   const handleClick =
     clickable && onCast ? () => onCast(spell.spellId) : undefined;
   const cooldownBadge =
@@ -191,6 +199,7 @@ function SpellHotbarCell({
       <Tooltip.Trigger
         render={
           <MainBannerGridSlot
+            data-audio="click2"
             className={overlay}
             {...(handleClick ? { onClick: handleClick } : {})}
             {...dropProps}
@@ -313,6 +322,7 @@ function ItemHotbarCell({
       <Tooltip.Trigger
         render={
           <MainBannerGridSlot
+            data-audio="click2"
             className={active ? "" : "grayscale opacity-50"}
             onDoubleClick={onUse}
             onContextMenu={(e) => {
@@ -467,7 +477,6 @@ export function BannerReact({
       }
       if (
         !fight.isMyTurn ||
-        fight.actionPending ||
         fight.finishing ||
         spell.combatUnavailableReason
       ) {
@@ -544,6 +553,11 @@ export function BannerReact({
     <div className="absolute bottom-0 left-1/2 -translate-x-1/2 pointer-events-auto z-10">
       <MainBanner mode={isFighting ? "fight" : "normal"}>
         <BannerChatContainer />
+        {fight.isCombat && (fight.actionPending || fight.presentationPending) && (
+          <div role="status" className="absolute -top-7 right-0 rounded bg-black/80 px-3 py-1 text-xs text-amber-200">
+            Animation en cours — sélection possible, cliquez ensuite pour agir.
+          </div>
+        )}
 
         <BannerCircle />
 
@@ -553,11 +567,12 @@ export function BannerReact({
         )}
         {fight.isCombat && (
           <MainBannerTurnButton
+            data-audio="click2"
             onClick={onPassTurn}
             disabled={
               !onPassTurn ||
               !fight.isMyTurn ||
-              fight.actionPending ||
+              fight.actionPending || fight.presentationPending ||
               fight.finishing ||
               !myFighter ||
               myFighter.dead
@@ -571,6 +586,7 @@ export function BannerReact({
           {ICON_BUTTONS.map(({ icon, panel }) => (
             <MainBannerIconButton
               key={icon}
+              data-audio="click2"
               icon={icon}
               onClick={() => handleIconClick(panel)}
             />

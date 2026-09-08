@@ -7,7 +7,7 @@ import { Injectable } from "@nestjs/common";
 
 @Injectable()
 export class HealEffectHandler {
-  @EffectHandler(81, 108, 143)
+  @EffectHandler(81, 108)
   handle(scope: Scope): void {
     if (!scope.target || scope.target.dead) {
       return;

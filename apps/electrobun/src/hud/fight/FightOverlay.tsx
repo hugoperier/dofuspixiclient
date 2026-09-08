@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { FighterSnapshot } from "@/game/machines/fight.machine";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import { getFighterPortraitRenderer } from "@/game/render/fighter-portrait-rende
 import { useTacticalMode } from "@/hud/fight/tactical-mode-store";
 import { useFightMode } from "@/hud/fight/useFightMode";
 
+import { FighterEffects } from "./FighterEffects";
 import { FightPlacementPanel } from "./FightPlacementPanel";
 import { TurnChangeBanner } from "./TurnChangeBanner";
 import { useFightClock } from "./useFightClock";
@@ -34,6 +35,9 @@ interface FightOverlayProps {
  */
 export function FightOverlay({ actions }: FightOverlayProps) {
   const fight = useFightMode();
+  const [inspectedId, setInspectedId] = useState<string | null>(null);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const inspected = fight.fighters.get(hoveredId ?? inspectedId ?? "");
   const { tactical, toggleTactical } = useTacticalMode();
   const { seconds, remainingFraction } = useFightClock(
     fight.deadline,
@@ -81,6 +85,9 @@ export function FightOverlay({ actions }: FightOverlayProps) {
           UI_StringCourse — name + level + portrait + colour zones,
           slides in on every TURN_START). */}
       <TurnChangeBanner />
+      {inspected && (
+        <FighterEffects fighter={inspected} fighters={fight.fighters} />
+      )}
       {fight.isPlacement && fight.deadline > 0 && (
         <div
           role="timer"
@@ -97,8 +104,13 @@ export function FightOverlay({ actions }: FightOverlayProps) {
           entries={entries}
           currentTurn={fight.turnIndex + 1}
           remainingFraction={remainingFraction}
-          onSelect={actions.onHoverFighter}
-          onHover={actions.onHoverFighter}
+          onSelect={(id) =>
+            setInspectedId((previous) => (previous === id ? null : id))
+          }
+          onHover={(id) => {
+            setHoveredId(id);
+            actions.onHoverFighter(id);
+          }}
         />
       </div>
 

@@ -46,6 +46,7 @@ export const Characteristic = {
   APLossResist: 72,
   MPLossResist: 73,
   Prospection: 74,
+  CriticalFailure: 75,
 } as const;
 export type Characteristic =
   (typeof Characteristic)[keyof typeof Characteristic];
@@ -95,24 +96,27 @@ export type { AreaKind as AreaKindValue } from "@dofus/grid";
 export { AreaKind } from "@dofus/grid";
 
 export const FightStateId = {
+  Drunk: 1,
   Rooted: 6,
-  Pacified: 7,
-  Weapon: 9,
-  Stealth: 10,
+  Gravity: 7,
+  Pacified: 42,
+  Weapon: 42,
+  // Internal flags use a disjoint namespace, never the lang's numbered states.
+  Stealth: -150,
   Slow: 11,
   Sleeping: 12,
-  Carrying: 13,
-  Carried: 14,
+  Carrying: 3,
+  Carried: 8,
   Web: 15,
   SoulEater: 19,
   OnGlyph: 34,
   Suicide: 50,
   Free: 75,
-  Revealed: 77,
+  Revealed: -202,
   AlignmentLock: 100,
-  SkipTurn: 101,
-  RollMinimize: 102,
-  RollMaximize: 103,
+  SkipTurn: -140,
+  RollMinimize: -781,
+  RollMaximize: -782,
 } as const;
 export type FightStateId = (typeof FightStateId)[keyof typeof FightStateId];
 

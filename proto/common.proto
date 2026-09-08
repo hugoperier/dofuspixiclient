@@ -126,6 +126,7 @@ message SpellData {
   repeated int32 required_states = 25;
   repeated int32 forbidden_states = 26;
   string combat_unavailable_reason = 27;
+  repeated int32 effect_ids = 28;
 
   // Localized display info, resolved server-side from @dofus/dofus-lang.
   // Ships in the SpellList on enter-game so the HUD doesn't need a second

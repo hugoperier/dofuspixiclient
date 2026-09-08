@@ -5,6 +5,8 @@ import { DISPLAY_HEIGHT, FULL_HEIGHT } from "@/game/constants/battlefield";
 import { characterStore, closeAllPanels, hudStore } from "@/game/stores";
 import { fightActor } from "@/game/stores/fight-store";
 
+import { AudioSettingsControl } from "./audio/AudioSettingsControl";
+import { audioClick } from "./audio/audio-click";
 import { BannerReact } from "./banner/BannerReact";
 import { BigStoreWindow } from "./bigstore/BigStoreWindow";
 import { TooltipProvider } from "./components/Tooltip";
@@ -87,6 +89,7 @@ export function HudOverlay({
   return (
     <TooltipProvider>
       <div
+        onClickCapture={audioClick}
         style={{
           position: "absolute",
           left: canvasRect.left,
@@ -97,6 +100,12 @@ export function HudOverlay({
           zIndex: 10,
         }}
       >
+        {gameClient && (
+          <AudioSettingsControl
+            audio={gameClient.getAudioManager()}
+            zoom={baseZoom}
+          />
+        )}
         {activePanel === "stats" && (
           <div style={panelWrapStyle}>
             <StatsPanel

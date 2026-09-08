@@ -11,7 +11,10 @@ export const COMBAT_EFFECTS = new Set([
   4, 5, 6, 8, 77, 84, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 108, 111,
   112, 115, 116, 117, 118, 119, 123, 124, 126, 127, 128, 138, 145, 152, 154,
   155, 157, 168, 169, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 400,
-  401, 666,
+  401, 666, 9, 50, 51, 79, 82, 89, 90, 105, 106, 107, 109, 110, 120, 122, 125,
+  130, 131, 132, 140, 141, 142, 143, 149, 150, 160, 161, 162, 163, 171, 176,
+  178, 180, 181, 182, 183, 184, 185, 186, 202, 265, 268, 271, 293, 320, 671,
+  672, 765, 776, 780, 781, 782, 783, 784, 786, 787, 788, 950, 951,
 ]);
 
 export function combatUnavailableReason(
@@ -24,11 +27,13 @@ export function combatUnavailableReason(
     if (!COMBAT_EFFECTS.has(effect.id)) {
       return unavailableEffectReason(effect.id);
     }
-    if (effect.probability > 0) {
-      return "Les effets aléatoires de ce sort ne sont pas encore disponibles.";
-    }
-    if (effect.id >= 91 && effect.id <= 100 && effect.duration > 0) {
-      return "Les dégâts différés de ce sort ne sont pas encore disponibles.";
+    if (
+      !Number.isFinite(effect.min) ||
+      !Number.isFinite(effect.max) ||
+      effect.probability < 0 ||
+      effect.probability > 100
+    ) {
+      return "Paramètres d’effet invalides.";
     }
     if (effect.areaKind === 8) {
       return "Cette forme de zone n’est pas encore disponible.";

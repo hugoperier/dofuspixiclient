@@ -5,7 +5,10 @@ import { ActiveState } from "@modules/fight/core/fight.active-state";
 import { FighterKind } from "@modules/fight/fight.types";
 import { fastDistance } from "@modules/fight/map/fight.area";
 
-import { pathToward } from "./fight.movement";
+import type { SpellLevel } from "../cast/fight.spell.types";
+import { aiCastCandidates } from "./fight.ai-policy";
+import { pathAway, pathToward } from "./fight.movement";
+import { canPerceive } from "./fight.visibility";
 
 export class MonsterAI implements TurnObserver {
   constructor(
@@ -23,7 +26,11 @@ export class MonsterAI implements TurnObserver {
       fighter: Fighter,
       pathCells: number[],
       epoch: number
-    ) => Promise<void>
+    ) => Promise<void>,
+    private readonly spellData?: (
+      id: number,
+      rank: number
+    ) => Promise<SpellLevel | undefined>
   ) {}
 
   onTurnStart(fight: Fight, fighter: Fighter): void {
@@ -48,6 +55,69 @@ export class MonsterAI implements TurnObserver {
     }
 
     const target = this.findNearestEnemy(fight, fighter);
+    if (this.spellData) {
+      const loaded = await Promise.all(
+        fighter.monsterSpells.map((s) => this.spellData?.(s.spellId, s.level))
+      );
+      const spells = loaded.filter((s): s is SpellLevel => Boolean(s));
+      let acted = false;
+      for (
+        let attempt = 0;
+        attempt < 24 && this.isCurrent(fight, fighter, epoch);
+        attempt++
+      ) {
+        let cast = false;
+        for (const candidate of aiCastCandidates(fight, fighter, spells)) {
+          try {
+            await this.castSpell?.(
+              fight,
+              fighter,
+              candidate.spell.spellId,
+              candidate.cell,
+              candidate.spell.level,
+              epoch
+            );
+            cast = true;
+            break;
+          } catch {}
+        }
+        if (cast) {
+          acted = true;
+          continue;
+        }
+        if (acted && (fighter.aiProfile === 3 || fighter.aiProfile === 102)) {
+          const retreat = pathAway(fight, fighter);
+          if (retreat.length) {
+            try {
+              await this.broadcastMovement?.(fight, fighter, retreat, epoch);
+            } catch {}
+          }
+          break;
+        }
+        const owner = fight
+          .fighters()
+          .find((f) => f.id === fighter.invocatorId && !f.dead);
+        const approach = fighter.aiProfile === 102 ? (owner ?? target) : target;
+        if (!approach || fighter.mp <= 0 || fighter.carriedById !== null) {
+          break;
+        }
+        const path = pathToward(fight, fighter, approach);
+        if (!path.length) {
+          break;
+        }
+        const from = fighter.cell;
+        try {
+          await this.broadcastMovement?.(fight, fighter, path, epoch);
+        } catch {
+          break;
+        }
+        if (fighter.cell === from) {
+          break;
+        }
+      }
+      this.requestEnd(fighter.id, epoch);
+      return;
+    }
     if (!target) {
       this.requestEnd(fighter.id, epoch);
       return;
@@ -85,7 +155,7 @@ export class MonsterAI implements TurnObserver {
     let nearestDist = Number.MAX_SAFE_INTEGER;
 
     for (const f of fight.fighters()) {
-      if (f.dead || f.team?.side === myTeam) {
+      if (f.dead || f.team?.side === myTeam || !canPerceive(f, fighter)) {
         continue;
       }
       const d = fastDistance(fight.fightMap, fighter.cell, f.cell);

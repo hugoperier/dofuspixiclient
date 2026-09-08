@@ -24,6 +24,15 @@ export class SpellsRepository {
       .executeTakeFirst();
   }
 
+  findSummonGrade(templateId: number, grade: number) {
+    return this.txHost.tx
+      .selectFrom("summonGrades")
+      .select("data")
+      .where("templateId", "=", templateId)
+      .where("grade", "=", grade)
+      .executeTakeFirst();
+  }
+
   /**
    * Every level row of one spell, ordered 1..6 — what the spell book's
    * detail panel paginates through. Separate from `findLevel` because

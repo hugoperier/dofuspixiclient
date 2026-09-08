@@ -15,34 +15,27 @@ Les lacunes constatées étaient le chevauchement des handlers de déplacement c
 5. GA annonce le lancement puis les effets ; GTM synchronise les ressources, positions et états ; GAF termine ou explique le refus au demandeur. Les cooldowns utilisent SC. Les ajouts sont des champs des messages existants, sans nouveau protocole parallèle.
 6. Mort, cellule libérée et détection d'équipe éliminée ; arrêt du runner ; GE avec résultats, XP, kamas et drops issus du service existant. Le client termine les animations avant de rendre l'exploration et affiche les gagnants/perdants.
 
-## Couverture et limites explicites
+## Intégration des douze classes — 8 septembre 2026
 
-Voir [la matrice générée des 12 classes](spell-coverage.md), qui détaille chaque sort et chaque rang, y compris les dépendances de glyphes/pièges. Les sorts incomplets restent visibles dans le grimoire et bloqués dans la barre et sur le serveur avant dépense.
+La [matrice générée](spell-coverage.md) couvre désormais les 264 sorts de classe et spéciaux, leurs 1 584 rangs racines et leurs dépendances exactes : 1 883 rangs et 222 grades d'invocation au total. Le serveur et le grimoire utilisent la même préparation récursive. Aucun rang du périmètre n'est déclaré indisponible par cet audit de capacités.
 
-Le socle prend en charge dégâts élémentaires, soins, vol de vie, plusieurs bonus/malus de caractéristiques et résistances, gains/retraits PA/PM, téléportation, échange de positions, poussée/attirance, pièges et glyphes dont les déclencheurs sont des dégâts directs. Les zones et la LoS partagent `@dofus/grid`. Le tacle est probabiliste, sans les caractéristiques modernes fuite/tacle.
+Les résolveurs couvrent invocations, sous-invocations, Double, résurrection, invisibilité, porter/jeter, transformations, pièges et glyphes à effets composés, poisons et soins périodiques, armures, renvois, Sacrifice, Chance, châtiments, charges et jets forcés. Les valeurs et états viennent du catalogue local ; les règles arbitrées et leurs sources sont dans [retro-rules.md](retro-rules.md).
 
-Travail restant avant une fidélité complète de chaque classe :
+Les PA, les données d'invocation et les restrictions sont validés avant application. Joueurs et invocations empruntent le même lancement serveur. Les IA évaluent attaques, soins, buffs, retraits, déplacements et invocations selon les positions perçues ; le tonneau distingue son comportement au sol de son comportement porté. Les ressources, les liens et les déclencheurs sont nettoyés par les chemins de mort et de fin de combat. Les récompenses excluent les créatures invoquées et tiennent compte du Coffre et des kamas volés.
 
-| Classe | Mécaniques particulières à finaliser et vérifier |
-| --- | --- |
-| Féca | Armures, renvois, Immunité, Trêve, glyphes de retrait/états |
-| Osamodas | Créatures invoquées issues des templates, IA, limite d'invocation et buffs réservés aux invocations |
-| Enutrof | Coffre, désenvoûtement et interactions de corruption |
-| Sram | Invisibilité avec occultation réseau, Double, poisons et pièges à effets différés |
-| Xélor | Probabilités exclusives des gains de PA, renvois, rollback et cadran |
-| Ecaflip | Tirages exclusifs, effets conditionnels et états de Roulette/Chance |
-| Eniripsa | Lapino, désenvoûtement et effets à durée particuliers |
-| Iop | Vitalité, états et particularités des sorts spéciaux |
-| Crâ | Effets spéciaux et déclencheurs des flèches concernées |
-| Sadida | Poupées, poisons, transformations et arbres |
-| Sacrieur | Châtiments, Sacrifice, transfert de vie, invocations ; Transposition/Coopération vérifient déjà le camp cible |
-| Pandawa | Porter/jeter, porté/porteur, saoul/sobre, Stabilisation, tonneau et Pandawasta |
+Les paquets sont filtrés par destinataire pour les entités invisibles et les pièges. Le client synchronise apparitions, résurrections, états, buffs et durées ; les détails sont accessibles depuis la timeline. Les [assets reconstruits](asset-reconstruction.md) comprennent le graphique 810 et les points de porté Pandawa. Le séquencement attend l'impact déclaré par le visuel ; une erreur de chargement ou d'exécution est signalée.
 
-Les variantes à probabilités exclusives et les dégâts différés sont volontairement bloqués. L'IA actuelle choisit un ennemi, contourne les obstacles et essaie ses sorts ; ce n'est pas encore une IA spécialisée pour chaque famille. Une déconnexion abandonne le combat via la même file d’actions ; la reprise de session reste à développer. Les défis PvP, spectateurs, reconnexion en cours de combat, arme équipée et reprise après crash ne sont pas certifiés par cette livraison PvM. Les récompenses réutilisent les formules du projet, sans prétendre certifier l'économie historique.
+**Validation navigateur des 264 sorts encore à réaliser.** Les comptes dédiés aux douze classes sont créés par `scripts/seed-combat-validation.ts`, avec leurs sorts spéciaux attribués. La session actuelle a atteint l'exploration avec le Féca de validation ; le contrôle du navigateur est ensuite bloqué par le verrouillage du Mac. Les observations du 7 septembre ci-dessous décrivent le premier socle PvM, et ne certifient pas les mécaniques ajoutées le 8 septembre.
+
+Les sorts communs, maîtrises, armes équipées et acquisition des spéciaux restent hors périmètre. PvP, spectateurs, reconnexion en combat et reprise après crash ne sont pas certifiés par cette intégration. Les récompenses conservent les formules économiques du projet.
+
+## Corrections des régressions
+
+Le [rapport des huit régressions](regression-validation.md) décrit le coordinateur de présentation, la corrélation GAS/GAF et GTR/GT, la barrière serveur, les clics et previews, la conservation des couches, les protections contre les réponses tardives et la reconstruction des tables graphiques. Les tests automatisés passent, mais le contrôle navigateur reste bloqué par le verrouillage du Mac et **68 graphiques ont encore des symboles absents**. La matrice conserve ces échecs ; cette livraison n’est pas terminée.
 
 ## Données et références
 
-La migration `0062_combat_spell_semantics` relit les tuples sources plutôt que de permuter aveuglément les données déjà corrigées. Elle ajoute les états requis/interdits et restaure les jets, probabilités, durées et zones normales/critiques. Exécuter `bun run db:migrate` dans `apps/gameserver-ts`.
+La migration `0062_combat_spell_semantics` relit les tuples sources plutôt que de permuter aveuglément les données déjà corrigées. Elle ajoute les états requis/interdits et restaure les jets, probabilités, durées et zones normales/critiques. La migration `0063_class_combat_catalog` ajoute les filtres de cible, paramètres et grades séparés, dont Moquerie 203:6 sans repli. Les deux migrations sont appliquées localement. `scripts/verify-combat-migration.ts` contrôle un aller-retour 0063 dans un schéma isolé annulé en fin de test. Exécuter `bun run db:migrate` dans `apps/gameserver-ts`.
 
 Les captures de `screenshot-ui/combats` guident placement, timeline, ressources et tableau de résultat. Les sources locales `assets/sources/client-code/dofus/aks/GameActions.as`, `extend/GameActionsEx.as`, `managers/GameManager.as`, `datacenter/Spell.as` et `ank/battlefield/utils/Pathfinding.as` guident les événements et coordonnées. Le catalogue local contient aussi du Retro ultérieur et ne suffit donc pas à certifier une règle 1.29. Les formules ont été recoupées avec les implémentations [Fight de StarLoco](https://github.com/StarLoco/StarLoco-Game/blob/master/src/org/starloco/locos/fight/Fight.java) et [SpellEffect](https://github.com/StarLoco/StarLoco-Game/blob/master/src/org/starloco/locos/fight/spells/SpellEffect.java), qui sont des références d'émulateur, pas une spécification Ankama.
 
@@ -58,7 +51,7 @@ bun run contracts:verify
 cd apps/gameserver-ts
 bunx tsc --noEmit
 bun test src/core/modules/fight src/core/features/game/move/move.handler.spec.ts
-bun run scripts/audit-combat-spells.ts
+bun run scripts/audit-combat-spells.ts --verify
 cd ../electrobun
 bunx tsc --noEmit
 bun test ./src/game/machines/fight.machine.spec.ts ./src/game/network/handlers/map.handler.spec.ts ./src/game/network/handlers/map.handler.walk.spec.ts

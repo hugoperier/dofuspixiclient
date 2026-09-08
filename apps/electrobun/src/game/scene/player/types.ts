@@ -111,6 +111,7 @@ export interface ActivePlayer {
   maxHp: number;
   gfxId: number;
   animation: PlayerAnimationValue;
+  carrying?: boolean;
   currentAnimName: string;
   currentAnimData: CharacterAnimation | null;
   frameIndex: number;

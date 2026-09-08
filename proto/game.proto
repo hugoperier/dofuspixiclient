@@ -25,6 +25,7 @@ message GameJoin {
   bool  is_spectator = 4;    // Joined as spectator
   int32 timer_ms = 5;        // Placement timer in milliseconds
   int32 fight_type = 6;      // FightType enum value
+  int32 fight_id = 7;
 }
 
 // GP - Placement positions
@@ -189,6 +190,7 @@ message SpriteMovementEntry {
   // no stars filled (a young / unbonused group). Only meaningful for
   // SPRITE_TYPE_MONSTER_GROUP entries.
   int32 monster_group_bonus = 40;
+  string summoner_id = 41;
 }
 
 message MonsterGroupMember {
@@ -348,6 +350,8 @@ message GameFrameObjectExternal {
 // GAS - Actions start
 message GameActionsStart {
   string sprite_id = 1;
+  int32 action_id = 2;
+  int32 fight_id = 3;
 }
 
 // GAF - Actions finish
@@ -356,6 +360,8 @@ message GameActionsFinish {
   string sprite_id = 2;
   string rejection_code = 3;
   string rejection_reason = 4;
+  int32 action_id = 5;
+  int32 fight_id = 6;
 }
 
 // GA - Game action (core combat/world action)
@@ -573,6 +579,7 @@ message ActionRemoveEffects {
 message ActionSummon {
   SpriteMovementEntry sprite_data = 1;  // Full sprite data for summoned entity
   int32               cell_id = 2;
+  bool resurrected = 3;
 }
 
 message ActionSpellLaunch {
@@ -619,6 +626,8 @@ message ActionEffectApply {
   int32  value = 3;      // primary numeric arg (damage/heal/...)
   int32  duration = 4;   // in turns; 0 when instantaneous
   repeated string extra_args = 5; // effect-specific trailing args
+  int32 buff_id = 6;
+  int32 spell_id = 7;
 }
 
 message ActionObjectFrameChange {
@@ -714,11 +723,21 @@ message TurnMiddleEntry {
   int32 ap_max = 9;
   int32 mp_max = 10;
   repeated int32 states = 11;
+  bool invisible = 12;
+  bool hidden = 13; // Recipient cannot perceive this fighter; discard its previous position.
+  string carrying_id = 14;
+  string carried_by_id = 15;
+  int32 appearance_gfx = 16;
+  int32 max_summons = 17;
+  bool static_fighter = 18;
+  bool resurrectable = 19;
 }
 
 // GTR - Turn ready request
 message GameTurnReady {
   string sprite_id = 1;
+  int32 fight_id = 2;
+  int32 turn_epoch = 3;
 }
 
 // GX - Extra clip (NPC alternate animation).
@@ -893,6 +912,8 @@ message GameTurnEnd {}
 // Client sends GT or GT<spriteId>
 message GameTurnOk {
   string sprite_id = 1;
+  int32 fight_id = 2;
+  int32 turn_epoch = 3;
 }
 
 // Client sends GP+, GP-, GP*

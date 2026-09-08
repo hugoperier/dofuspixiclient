@@ -2,6 +2,7 @@ import { create } from "@bufbuild/protobuf";
 
 import type { Connection } from "@/game/network/connection";
 import type { MessageHandler } from "@/game/network/message-handler";
+import type { CombatPresentation } from "@/game/scene/fight/combat-presentation";
 import { spellCastActor } from "@/game/machines/spell-cast.machine";
 import { encodeFightPath } from "@/game/network/path-codec";
 import {
@@ -29,6 +30,7 @@ import {
   GameTurnEndSchema,
   type GameTurnFinish,
   type GameTurnList,
+  GameTurnOkSchema,
   type GameTurnStart,
   type GameZoneData,
   GameZoneData_Operation,
@@ -83,7 +85,10 @@ export interface FightEventHandlers {
   onTurnEnd?: (payload: GameTurnFinish) => void;
   onTurnList?: (payload: GameTurnList) => void;
   onReady?: (payload: GameReady) => void;
+  onCriticalHit?: () => void;
+  onCriticalMiss?: () => void;
   onSpellCast?: (payload: SpellCastPayload) => void;
+  onTriggeredSpell?: (payload: SpellCastPayload) => void;
   onAPChange?: (payload: ActionAPChange) => void;
   onMPChange?: (payload: ActionMPChange) => void;
   onDamage?: (payload: ActionDamage) => void;
@@ -92,6 +97,10 @@ export interface FightEventHandlers {
   onDirectionChange?: (payload: ActionDirectionChange) => void;
   onStateChange?: (payload: ActionStateChange) => void;
   onSummon?: (payload: ActionSummon) => void;
+  onVisibility?: (spriteId: string, visibility: number) => void;
+  onAppearance?: (spriteId: string, gfxId: number) => void;
+  onCarry?: (carrierId: string, carriedId: string) => void;
+  onUncarry?: (carriedId: string, cellId: number, thrown: boolean) => void;
   onMovement?: (payload: GameMovement) => void;
   onZoneAdd?: (payload: ZonePayload) => void;
   onZoneRemove?: (payload: ZonePayload) => void;
@@ -106,12 +115,20 @@ export interface FightEventHandlers {
  * typed `action_data` oneof). This handler fans out those events.
  */
 export class FightHandler {
+  private presentation: CombatPresentation | null = null;
+  private fightId = 0;
+  private generation = 0;
+  private readyEpoch = 0;
+  setCombatPresentation(presentation: CombatPresentation): void {
+    this.presentation = presentation;
+  }
   private handlers: FightEventHandlers = {};
+  private readonly criticalCasts = new Map<string, number>();
   private unsubscribers: (() => void)[] = [];
 
   constructor(
     messageHandler: MessageHandler,
-    private readonly connection: Connection,
+    private readonly connection: Pick<Connection, "send">,
     /**
      * Resolves the local player's sprite id (= their character id, as a
      * string). The fight machine needs this to evaluate the `isMyTurn`
@@ -133,7 +150,50 @@ export class FightHandler {
 
   private registerHandlers(mh: MessageHandler): void {
     this.unsubscribers.push(
+      mh.on("gameActionsStart", (payload) => {
+        if (payload.fightId !== this.fightId || !payload.fightId) {
+          return;
+        }
+        this.presentation?.begin(payload.actionId);
+      }),
+      mh.on("gameTurnReady", (payload) => {
+        if (
+          payload.fightId !== this.fightId ||
+          payload.turnEpoch <= this.readyEpoch ||
+          fightActor.getSnapshot().context.isSpectator
+        ) {
+          return;
+        }
+        this.readyEpoch = payload.turnEpoch;
+        const generation = this.generation;
+        void Promise.resolve(this.presentation?.whenIdle()).then(() => {
+          const spriteId = this.getMySpriteId();
+          if (
+            !spriteId ||
+            this.generation !== generation ||
+            this.readyEpoch !== payload.turnEpoch
+          ) {
+            return;
+          }
+          this.connection.send(
+            encodeClient(
+              "gameTurnOk",
+              create(GameTurnOkSchema, {
+                spriteId,
+                fightId: payload.fightId,
+                turnEpoch: payload.turnEpoch,
+              })
+            )
+          );
+        });
+      })
+    );
+    this.unsubscribers.push(
       mh.on("gameActionsFinish", (payload) => {
+        if (payload.fightId !== this.fightId) {
+          return;
+        }
+        this.presentation?.finish(payload.actionId);
         if (payload.spriteId !== this.getMySpriteId()) {
           return;
         }
@@ -160,15 +220,32 @@ export class FightHandler {
 
     this.unsubscribers.push(
       mh.on("gameJoin", (payload) => {
+        this.generation++;
+        this.fightId = payload.fightId;
+        this.readyEpoch = 0;
+        this.presentation?.reset();
+        this.criticalCasts.clear();
         for (const spell of spellsStore.getSnapshot().spells) {
           applySpellCooldown(spell.spellId, 0);
         }
         spellCastActor.send({ type: "RESET" });
+        // A previous result may still be waiting for cosmetic/audio cleanup.
+        // The new join owns the machine and must replace that combat now.
+        fightActor.send({ type: "LEAVE" });
         const mySpriteId = this.getMySpriteId() ?? undefined;
         if (payload.isSpectator) {
-          fightActor.send({ type: "FIGHT_SPECTATE_INIT", payload });
+          fightActor.send({
+            type: "FIGHT_SPECTATE_INIT",
+            payload,
+            fightId: payload.fightId,
+          });
         } else {
-          fightActor.send({ type: "FIGHT_INIT", payload, mySpriteId });
+          fightActor.send({
+            type: "FIGHT_INIT",
+            payload,
+            mySpriteId,
+            fightId: payload.fightId,
+          });
         }
         this.handlers.onFightJoined?.(payload);
       })
@@ -189,11 +266,15 @@ export class FightHandler {
 
     this.unsubscribers.push(
       mh.on("gameEnd", (payload) => {
+        const generation = ++this.generation;
+        this.criticalCasts.clear();
         fightActor.send({ type: "FINISHING" });
         spellCastActor.send({ type: "TURN_ENDED" });
-        Promise.resolve(this.handlers.onFightEnd?.(payload)).finally(() =>
-          fightActor.send({ type: "FIGHT_END", payload })
-        );
+        Promise.resolve(this.handlers.onFightEnd?.(payload)).finally(() => {
+          if (generation === this.generation) {
+            fightActor.send({ type: "FIGHT_END", payload });
+          }
+        });
       })
     );
 
@@ -206,6 +287,7 @@ export class FightHandler {
 
     this.unsubscribers.push(
       mh.on("gameTurnFinish", (payload) => {
+        this.criticalCasts.delete(payload.spriteId);
         fightActor.send({ type: "TURN_END", payload });
         this.handlers.onTurnEnd?.(payload);
       })
@@ -230,6 +312,28 @@ export class FightHandler {
         // the gauges + reachable-range calc.
         const mySpriteId = this.getMySpriteId();
         for (const entry of payload.entries) {
+          const previous = fightActor
+            .getSnapshot()
+            .context.fighters.get(entry.spriteId);
+          const visibility = entry.hidden ? 2 : entry.invisible ? 1 : 0;
+          if (
+            previous?.hidden !== entry.hidden ||
+            previous?.invisible !== entry.invisible
+          ) {
+            this.handlers.onVisibility?.(entry.spriteId, visibility);
+          }
+          if (previous?.appearanceGfx !== entry.appearanceGfx) {
+            this.handlers.onAppearance?.(entry.spriteId, entry.appearanceGfx);
+          }
+          if (
+            entry.carriedById &&
+            entry.carriedById !== previous?.carriedById
+          ) {
+            this.handlers.onCarry?.(entry.carriedById, entry.spriteId);
+          }
+          if (!entry.carriedById && previous?.carriedById) {
+            this.handlers.onUncarry?.(entry.spriteId, entry.cellNum, false);
+          }
           fightActor.send({
             type: "FIGHTER_UPDATE",
             spriteId: entry.spriteId,
@@ -238,20 +342,20 @@ export class FightHandler {
               maxHp: entry.lpMax,
               ap: entry.ap,
               mp: entry.mp,
-              ...(entry.cellNum >= 0 ? { cell: entry.cellNum } : {}),
+              cell: entry.hidden ? -1 : entry.cellNum,
+              invisible: entry.invisible,
+              hidden: entry.hidden,
+              carryingId: entry.carryingId,
+              carriedById: entry.carriedById,
+              appearanceGfx: entry.appearanceGfx,
+              maxSummons: entry.maxSummons,
+              staticFighter: entry.staticFighter,
+              resurrectable: entry.resurrectable,
               maxAp: entry.apMax,
               maxMp: entry.mpMax,
               rangeBonus: entry.rangeBonus,
               states: entry.states,
-              // Only LATCH dead to true via gameTurnMiddle — never
-              // un-set it. The death `FIGHTER_UPDATE` from
-              // `routeAction("death")` is authoritative for the
-              // dead transition; gameTurnMiddle's `isDead` field is
-              // sometimes false on the wire even for corpses (the
-              // server tears them down asynchronously), and
-              // overwriting back to false would let dead-monster
-              // cells re-block pathfinding/LoS for the next hover.
-              ...(entry.isDead ? { dead: true } : {}),
+              dead: entry.isDead,
             },
           });
         }
@@ -342,7 +446,7 @@ export class FightHandler {
               color1: c1,
               color2: c2,
               color3: c3,
-              ...(entry.isSummoned ? { summonedBy: entry.spriteId } : {}),
+              ...(entry.isSummoned ? { summonedBy: entry.summonerId } : {}),
             },
           });
         }
@@ -375,18 +479,38 @@ export class FightHandler {
     const data = action.actionData;
 
     switch (data.case) {
-      case "spellLaunch":
+      case "glyph":
+        this.handlers.onTriggeredSpell?.({
+          casterId: Number(action.spriteId),
+          spellId: data.value.param1,
+          visualGfxId: data.value.param2,
+          spellLevel: data.value.param3 || 1,
+          targetCellId: data.value.cellId,
+          critical: false,
+          animation: "",
+        });
+        break;
+      case "spellLaunch": {
         appendInfoMessage(
           `${this.fighterName(action.spriteId)} lance ${spellsStore.getSnapshot().byId.get(data.value.spellId)?.name ?? `le sort ${data.value.spellId}`}.`
         );
-        this.handlers.onSpellCast?.(spellLaunchToPayload(action, data.value));
+        const cast = spellLaunchToPayload(action, data.value);
+        cast.critical =
+          this.criticalCasts.get(action.spriteId) === data.value.spellId;
+        this.criticalCasts.delete(action.spriteId);
+        this.handlers.onSpellCast?.(cast);
         break;
+      }
       case "criticalHit":
+        this.criticalCasts.set(action.spriteId, data.value.spellId);
+        this.handlers.onCriticalHit?.();
         appendInfoMessage(
           `${this.fighterName(action.spriteId)} : coup critique !`
         );
         break;
       case "criticalMiss":
+        this.criticalCasts.delete(action.spriteId);
+        this.handlers.onCriticalMiss?.();
         appendInfoMessage(
           `${this.fighterName(action.spriteId)} : échec critique.`
         );
@@ -394,9 +518,125 @@ export class FightHandler {
           spellCastActor.send({ type: "RESET" });
         }
         break;
-      case "effectApply":
+      case "effectApply": {
+        const effect = data.value;
+        const fighter = fightActor
+          .getSnapshot()
+          .context.fighters.get(effect.targetSpriteId);
+        if (effect.effectId === 149 && effect.buffId === 0) {
+          fightActor.send({
+            type: "FIGHTER_UPDATE",
+            spriteId: effect.targetSpriteId,
+            patch: { appearanceGfx: effect.value },
+          });
+          this.handlers.onAppearance?.(effect.targetSpriteId, effect.value);
+          break;
+        }
+        if (fighter && effect.buffId > 0) {
+          const buffs = (fighter.buffs ?? []).filter(
+            (b) => b.id !== effect.buffId
+          );
+          buffs.push({
+            id: effect.buffId,
+            spellId: effect.spellId,
+            effectId: effect.effectId,
+            value: effect.value,
+            duration: effect.duration,
+          });
+          fightActor.send({
+            type: "FIGHTER_UPDATE",
+            spriteId: effect.targetSpriteId,
+            patch: { buffs },
+          });
+        }
+        if (!fighter?.buffs?.some((buff) => buff.id === effect.buffId)) {
+          appendInfoMessage(
+            `${this.fighterName(data.value.targetSpriteId)} reçoit un effet pour ${data.value.duration} tour(s).`
+          );
+        }
+        break;
+      }
+      case "removeEffects":
+        fightActor.send({
+          type: "FIGHTER_UPDATE",
+          spriteId: data.value.targetId,
+          patch: { buffs: [] },
+        });
+        break;
+      case "invisibility": {
+        const { spriteId, visibility } = data.value;
+        fightActor.send({
+          type: "FIGHTER_UPDATE",
+          spriteId,
+          patch: {
+            invisible: visibility > 0,
+            hidden: visibility === 2,
+            ...(visibility === 2 ? { cell: -1 } : {}),
+          },
+        });
+        this.handlers.onVisibility?.(spriteId, visibility);
+        break;
+      }
+      case "carry": {
+        const carriedId = data.value.carriedSpriteId;
+        const carrier = fightActor
+          .getSnapshot()
+          .context.fighters.get(action.spriteId);
+        fightActor.send({
+          type: "FIGHTER_UPDATE",
+          spriteId: action.spriteId,
+          patch: { carryingId: carriedId },
+        });
+        fightActor.send({
+          type: "FIGHTER_UPDATE",
+          spriteId: carriedId,
+          patch: { carriedById: action.spriteId, cell: carrier?.cell ?? -1 },
+        });
+        this.handlers.onCarry?.(action.spriteId, carriedId);
+        break;
+      }
+      case "throwCarried":
+      case "uncarry": {
+        const fighters = fightActor.getSnapshot().context.fighters;
+        const carriedId =
+          data.case === "uncarry"
+            ? data.value.spriteId
+            : fighters.get(action.spriteId)?.carryingId;
+        if (!carriedId) {
+          break;
+        }
+        const carrierId =
+          fighters.get(carriedId)?.carriedById ?? action.spriteId;
+        fightActor.send({
+          type: "FIGHTER_UPDATE",
+          spriteId: carrierId,
+          patch: { carryingId: "" },
+        });
+        fightActor.send({
+          type: "FIGHTER_UPDATE",
+          spriteId: carriedId,
+          patch: { carriedById: "", cell: data.value.cellId },
+        });
+        this.handlers.onUncarry?.(
+          carriedId,
+          data.value.cellId,
+          data.case === "throwCarried"
+        );
+        break;
+      }
+      case "reduceDamage":
         appendInfoMessage(
-          `${this.fighterName(data.value.targetSpriteId)} reçoit un effet pour ${data.value.duration} tour(s).`
+          `${this.fighterName(data.value.spriteId)} réduit les dommages de ${data.value.amount}.`
+        );
+        break;
+      case "returnDamage":
+        appendInfoMessage(
+          `${this.fighterName(data.value.spriteId)} renvoie ${data.value.amount} dommages.`
+        );
+        break;
+      case "returnSpell":
+        appendInfoMessage(
+          `${this.fighterName(data.value.spriteId)} renvoie le sort.`
         );
         break;
       case "apChange": {
@@ -493,14 +733,25 @@ export class FightHandler {
       case "directionChange":
         this.handlers.onDirectionChange?.(data.value);
         break;
-      case "stateChange":
-        // Buff/debuff state toggles. Propagated to the renderer for
-        // status-icon badging; fighter map doesn't track states yet
-        // (step 6 + will add `states: StateEntry[]`).
+      case "stateChange": {
+        const { spriteId, stateId, active } = data.value;
+        const states = new Set(
+          fightActor.getSnapshot().context.fighters.get(spriteId)?.states ?? []
+        );
+        if (active) {
+          states.add(stateId);
+        } else {
+          states.delete(stateId);
+        }
+        fightActor.send({
+          type: "FIGHTER_UPDATE",
+          spriteId,
+          patch: { states: [...states] },
+        });
         this.handlers.onStateChange?.(data.value);
         break;
+      }
       case "summon": {
-        this.handlers.onSummon?.(data.value);
         const sd = data.value.spriteData;
         if (sd) {
           fightActor.send({
@@ -519,16 +770,16 @@ export class FightHandler {
               maxMp: sd.mp,
               gfxId: sd.gfxId,
               dead: false,
-              // Summon spriteData doesn't carry colours on the wire
-              // (the server populates the gfx id; visual tint is left
-              // to the client). Default to -1 = "use gfx defaults".
-              color1: -1,
-              color2: -1,
-              color3: -1,
-              summonedBy: action.spriteId,
+              color1: sd.colors?.color1 ?? -1,
+              color2: sd.colors?.color2 ?? -1,
+              color3: sd.colors?.color3 ?? -1,
+              ...(sd.isSummoned
+                ? { summonedBy: sd.summonerId || action.spriteId }
+                : {}),
             },
           });
         }
+        this.handlers.onSummon?.(data.value);
         break;
       }
       case "movement": {
@@ -540,6 +791,16 @@ export class FightHandler {
           fightActor.send({
             type: "FIGHTER_UPDATE",
             spriteId: action.spriteId,
+            patch: { cell: endCell },
+          });
+        }
+        const carriedId = fightActor
+          .getSnapshot()
+          .context.fighters.get(action.spriteId)?.carryingId;
+        if (carriedId && endCell !== undefined) {
+          fightActor.send({
+            type: "FIGHTER_UPDATE",
+            spriteId: carriedId,
             patch: { cell: endCell },
           });
         }
@@ -648,7 +909,17 @@ export class FightHandler {
     );
   }
 
+  cancelPresentation(): void {
+    this.generation++;
+    this.fightId = 0;
+    this.readyEpoch = 0;
+    this.presentation?.reset();
+    spellCastActor.send({ type: "RESET" });
+  }
+
   destroy(): void {
+    this.cancelPresentation();
+    this.criticalCasts.clear();
     for (const u of this.unsubscribers) {
       u();
     }

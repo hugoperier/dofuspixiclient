@@ -1,4 +1,7 @@
-import type { SpellLevel } from "@modules/fight/cast/fight.spell.types";
+import type {
+  SpellEffect,
+  SpellLevel,
+} from "@modules/fight/cast/fight.spell.types";
 import type { Fight } from "@modules/fight/core/fight.entity";
 import type { Fighter } from "@modules/fight/core/fight.fighter";
 
@@ -11,6 +14,14 @@ export interface DamageContext {
   indirect: boolean;
   absorbed: number;
   reflected: number;
+  cause?:
+    | "direct"
+    | "poison"
+    | "trap"
+    | "glyph"
+    | "reflection"
+    | "life-cost"
+    | "push";
 }
 
 export interface CastContext {
@@ -77,6 +88,11 @@ export interface Buff {
   remaining: number;
   value: number;
   statModifier: StatModifier;
+  spellId?: number;
+  sourceEffect?: SpellEffect;
+  dispellable?: boolean;
+  periodic?: boolean;
+  createdTurn?: number;
 
   onApply?: (fight: Fight, target: Fighter) => void;
   onRemove?: (fight: Fight, target: Fighter) => void;

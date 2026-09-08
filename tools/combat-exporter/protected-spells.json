@@ -6,15 +6,35 @@
     108,
     110,
     111,
+    301,
+    303,
+    504,
+    610,
+    801,
+    904,
+    906,
     909,
-    911
+    910,
+    911,
+    1005,
+    2112
   ],
   "notes": {
-    "103": "Reference impl for projectile/displayType-30 (Bâton de Feca). Used as in-prompt example.",
-    "108": "Carapace caster-side (displayType=10). totalFrames clamped to last unique logical idx (87) — frames 87-128 are deduped placeholder.",
+    "103": "Reference impl for projectile/displayType-30 (B\u00e2ton de Feca). Used as in-prompt example.",
+    "108": "Carapace caster-side (displayType=10). totalFrames clamped to last unique logical idx (87) \u2014 frames 87-128 are deduped placeholder.",
     "110": "Carapace target-side (displayType=11). totalFrames clamped to 100 (last unique logical idx 99).",
     "111": "Hand-perfected paired with 110.",
     "909": "Reference impl for displayType=20 (Iop bond). Used as in-prompt example.",
-    "911": "Hand-perfected sibling of 909."
+    "911": "Hand-perfected sibling of 909.",
+    "610": "Independent parent and random child timelines, extracted from canonical 20 Hz source with extract-610; do not flatten stop/goto actions onto the parent.",
+    "301": "Parent/placed-child ownership or explicit root attachment corrected; covered by the published animation lifecycle audit.",
+    "303": "Parent/placed-child ownership or explicit root attachment corrected; covered by the published animation lifecycle audit.",
+    "504": "Parent/placed-child ownership or explicit root attachment corrected; covered by the published animation lifecycle audit.",
+    "801": "Parent/placed-child ownership or explicit root attachment corrected; covered by the published animation lifecycle audit.",
+    "904": "Parent/placed-child ownership or explicit root attachment corrected; covered by the published animation lifecycle audit.",
+    "906": "Parent/placed-child ownership or explicit root attachment corrected; covered by the published animation lifecycle audit.",
+    "910": "Parent/placed-child ownership or explicit root attachment corrected; covered by the published animation lifecycle audit.",
+    "1005": "Independent parent/child AS2 timelines extracted with extract-610; preserve impact, removal and random child transforms.",
+    "2112": "Independent parent/child AS2 timelines extracted with extract-610; preserve impact, removal and random child transforms."
   }
 }
