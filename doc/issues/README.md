@@ -91,13 +91,13 @@ causes racines et les notes de méthode, mais plus le détail par entrée.
 
 _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 
-**168 entrées**, dont **164 encore ouvertes**.
+**169 entrées**, dont **165 encore ouvertes**.
 
 ## Par gravité
 
 | Gravité | Restantes | Total |
 |---|---|---|
-| P0 — bloque la session (crash, impossible d'avancer) | 4 | 4 |
+| P0 — bloque la session (crash, impossible d'avancer) | 5 | 5 |
 | P1 — fonctionnalité cassée ou absente sur un flux principal | 70 | 70 |
 | P2 — comportement divergent du 1.29 canonique, contournable | 62 | 62 |
 | P3 — finition, confort, cosmétique | 28 | 29 |
@@ -110,7 +110,7 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | `open` — observé, non reproduit méthodiquement | 38 |
 | `confirmed` — reproduit, preuve au dossier | 17 |
 | `in-progress` — correctif engagé | 13 |
-| `fixed` — correctif livré, reste à revérifier manette en main | 96 |
+| `fixed` — correctif livré, reste à revérifier manette en main | 97 |
 | `closed` — vérifié, clos | 3 |
 | `wontfix` — écarté, avec la raison en fiche | 1 |
 
@@ -126,7 +126,7 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [`fight/`](fight/) | 15 | 15 |
 | [`hud-banner/`](hud-banner/) | 9 | 9 |
 | [`hud-panels/`](hud-panels/) | 19 | 20 |
-| [`input/`](input/) | 5 | 6 |
+| [`input/`](input/) | 6 | 7 |
 | [`inventory/`](inventory/) | 4 | 4 |
 | [`network/`](network/) | 9 | 9 |
 | [`progression/`](progression/) | 18 | 18 |
@@ -144,6 +144,7 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [QA-035](world-content/QA-035-aucun-pnj-aucun-objet-en-base.md) | P0 | world-content | data | in-progress | Aucun PNJ, aucun objet en base |
 | [QA-037](hud-panels/QA-037-panneaux-hud-sont-des-maquettes.md) | P0 | hud-panels | gap | confirmed | Sept des huit panneaux HUD sont des maquettes statiques |
 | [QA-048](session/QA-048-gateway-bloque-en-buffering.md) | P0 | session | bug | fixed | Le gateway ne sort jamais du mode buffering après une reconnexion au core |
+| [QA-169](input/QA-169-personnage-fige-apres-un-clic-pendant-une-longue-marche.md) | P0 | input | bug | fixed | Un clic pendant une longue marche fige le personnage jusqu'au changement de carte |
 
 ## P1 — fonctionnalité cassée ou absente sur un flux principal
 

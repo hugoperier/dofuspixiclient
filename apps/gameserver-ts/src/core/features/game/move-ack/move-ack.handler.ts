@@ -48,10 +48,12 @@ export class MoveAckHandler {
     if (this.fights.isInFight(ctx.sessionId)) {
       return;
     }
-    // `take` is get-and-delete, and it runs before the id check below: an
-    // ack that names the wrong action destroys the pending move on its way
-    // out. That is worth knowing when a character ends up frozen.
-    const move = this.pending.take(ctx.sessionId);
+    // Looked at, not consumed: an ack naming another action must leave the
+    // pending move where it is. It used to be a `take` — get-and-delete —
+    // running before the id check, so a walk whose animation finished after
+    // the player had already asked for a different one destroyed the live
+    // move on its way out, and the character froze until the next map load.
+    const move = this.pending.peek(ctx.sessionId);
 
     if (!move) {
       this.logger.debug(
@@ -62,10 +64,14 @@ export class MoveAckHandler {
 
     if (move.actionId !== msg.actionId) {
       this.logger.warn(
-        `ack: id mismatch session=${ctx.sessionId} expected=${move.actionId} got=${msg.actionId}`
+        `ack: id mismatch session=${ctx.sessionId} ` +
+          `expected=${move.actionId} got=${msg.actionId} — ` +
+          `stale ack ignored, action ${move.actionId} still pending`
       );
       return;
     }
+
+    this.pending.drop(ctx.sessionId);
 
     // `GKK` says the walk played out; `GKE` says the player cut it short
     // and names the cell they stopped on. Everything after this is the

@@ -39,7 +39,9 @@ const log = createLogger("MapHandler");
 /**
  * How long a move request may go unanswered before the client stops
  * considering it in flight. Only a request the server refuses outright
- * ever reaches this — a validated one is echoed in the same round trip.
+ * ever reaches this — a validated one is echoed in the same round trip,
+ * and from that moment the walk itself, not this deadline, is what keeps
+ * the move in flight. See `isSelfMoveInFlight`.
  */
 const SELF_MOVE_TIMEOUT_MS = 2_000;
 
@@ -256,6 +258,21 @@ export class MapHandler {
   isSelfMoveInFlight(): boolean {
     if (this.selfMoveSentAt === null) {
       return false;
+    }
+
+    // The echo came back and the sprite is walking: in flight until the
+    // walk ends, however long the path is. The watchdog below covers the
+    // send → echo window only — it used to run from the send to the *end
+    // of the animation*, so any walk longer than two seconds (about five
+    // cells at walk speed) dropped out of the lock mid-stride. The click
+    // that landed in that gap was then routed as a brand-new move,
+    // computed from `currentCellId` — still the cell the walk started
+    // from — and the server, which had not committed the first move
+    // either, accepted it and overwrote its own pending action. The two
+    // acks that followed named actions nobody was waiting for and the
+    // character froze on the spot.
+    if (this.isMoving) {
+      return true;
     }
 
     if (Date.now() - this.selfMoveSentAt > SELF_MOVE_TIMEOUT_MS) {
