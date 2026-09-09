@@ -69,6 +69,8 @@ beforeEach(() => {
         cells.length
           ? highlights.add("spell-zone")
           : highlights.delete("spell-zone"),
+      highlightCells: (_cells: number[], type: string) => highlights.add(type),
+      showMovementRange() {},
       // FightUI owns a PlayerRenderer that nothing ever populates, so a
       // sprite move sent here is dropped on the floor. Recorded rather
       // than omitted so the routing is asserted, not assumed.
@@ -80,7 +82,9 @@ beforeEach(() => {
       teleportPlayer: (id: number, cell: number) => {
         teleports.push({ id, cell });
       },
+      getPlayerCell: () => undefined,
     }),
+    moveWorldActor: async () => {},
   } as unknown as Battlefield);
   const map = Reflect.get(client, "mapHandler");
   Reflect.set(
@@ -160,24 +164,112 @@ test.each([false, true])(
   }
 );
 
-test("changing the prepared spell while busy never queues a cast or a movement", async () => {
+const sentPayloads = () =>
+  FakeWebSocket.latest().sent.map(
+    (data) => fromBinary(ClientMessageSchema, data).payload
+  );
+
+test("a cast goes out while an earlier animation is still playing", () => {
   client.fightSelectSpell(1);
+  // The presentation queue is busy — an animation is on screen. That
+  // is a rendering state and must not cost the player their next
+  // action.
   fightActor.send({ type: "PRESENTATION_PENDING", pending: true });
   client.fightSelectSpell(2);
   expect(spellCastActor.getSnapshot().context.spell?.spellId).toBe(2);
   click(215);
-  expect(FakeWebSocket.latest().sent).toHaveLength(0);
-  fightActor.send({ type: "PRESENTATION_PENDING", pending: false });
-  await Promise.resolve();
-  expect(FakeWebSocket.latest().sent).toHaveLength(0);
-  click(215);
-  expect(
-    FakeWebSocket.latest().sent.map(
-      (data) => fromBinary(ClientMessageSchema, data).payload
-    )
-  ).toMatchObject([
+  expect(sentPayloads()).toMatchObject([
     { case: "gameAction", value: { actionType: 300, params: "2;215;6" } },
   ]);
+});
+
+test("a click made during the round-trip is replayed, not lost", () => {
+  client.fightSelectSpell(1);
+  fightActor.send({ type: "ACTION_PENDING", pending: true });
+  click(215);
+  expect(FakeWebSocket.latest().sent).toHaveLength(0);
+  // The server answers: the buffered intent goes out on its own.
+  fightActor.send({ type: "ACTION_PENDING", pending: false });
+  expect(sentPayloads()).toMatchObject([
+    { case: "gameAction", value: { actionType: 300, params: "1;215;6" } },
+  ]);
+});
+
+test("only the last click of a burst is replayed", () => {
+  client.fightSelectSpell(1);
+  fightActor.send({ type: "ACTION_PENDING", pending: true });
+  click(215);
+  click(230);
+  fightActor.send({ type: "ACTION_PENDING", pending: false });
+  expect(sentPayloads()).toMatchObject([
+    { case: "gameAction", value: { actionType: 300, params: "1;230;6" } },
+  ]);
+});
+
+test("a buffered click is dropped when the turn passes to someone else", () => {
+  client.fightSelectSpell(1);
+  fightActor.send({ type: "ACTION_PENDING", pending: true });
+  click(215);
+  fightActor.send({
+    type: "TURN_START",
+    payload: create(GameTurnStartSchema, { spriteId: "2", timeMs: 30_000 }),
+  });
+  expect(FakeWebSocket.latest().sent).toHaveLength(0);
+});
+
+test("an action queued behind a walk starts from the cell the walk ends on", () => {
+  const messages = Reflect.get(client, "messageHandler") as MessageHandler;
+  // Two MP left and a straight line of cells 15 apart: 200 → 245 is
+  // three steps and unaffordable, 215 → 245 is two and fine. So this
+  // only passes if the click is computed from where the server has us,
+  // not from the sprite still walking towards it.
+  fightActor.send({ type: "STATS_UPDATE", mp: 2 });
+  click(245);
+  expect(FakeWebSocket.latest().sent).toHaveLength(0);
+
+  messages.handle(
+    create(DofusMessageSchema, {
+      payload: {
+        case: "gameAction",
+        value: {
+          actionType: 1,
+          sequenceId: 1,
+          spriteId: "1",
+          actionData: { case: "movement", value: { pathCells: [200, 215] } },
+        },
+      },
+    })
+  );
+  click(245);
+  expect(sentPayloads()).toMatchObject([
+    { case: "gameAction", value: { actionType: 1 } },
+  ]);
+});
+
+test("a spell held ready follows the caster to the cell they move to", () => {
+  const messages = Reflect.get(client, "messageHandler") as MessageHandler;
+  client.fightSelectSpell(1);
+  expect(spellCastActor.getSnapshot().context.casterCellId).toBe(200);
+  messages.handle(
+    create(DofusMessageSchema, {
+      payload: {
+        case: "gameAction",
+        value: {
+          actionType: 1,
+          sequenceId: 1,
+          spriteId: "1",
+          actionData: { case: "movement", value: { pathCells: [200, 215] } },
+        },
+      },
+    })
+  );
+  const cast = spellCastActor.getSnapshot();
+  expect(cast.matches("targeting")).toBe(true);
+  expect(cast.context.casterCellId).toBe(215);
+  // Range 1-2 from 215 on this line: 230 is reachable, 200 too, and
+  // 260 sits three cells away.
+  expect(cast.context.targetingCells).toContain(230);
+  expect(cast.context.targetingCells).not.toContain(260);
 });
 
 test("a sprite-position frame moves the sprite, not just the fight store", async () => {

@@ -553,12 +553,6 @@ export function BannerReact({
     <div className="absolute bottom-0 left-1/2 -translate-x-1/2 pointer-events-auto z-10">
       <MainBanner mode={isFighting ? "fight" : "normal"}>
         <BannerChatContainer />
-        {fight.isCombat && (fight.actionPending || fight.presentationPending) && (
-          <div role="status" className="absolute -top-7 right-0 rounded bg-black/80 px-3 py-1 text-xs text-amber-200">
-            Animation en cours — sélection possible, cliquez ensuite pour agir.
-          </div>
-        )}
-
         <BannerCircle />
 
         <MainBannerHeart hp={hp} max={maxHp} />
@@ -572,7 +566,7 @@ export function BannerReact({
             disabled={
               !onPassTurn ||
               !fight.isMyTurn ||
-              fight.actionPending || fight.presentationPending ||
+              fight.actionPending ||
               fight.finishing ||
               !myFighter ||
               myFighter.dead

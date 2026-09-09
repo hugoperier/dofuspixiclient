@@ -232,6 +232,24 @@ export class GameClient {
     (error) => log.error(`Combat presentation failed: ${String(error)}`)
   );
 
+  /**
+   * The click the player made while the previous action was still in
+   * the air, replayed as soon as the server answers.
+   *
+   * That window is one round-trip, so it never swallows more than a
+   * fraction of a second of intent, but on a remote server it is
+   * exactly where a fast second click lands. Only the most recent one
+   * is kept: a player clicking twice means the second cell.
+   */
+  private bufferedFightClick: number | null = null;
+
+  /**
+   * Destination of the blue "path I chose" tint currently on the board,
+   * so a walk finishing early in a chain does not erase the tint of the
+   * move queued behind it. Null when no tint is up.
+   */
+  private selectedPathDestination: number | null = null;
+
   private onConnected?: () => void;
   private onDisconnected?: () => void;
   private contractState:
@@ -493,8 +511,7 @@ export class GameClient {
       battlefield,
       fightUI: () => this.battlefield?.getFightUI() ?? null,
       pathfinding: () => this.mapHandler.getPathfinding(),
-      currentCellId: () => this.mapHandler.getCurrentCellId(),
-      isMoving: () => this.mapHandler.isCharacterMoving(),
+      currentCellId: () => this.myFightCell(),
       mapDimensions: () => {
         const d = this.battlefield?.getCurrentMapData();
         return d ? { width: d.width, height: d.height } : null;
@@ -575,8 +592,21 @@ export class GameClient {
       onCriticalHit: () => playAudioEvent("criticalHit"),
       onCriticalMiss: () => playAudioEvent("criticalMiss"),
       onSpellCast: (payload) => {
-        const selectionVersion =
-          spellCastActor.getSnapshot().context.selectionVersion;
+        const snap = spellCastActor.getSnapshot();
+        const selectionVersion = snap.context.selectionVersion;
+        // Acknowledge here, at message time, not from inside the
+        // presentation. The server has accepted the cast the moment
+        // this frame lands; leaving the machine in `pending` until the
+        // animation gets its turn in the queue would block the next
+        // click for as long as the backlog lasts.
+        const myIdStr = this.characterHandler.getCurrentCharacter()?.spriteId;
+        if (
+          myIdStr !== undefined &&
+          payload.casterId === Number(myIdStr) &&
+          snap.matches("pending")
+        ) {
+          spellCastActor.send({ type: "SERVER_ACK" });
+        }
         this.presentation.enqueue((scope) =>
           this.animateFightSpell(payload, scope, selectionVersion)
         );
@@ -940,6 +970,7 @@ export class GameClient {
     // (battlefield/mc/Sprite.as:753), where the green pattern is a
     // roll-over decoration on the fighter, not a turn indicator.
     let lastMyTurn = false;
+    let lastMyCell: number | null = null;
     let lastMode: string | null = null;
     let lastModeDump = "";
     this.mapHandler.setOnSelfMoveComplete(() => {
@@ -949,7 +980,18 @@ export class GameClient {
       // and the flash is imperceptible, so we hold it through the
       // animation so the click registers visibly.
       const ui = this.battlefield?.getFightUI();
-      ui?.clearHighlightType("selected");
+      // Only drop the tint when the sprite actually reached the cell
+      // that tint was painted for. Chained clicks repaint it for a
+      // later destination, and the walk finishing here is an earlier
+      // one: erasing then would blank the path the player is watching
+      // being queued up.
+      if (
+        this.selectedPathDestination === null ||
+        this.mapHandler.getCurrentCellId() === this.selectedPathDestination
+      ) {
+        ui?.clearHighlightType("selected");
+        this.selectedPathDestination = null;
+      }
       // Only re-paint the range if the user is still pointing at
       // their avatar — otherwise the move ends with a clean board.
       if (this.selfHovered) {
@@ -1008,8 +1050,54 @@ export class GameClient {
       if (lastMyTurn && !isMyTurn) {
         ui.clearHighlightType("movement");
         ui.clearHighlightType("movement-path");
+        // Catch-all for a tint whose move never landed, a path the
+        // server refused being the usual case.
+        ui.clearHighlightType("selected");
+        this.selectedPathDestination = null;
       }
       lastMyTurn = isMyTurn;
+
+      // The action we were waiting on came back. Replay the click the
+      // player made in the meantime, against the state as it now
+      // stands: `handleCellClick` re-derives everything, so a buffered
+      // intent that has become illegal is simply refused like any
+      // other click.
+      const pending = snap.context.actionPending;
+      const buffered = this.bufferedFightClick;
+      if (buffered !== null && (!pending || !isMyTurn)) {
+        this.bufferedFightClick = null;
+        if (!pending && isMyTurn) {
+          this.handleCellClick(buffered);
+        }
+      }
+
+      // Our cell moved, at message time, which is well before the walk
+      // finishes on screen. Everything anchored on it has to follow now
+      // rather than at the end of the animation, or an action lined up
+      // behind that walk would be aimed from where we no longer are.
+      const myCell =
+        snap.context.fighters.get(snap.context.mySpriteId ?? "")?.cell ?? null;
+      if (myCell !== null && myCell >= 0 && myCell !== lastMyCell) {
+        const previous = lastMyCell;
+        lastMyCell = myCell;
+        if (previous !== null) {
+          const cast = spellCastActor.getSnapshot();
+          const spell = cast.context.spell;
+          if (cast.matches("targeting") && spell) {
+            const targetingCells = this.spellTargetingCells(spell, myCell);
+            if (targetingCells) {
+              spellCastActor.send({
+                type: "CASTER_MOVED",
+                casterCellId: myCell,
+                targetingCells,
+              });
+            }
+          }
+          if (this.selfHovered) {
+            this.refreshReachableRange();
+          }
+        }
+      }
       this.hoverPreview?.refreshFromCurrentHover();
     });
     this.battlefieldUnsubscribers.push(() => fightUiSubscription.unsubscribe());
@@ -1938,21 +2026,15 @@ export class GameClient {
     scope: PresentationScope,
     selectionVersion: number
   ): PresentationPhases {
-    // Drive the cast machine forward the moment the server echoes
-    // back our launch (casterId == our sprite id). Opposing-caster
-    // launches still play their animation but don't touch the
-    // machine — it tracks only *our* cast UX.
+    // The acknowledgement itself happens at message time in
+    // `onSpellCast`; by the time this runs the machine is normally
+    // already past `pending`. What is left here is the tail of the
+    // flow, which does belong to the animation: `animating` →
+    // `resolving` → `idle` once the pose and the visual are done.
+    // Opposing-caster launches still play their animation but never
+    // touch the machine, which tracks only *our* cast UX.
     const myIdStr = this.characterHandler.getCurrentCharacter()?.spriteId;
     const myId = myIdStr === undefined ? null : Number(myIdStr);
-    if (myId !== null && payload.casterId === myId) {
-      const snap = spellCastActor.getSnapshot();
-      if (
-        snap.context.selectionVersion === selectionVersion &&
-        snap.matches("pending")
-      ) {
-        spellCastActor.send({ type: "SERVER_ACK" });
-      }
-    }
     // Resolve the caster cell from the world-actor renderer — that
     // is where fighters actually live in this codebase (both during
     // roleplay AND combat). The FightUI's internal PlayerRenderer
@@ -2192,19 +2274,20 @@ export class GameClient {
         return;
       }
       const cast = spellCastActor.getSnapshot();
-      if (
-        !cast.matches("idle") &&
-        !cast.matches("targeting") &&
-        !cast.matches("rejected")
-      ) {
+      // `pending` means our own cast is in the air and we have not
+      // heard back yet; anything sent now would be computed on stats
+      // the server is about to change. `animating` and `resolving`
+      // are pure presentation states and must not swallow a click —
+      // that was the whole "wait for the fireball to land before you
+      // may move" complaint.
+      if (cast.matches("pending")) {
         return;
       }
-      const castSnap = spellCastActor.getSnapshot();
-      if (castSnap.matches("targeting") && castSnap.context.spell) {
-        const spell = castSnap.context.spell;
+      if (cast.matches("targeting") && cast.context.spell) {
+        const spell = cast.context.spell;
         const refusal =
           this.spellTargetRefusal(spell, targetCellId) ??
-          (!castSnap.context.targetingCells.includes(targetCellId)
+          (!cast.context.targetingCells.includes(targetCellId)
             ? "Cellule hors portée de ce sort."
             : null);
         if (refusal) {
@@ -2212,11 +2295,8 @@ export class GameClient {
           appendErrorMessage(refusal);
           return;
         } else {
-          if (
-            state.actionPending ||
-            state.presentationPending ||
-            this.mapHandler.isCharacterMoving()
-          ) {
+          if (state.actionPending) {
+            this.bufferedFightClick = targetCellId;
             return;
           }
           log.info(
@@ -2227,14 +2307,15 @@ export class GameClient {
           return;
         }
       }
-      if (
-        state.actionPending ||
-        state.presentationPending ||
-        this.mapHandler.isCharacterMoving()
-      ) {
+      if (state.actionPending) {
+        this.bufferedFightClick = targetCellId;
         return;
       }
-      const fightCurrentCell = this.mapHandler.getCurrentCellId();
+      // Where the server has us, not where the sprite happens to be:
+      // a move queued behind a running animation has to start from the
+      // cell the previous action landed on, which the server already
+      // told us about.
+      const fightCurrentCell = this.myFightCell();
       const fightPathfinding = this.mapHandler.getPathfinding();
       if (fightCurrentCell === null || !fightPathfinding) {
         log.warn(
@@ -2283,6 +2364,7 @@ export class GameClient {
         ui.clearHighlightType("movement-path");
         ui.highlightCells(fightPath.slice(1), "selected");
       }
+      this.selectedPathDestination = targetCellId;
       this.fightHandler.sendMove(fightPath, mapWidth);
       return;
     }
@@ -2394,14 +2476,12 @@ export class GameClient {
 
   fightPassTurn(): void {
     const fight = fightStore.getSnapshot();
-    if (
-      !fight.isMyTurn ||
-      fight.actionPending ||
-      fight.presentationPending ||
-      fight.finishing
-    ) {
+    if (!fight.isMyTurn || fight.actionPending || fight.finishing) {
       return;
     }
+    // Animations still queued keep playing: the client holds its
+    // `gameTurnOk` for the next turn until the queue drains, so
+    // nothing is cut off by passing early.
     this.fightHandler.passTurn();
   }
 
@@ -2478,31 +2558,20 @@ export class GameClient {
     ) {
       return;
     }
-    const casterCellId = mine?.cell ?? this.mapHandler.getCurrentCellId();
-    const pf = this.mapHandler.getPathfinding();
-    if (casterCellId === null || !pf) {
+    const casterCellId = this.myFightCell();
+    if (casterCellId === null) {
       log.warn(
         `fight-select-spell: no caster cell or pathfinding for ${spellId}`
       );
       return;
     }
-    // Spell range = canonical Dofus 1.29 4-way Manhattan diamond
-    // expansion (BFS over the 4 diamond-adjacent cells = SE/SW/NW/NE).
-    // `orthogonalOnly=true` switches the BFS to those 4 directions so
-    // the preview shape matches the server's distance check (which
-    // uses the same 4-way metric in fightDistance) AND the canonical
-    // diamond range overlay players know from the original client.
-    // The 8-way default would produce a SQUARE shape with ~2x the
-    // cells, which is what the user reported as "wrong".
-    const targetingCells = pf.cellsInRange(
-      casterCellId,
-      spell.rangeMin,
-      Math.max(
-        spell.rangeMin,
-        spell.rangeMax + (spell.modifiableRange ? (mine?.rangeBonus ?? 0) : 0)
-      ),
-      true
-    );
+    const targetingCells = this.spellTargetingCells(spell, casterCellId);
+    if (!targetingCells) {
+      log.warn(
+        `fight-select-spell: no caster cell or pathfinding for ${spellId}`
+      );
+      return;
+    }
     spellCastActor.send({
       type: "SELECT_SPELL",
       spell,
@@ -2518,6 +2587,60 @@ export class GameClient {
    * player can start a path from where they stand. Called before any
    * fight-mode pathfinding query.
    */
+  /**
+   * My cell as the *server* knows it, which is what every fight
+   * decision has to be built on.
+   *
+   * `MapHandler.currentCellId` only commits when the walk animation
+   * ends, so it lags a queued action by the whole length of that
+   * animation. The fight store applies the movement frame the moment
+   * it arrives, which is also the moment the server considers the
+   * fighter moved. Reading the store is what lets the player line up a
+   * second action while the first one is still playing on screen.
+   *
+   * Falls back to the map handler outside combat, and for the window
+   * between joining a fight and receiving the first roster.
+   */
+  private myFightCell(): number | null {
+    const fight = fightStore.getSnapshot();
+    const mine = fight.fighters.get(fight.mySpriteId ?? "");
+    if (mine && mine.cell >= 0) {
+      return mine.cell;
+    }
+    return this.mapHandler.getCurrentCellId();
+  }
+
+  /**
+   * The range ring for `spell` cast from `casterCellId`.
+   *
+   * Canonical Dofus 1.29 4-way Manhattan diamond expansion (BFS over
+   * the 4 diamond-adjacent cells = SE/SW/NW/NE). `orthogonalOnly=true`
+   * switches the BFS to those 4 directions so the preview matches the
+   * server's own distance check (same 4-way metric in `fightDistance`)
+   * and the diamond overlay players know from the original client. The
+   * 8-way default would draw a square with roughly twice the cells.
+   */
+  private spellTargetingCells(
+    spell: import("@/game/stores/spells-store").SpellEntry,
+    casterCellId: number
+  ): number[] | null {
+    const pf = this.mapHandler.getPathfinding();
+    if (!pf) {
+      return null;
+    }
+    const fight = fightStore.getSnapshot();
+    const mine = fight.fighters.get(fight.mySpriteId ?? "");
+    return pf.cellsInRange(
+      casterCellId,
+      spell.rangeMin,
+      Math.max(
+        spell.rangeMin,
+        spell.rangeMax + (spell.modifiableRange ? (mine?.rangeBonus ?? 0) : 0)
+      ),
+      true
+    );
+  }
+
   private syncFightOccupiedCells(
     pf: ReturnType<MapHandler["getPathfinding"]>,
     selfCellId: number
@@ -2543,12 +2666,14 @@ export class GameClient {
   }
 
   /**
-   * Recompute the MP-bound reachable cells for my fighter. Guarded on
-   * `isCharacterMoving()` — during a move animation the server has
-   * already dispatched the MP delta but our currentCellId still points
-   * at the pre-move cell, so recomputing now would render a ring
-   * centered on the wrong cell. The map handler replays this hook
-   * after the animation resolves.
+   * Recompute the MP-bound reachable cells for my fighter.
+   *
+   * Anchored on `myFightCell()`, so it follows the server's idea of
+   * where we stand rather than the sprite's. During a queued move the
+   * ring therefore sits on the destination while the sprite is still
+   * walking towards it. That is deliberate: the ring answers "where
+   * can I go from here", and "here" is what the server will validate
+   * the next click against.
    */
   private refreshReachableRange(): void {
     const ui = this.battlefield?.getFightUI();
@@ -2563,12 +2688,7 @@ export class GameClient {
     if (!isMyTurn) {
       return;
     }
-    if (this.mapHandler.isCharacterMoving()) {
-      // Animation still running; the move-complete hook will call us
-      // back with the settled currentCellId.
-      return;
-    }
-    const cell = this.mapHandler.getCurrentCellId();
+    const cell = this.myFightCell();
     const pf = this.mapHandler.getPathfinding();
     const mp = snap.context.mp;
     if (cell === null || !pf) {

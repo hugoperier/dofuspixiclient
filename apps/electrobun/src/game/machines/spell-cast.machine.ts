@@ -20,6 +20,9 @@ import { traceInspector } from "./trace-inspector";
  *     │                                                 │
  *     └────────────────── EFFECTS_RESOLVED ─────────────┘
  *
+ *  - `CASTER_MOVED` re-centres an existing selection after the player
+ *    moves, so "walk, then cast" aims from where the walk ended rather
+ *    than from where it started.
  *  - `targetingCells` is the range ring the caller computes via
  *    `pf.cellsInRange(caster, rangeMin, rangeMax)` and passes on
  *    SELECT_SPELL; the HUD tints exactly these cells.
@@ -52,6 +55,11 @@ export type SpellCastEvent =
       targetingCells: number[];
     }
   | { type: "DESELECT" }
+  | {
+      type: "CASTER_MOVED";
+      casterCellId: number;
+      targetingCells: number[];
+    }
   | {
       type: "HOVER_CELL";
       cellId: number;
@@ -94,6 +102,16 @@ export const spellCastMachine = setup({
             hoveredCellId: null,
             previewCells: [],
             rejectionReason: null,
+          }
+        : {}
+    ),
+    applyCasterMove: assign(({ event }) =>
+      event.type === "CASTER_MOVED"
+        ? {
+            casterCellId: event.casterCellId,
+            targetingCells: event.targetingCells,
+            hoveredCellId: null,
+            previewCells: [] as number[],
           }
         : {}
     ),
@@ -142,6 +160,12 @@ export const spellCastMachine = setup({
     targeting: {
       on: {
         SELECT_SPELL: { target: "targeting", actions: "applySelect" },
+        // The player moved while holding a spell ready. Re-centre the
+        // range ring on the new cell without bumping
+        // `selectionVersion`: that counter invalidates the completion
+        // callbacks of casts still in the air, and this is the same
+        // selection, merely relocated.
+        CASTER_MOVED: { actions: "applyCasterMove" },
         HOVER_CELL: { actions: "applyHover" },
         HOVER_CLEAR: { actions: "clearHover" },
         TARGET_CELL: { target: "pending", actions: "applyTarget" },

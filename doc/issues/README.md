@@ -91,7 +91,7 @@ causes racines et les notes de méthode, mais plus le détail par entrée.
 
 _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 
-**171 entrées**, dont **167 encore ouvertes**.
+**172 entrées**, dont **168 encore ouvertes**.
 
 ## Par gravité
 
@@ -99,7 +99,7 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 |---|---|---|
 | P0 — bloque la session (crash, impossible d'avancer) | 5 | 5 |
 | P1 — fonctionnalité cassée ou absente sur un flux principal | 72 | 72 |
-| P2 — comportement divergent du 1.29 canonique, contournable | 62 | 62 |
+| P2 — comportement divergent du 1.29 canonique, contournable | 63 | 63 |
 | P3 — finition, confort, cosmétique | 28 | 29 |
 | Sans gravité — vérifications sans défaut | 0 | 3 |
 
@@ -110,7 +110,7 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | `open` — observé, non reproduit méthodiquement | 38 |
 | `confirmed` — reproduit, preuve au dossier | 17 |
 | `in-progress` — correctif engagé | 13 |
-| `fixed` — correctif livré, reste à revérifier manette en main | 99 |
+| `fixed` — correctif livré, reste à revérifier manette en main | 100 |
 | `closed` — vérifié, clos | 3 |
 | `wontfix` — écarté, avec la raison en fiche | 1 |
 
@@ -123,7 +123,7 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [`camera-zoom/`](camera-zoom/) | 3 | 3 |
 | [`chat/`](chat/) | 5 | 5 |
 | [`exchange/`](exchange/) | 23 | 23 |
-| [`fight/`](fight/) | 17 | 17 |
+| [`fight/`](fight/) | 18 | 18 |
 | [`hud-banner/`](hud-banner/) | 9 | 9 |
 | [`hud-panels/`](hud-panels/) | 19 | 20 |
 | [`input/`](input/) | 6 | 7 |
@@ -289,6 +289,7 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [QA-158](world-content/QA-158-contremaitre-ikul-n-enseigne-rien.md) | P2 | world-content | data | fixed | Contremaître Ikul grise ses quatre offres de métier — un effet non implémenté les accompagne |
 | [QA-159](exchange/QA-159-refus-de-fabrication-silencieux.md) | P2 | exchange | gap | fixed | Tout refus de fabrication est silencieux — « Combiner » ne produit rien du tout |
 | [QA-160](progression/QA-160-pods-non-rafraichis-a-l-apprentissage.md) | P2 | progression | bug | fixed | Apprendre un métier ne renvoie pas la trame de poids — les pods maximum restent en arrière |
+| [QA-172](fight/QA-172-impossible-d-enchainer-les-actions-pendant-une-animation.md) | P2 | fight | feature | fixed | Impossible d'enchaîner les actions en combat tant qu'une animation joue |
 
 ## P3 — finition, confort, cosmétique
 

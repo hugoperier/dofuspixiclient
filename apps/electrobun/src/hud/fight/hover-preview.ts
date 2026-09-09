@@ -9,36 +9,34 @@ import { fightStore } from "@/game/stores/fight-store";
 
 /**
  * Wires cell-hover events from the battlefield to the fight-UI
- * overlays + cast machine. Three modes:
+ * overlays + cast machine. Two modes:
  *
- * 1. A movement animation is currently running (or it's not our turn
- *    in combat): no path / AoE preview at all — any lingering tint is
- *    cleared so the highlighter doesn't draw a stale path centered on
- *    the pre-move cell while the server drains MP mid-animation.
- *
- * 2. No spell selected + it's our turn + we have MP: draw the literal
+ * 1. No spell selected + it's our turn + we have MP: draw the literal
  *    MP-bound path from our cell to the hovered cell using the same
  *    4-direction-only pathfinder the server validates against.
  *
- * 3. Spell selected (cast machine is `targeting`): compute the AoE
+ * 2. Spell selected (cast machine is `targeting`): compute the AoE
  *    footprint via the shared @dofus/grid `cellsInArea` primitive
  *    (same code the server runs), filter out-of-LoS cells, and
  *    dispatch HOVER_CELL to the machine so the highlight overlay
  *    stays in sync.
+ *
+ * A running animation is not a third mode. `currentCellId` reports
+ * where the server says we stand, not where the sprite currently is,
+ * so the preview is anchored correctly even while an earlier action
+ * is still playing out.
  */
 export interface HoverPreviewDeps {
   battlefield: Battlefield;
   fightUI(): FightUI | null;
   pathfinding(): DofusPathfinding | null;
+  /**
+   * Where the server says we stand. Must be the message-time cell, not
+   * the animated sprite position, or the preview lags every queued
+   * action by the length of its animation.
+   */
   currentCellId(): number | null;
   mapDimensions(): { width: number; height: number } | null;
-  /**
-   * True while our own sprite is running a movement animation. While
-   * this is true the server is already settling MP; any hover-derived
-   * tint has to stay off the canvas or it will draw a path from the
-   * stale cell under the animating sprite.
-   */
-  isMoving(): boolean;
   /**
    * Cells occupied by fighters, used by `hasLineOfSight` as an
    * obstruction set.
@@ -98,17 +96,6 @@ export class HoverPreview {
       return;
     }
 
-    // Suppress all hover feedback while our sprite is still animating
-    // — the canonical currentCellId for pathfinding is whatever the
-    // server tells us AFTER the animation completes, so drawing now
-    // would show a ghost path anchored to the pre-move cell.
-    if (this.deps.isMoving()) {
-      ui.clearHighlightType("movement-path");
-      ui.clearHighlightType("spell-zone");
-      ui.clearHighlightType("spell-zone-invalid");
-      return;
-    }
-
     const castSnap = spellCastActor.getSnapshot();
     if (castSnap.matches("targeting") && castSnap.context.spell) {
       this.updateSpellPreview(cellId);
@@ -131,7 +118,6 @@ export class HoverPreview {
       fight.mode !== "fighting" ||
       !fight.isMyTurn ||
       fight.actionPending ||
-      fight.presentationPending ||
       fight.finishing ||
       fight.mp <= 0
     ) {

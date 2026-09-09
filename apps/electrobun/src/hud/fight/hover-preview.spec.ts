@@ -37,7 +37,6 @@ function harness() {
     pathfinding: () => pf,
     currentCellId: () => 200,
     mapDimensions: () => ({ width: 15, height: 17 }),
-    isMoving: () => false,
     occupiedCells: () => new Set(),
     syncOccupied: () => {},
     losBlocked: () => false,

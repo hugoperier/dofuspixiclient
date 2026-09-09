@@ -328,6 +328,11 @@ export const fightMachine = setup({
     ACTION_PENDING: {
       actions: assign(({ event }) => ({ actionPending: event.pending })),
     },
+    // Indicator only: true while the presentation queue still has
+    // animations to play. Nothing gates input on it — animations are a
+    // rendering concern, and the player may line up the next action at
+    // any time. The one barrier on input is `actionPending`, the
+    // round-trip of the action already sent.
     PRESENTATION_PENDING: {
       actions: assign(({ event }) => ({ presentationPending: event.pending })),
     },

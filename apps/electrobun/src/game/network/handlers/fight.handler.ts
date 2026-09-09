@@ -38,6 +38,18 @@ import {
 import { appendInfoMessage } from "@/game/stores/chat-store";
 import { fightActor } from "@/game/stores/fight-store";
 import { applySpellCooldown, spellsStore } from "@/game/stores/spells-store";
+import { createLogger } from "@/utils/logger";
+
+const log = createLogger("FightHandler");
+
+/**
+ * How long the client waits for the `gameActionsFinish` that closes an
+ * action it sent. The server answers within a round-trip, so this only
+ * ever fires when a frame was lost; without it a dropped answer would
+ * leave the turn unplayable, since this is now the only barrier on
+ * input.
+ */
+const ACTION_TIMEOUT_MS = 3000;
 
 export interface SpellCastPayload {
   casterId: number;
@@ -125,6 +137,7 @@ export class FightHandler {
   private handlers: FightEventHandlers = {};
   private readonly criticalCasts = new Map<string, number>();
   private unsubscribers: (() => void)[] = [];
+  private actionTimeout: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     messageHandler: MessageHandler,
@@ -146,6 +159,41 @@ export class FightHandler {
 
   private fighterName(id: string): string {
     return fightActor.getSnapshot().context.fighters.get(id)?.name ?? id;
+  }
+
+  /**
+   * Raise the one barrier that still stands between the player and
+   * their next click: the round-trip of the action we just sent.
+   *
+   * It is short by design — the server resolves an action whole and
+   * answers with `gameActionsFinish` — and it is what guarantees the
+   * cell, the AP and the MP behind the next click are the ones the
+   * server will check. Should that answer never come the turn would be
+   * unplayable, hence the deadline.
+   */
+  private beginAction(): void {
+    fightActor.send({ type: "ACTION_PENDING", pending: true });
+    if (this.actionTimeout !== null) {
+      clearTimeout(this.actionTimeout);
+    }
+    this.actionTimeout = setTimeout(() => {
+      this.actionTimeout = null;
+      if (!fightActor.getSnapshot().context.actionPending) {
+        return;
+      }
+      log.warn(
+        `aucune fin d'action après ${ACTION_TIMEOUT_MS} ms — déverrouillage`
+      );
+      fightActor.send({ type: "ACTION_PENDING", pending: false });
+    }, ACTION_TIMEOUT_MS);
+  }
+
+  private endAction(): void {
+    if (this.actionTimeout !== null) {
+      clearTimeout(this.actionTimeout);
+      this.actionTimeout = null;
+    }
+    fightActor.send({ type: "ACTION_PENDING", pending: false });
   }
 
   private registerHandlers(mh: MessageHandler): void {
@@ -197,7 +245,7 @@ export class FightHandler {
         if (payload.spriteId !== this.getMySpriteId()) {
           return;
         }
-        fightActor.send({ type: "ACTION_PENDING", pending: false });
+        this.endAction();
         if (payload.rejectionCode) {
           appendInfoMessage(payload.rejectionReason);
           spellCastActor.send({
@@ -280,6 +328,12 @@ export class FightHandler {
 
     this.unsubscribers.push(
       mh.on("gameTurnStart", (payload) => {
+        // TURN_START clears `actionPending` inside the machine; drop
+        // the deadline with it so it cannot fire into the new turn.
+        if (this.actionTimeout !== null) {
+          clearTimeout(this.actionTimeout);
+          this.actionTimeout = null;
+        }
         fightActor.send({ type: "TURN_START", payload });
         this.handlers.onTurnStart?.(payload);
       })
@@ -885,7 +939,7 @@ export class FightHandler {
     if (params === "") {
       return;
     }
-    fightActor.send({ type: "ACTION_PENDING", pending: true });
+    this.beginAction();
     this.connection.send(
       encodeClient(
         "gameAction",
@@ -899,7 +953,7 @@ export class FightHandler {
    * "<spellId>;<targetCell>;<level>". Action verb 300 = ACTION_SPELL_LAUNCH.
    */
   sendCast(spellId: number, targetCellId: number, level = 1): void {
-    fightActor.send({ type: "ACTION_PENDING", pending: true });
+    this.beginAction();
     const params = `${spellId};${targetCellId};${level}`;
     this.connection.send(
       encodeClient(
@@ -910,6 +964,10 @@ export class FightHandler {
   }
 
   cancelPresentation(): void {
+    if (this.actionTimeout !== null) {
+      clearTimeout(this.actionTimeout);
+      this.actionTimeout = null;
+    }
     this.generation++;
     this.fightId = 0;
     this.readyEpoch = 0;
