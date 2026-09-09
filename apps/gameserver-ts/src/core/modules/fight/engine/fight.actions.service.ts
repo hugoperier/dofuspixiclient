@@ -4,6 +4,7 @@ import type { Session } from "@shared/gateway-adapter/session-registry";
 import { create } from "@bufbuild/protobuf";
 import { clampFightDirection, getDirection } from "@dofus/grid";
 import {
+  ActionCloseCombatSchema,
   ActionCriticalHitSchema,
   ActionCriticalMissSchema,
   ActionDirectionChangeSchema,
@@ -278,29 +279,56 @@ export class FightActionsService {
           },
         });
       }
-      for (const session of visibleSessions(fight, caster)) {
-        const viewer = fight.fighters().find((f) => f.sessionId === session);
-        const hidesTrap =
-          spell.effects.some((e) => e.id === 400) &&
-          viewer?.team !== caster.team;
-        action(
-          {
-            actionType: 300,
-            spriteId: String(caster.id),
-            actionData: {
-              case: "spellLaunch",
-              value: create(ActionSpellLaunchSchema, {
-                spellId,
-                cellId: hidesTrap ? -1 : targetCell,
-                param3: spell.visualGfxId,
-                param4: spell.level,
-                customSprite: -1,
-                animation: "anim1",
-              }),
-            },
+      // A weapon swing is its own verb on the wire — `GA;303`, not
+      // `GA;300` with spell 0 — because the client plays the weapon's
+      // pose instead of a spell visual, and 1.29 tells the two apart
+      // exactly here. Nothing about it is hidden from a viewer, so it
+      // goes out once rather than per session.
+      if (resolution.closeCombat) {
+        action({
+          actionType: 303,
+          spriteId: String(caster.id),
+          actionData: {
+            case: "closeCombat",
+            value: create(ActionCloseCombatSchema, {
+              targetCell,
+              weaponTemplateId: resolution.closeCombat.weaponTemplateId,
+              // `anim0` is the melee pose in every player's atlas, and
+              // the only value 1.29 ever sends for a weapon swing — the
+              // client switches on exactly this string to play ATTACK
+              // instead of the CAST pose a fireball uses. It is not the
+              // item's own `animationId`: that one says how the sprite
+              // *holds* the weapon while walking around.
+              animation: "anim0",
+            }),
           },
-          [session]
-        );
+        });
+        fight.modules.fireCloseCombat(fight, caster);
+      } else {
+        for (const session of visibleSessions(fight, caster)) {
+          const viewer = fight.fighters().find((f) => f.sessionId === session);
+          const hidesTrap =
+            spell.effects.some((e) => e.id === 400) &&
+            viewer?.team !== caster.team;
+          action(
+            {
+              actionType: 300,
+              spriteId: String(caster.id),
+              actionData: {
+                case: "spellLaunch",
+                value: create(ActionSpellLaunchSchema, {
+                  spellId,
+                  cellId: hidesTrap ? -1 : targetCell,
+                  param3: spell.visualGfxId,
+                  param4: spell.level,
+                  customSprite: -1,
+                  animation: "anim1",
+                }),
+              },
+            },
+            [session]
+          );
+        }
       }
     }
     this.casts.apply(resolution);

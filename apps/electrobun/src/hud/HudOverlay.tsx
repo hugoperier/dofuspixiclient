@@ -27,6 +27,7 @@ import { InventoryWindow } from "./inventory/InventoryWindow";
 import { JobsPanel } from "./jobs/JobsPanel";
 import { MountPanel } from "./mount/MountPanel";
 import { NpcDialog } from "./npc/NpcDialog";
+import { OptionsPanel } from "./options/OptionsPanel";
 import { QuestsPanel } from "./quests/QuestsPanel";
 import { SpellBook } from "./spells/SpellBook";
 import { StatsPanel } from "./stats/StatsPanel";
@@ -179,6 +180,12 @@ export function HudOverlay({
         {activePanel === "conquest" && (
           <div style={panelWrapStyle}>
             <ConquestPanel zoom={baseZoom} onClose={() => closeAllPanels()} />
+          </div>
+        )}
+
+        {activePanel === "options" && (
+          <div style={panelWrapStyle}>
+            <OptionsPanel zoom={baseZoom} onClose={() => closeAllPanels()} />
           </div>
         )}
 

@@ -91,14 +91,14 @@ causes racines et les notes de méthode, mais plus le détail par entrée.
 
 _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 
-**172 entrées**, dont **168 encore ouvertes**.
+**174 entrées**, dont **170 encore ouvertes**.
 
 ## Par gravité
 
 | Gravité | Restantes | Total |
 |---|---|---|
 | P0 — bloque la session (crash, impossible d'avancer) | 5 | 5 |
-| P1 — fonctionnalité cassée ou absente sur un flux principal | 72 | 72 |
+| P1 — fonctionnalité cassée ou absente sur un flux principal | 74 | 74 |
 | P2 — comportement divergent du 1.29 canonique, contournable | 63 | 63 |
 | P3 — finition, confort, cosmétique | 28 | 29 |
 | Sans gravité — vérifications sans défaut | 0 | 3 |
@@ -110,7 +110,7 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | `open` — observé, non reproduit méthodiquement | 38 |
 | `confirmed` — reproduit, preuve au dossier | 17 |
 | `in-progress` — correctif engagé | 13 |
-| `fixed` — correctif livré, reste à revérifier manette en main | 100 |
+| `fixed` — correctif livré, reste à revérifier manette en main | 102 |
 | `closed` — vérifié, clos | 3 |
 | `wontfix` — écarté, avec la raison en fiche | 1 |
 
@@ -123,7 +123,7 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [`camera-zoom/`](camera-zoom/) | 3 | 3 |
 | [`chat/`](chat/) | 5 | 5 |
 | [`exchange/`](exchange/) | 23 | 23 |
-| [`fight/`](fight/) | 18 | 18 |
+| [`fight/`](fight/) | 20 | 20 |
 | [`hud-banner/`](hud-banner/) | 9 | 9 |
 | [`hud-panels/`](hud-panels/) | 19 | 20 |
 | [`input/`](input/) | 6 | 7 |
@@ -222,6 +222,8 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [QA-168](fight/QA-168-animations-de-sorts-absentes-en-combat.md) | P1 | fight | bug | fixed | L'animation de beaucoup de sorts n'est pas affichée en combat |
 | [QA-170](fight/QA-170-les-sorts-de-teleportation-ne-deplacent-pas-le-sprite.md) | P1 | fight | bug | fixed | Les sorts de téléportation ne déplacent pas le sprite du personnage |
 | [QA-171](fight/QA-171-la-suite-de-tests-du-client-ne-s-executait-plus.md) | P1 | fight | test-gap | fixed | La suite de tests du client ne s'exécutait plus, laissant passer un test périmé sur les visuels de sorts |
+| [QA-173](fight/QA-173-barre-de-sorts-inerte-au-clavier.md) | P1 | fight | gap | fixed | La barre de raccourcis ne bascule pas en combat et n'a aucune touche de combat |
+| [QA-174](fight/QA-174-corps-a-corps-absent.md) | P1 | fight | gap | fixed | Le corps-à-corps n'existe nulle part — ni slot, ni chemin serveur, ni stats d'arme |
 
 ## P2 — comportement divergent du 1.29 canonique, contournable
 

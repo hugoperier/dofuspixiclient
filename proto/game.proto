@@ -607,8 +607,15 @@ message ActionCriticalMiss {
 
 // ActionCloseCombat (GA;303;<casterId>;<cellId>)
 // StarLoco ref: Fight.java:2556
+//
+// The extra fields are ours. Retail derives the swing from the caster's
+// own weapon, which the client knows because it holds every fighter's
+// equipment; this client does not, so the server names the weapon and
+// the pose it should play. `weapon_template_id` is 0 for bare hands.
 message ActionCloseCombat {
-  int32 target_cell = 1;
+  int32  target_cell = 1;
+  int32  weapon_template_id = 2;
+  string animation = 3;
 }
 
 message ActionStateChange {

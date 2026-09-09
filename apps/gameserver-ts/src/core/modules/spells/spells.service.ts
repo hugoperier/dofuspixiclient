@@ -13,11 +13,34 @@ import {
   SpellEffectDataSchema,
   SpellLevelDetailSchema,
 } from "@dofus/proto/spells_pb";
+import {
+  buildCloseCombatSpell,
+  CLOSE_COMBAT_SPELL_ID,
+} from "@modules/fight/cast/fight.close-combat";
+import { parseItemEffects } from "@modules/inventory/item-effects";
+import { readWeaponInfo } from "@modules/inventory/weapon-info";
 import { LangsService } from "@modules/langs/langs.service";
 import { SpellsRepository } from "@modules/spells/spells.repository";
 import { Injectable, Logger } from "@nestjs/common";
 
 import type { SummonTemplate } from "./combat-catalog.types";
+
+/**
+ * The close-combat attack plus the presentation the wire needs for it.
+ *
+ * `weaponTemplateId` is what the `GA;303` broadcast carries alongside
+ * the cell: the client holds no equipment but its own, so it cannot
+ * work out which weapon swung. The pose does not travel from here —
+ * a swing is always `anim0`.
+ */
+export interface CloseCombatAttack {
+  spell: SpellLevel;
+  /** 0 for bare hands. */
+  weaponTemplateId: number;
+  name: string;
+  description: string;
+}
+
 import { prepareCombatData } from "./combat-dependencies";
 import { combatUnavailableReason, stateIds } from "./spells.combat-data";
 
@@ -29,6 +52,58 @@ export class SpellsService implements SpellPort {
     private readonly repo: SpellsRepository,
     private readonly langs: LangsService
   ) {}
+
+  /**
+   * The player's close-combat attack — spell 0, rebuilt from whatever
+   * they are currently holding.
+   *
+   * Not a learned spell: `player_spells` never has a row for it, and
+   * asking `playerSpellRank` would rightly answer "not learned". 1.29
+   * treats it the same way — `CloseCombat` is constructed on the fly
+   * from `Player.weaponItem` every time the bar redraws.
+   *
+   * Returns undefined only if `spell_levels(0, 1)` is missing, which
+   * means the world was never imported.
+   */
+  async closeCombatSpell(
+    playerId: string
+  ): Promise<CloseCombatAttack | undefined> {
+    const punch = await this.spellLevel(CLOSE_COMBAT_SPELL_ID, 1);
+
+    if (!punch) {
+      return undefined;
+    }
+
+    const lang = this.langs.getSpellSync(CLOSE_COMBAT_SPELL_ID);
+    const bareHanded: CloseCombatAttack = {
+      spell: punch,
+      weaponTemplateId: 0,
+      // `CloseCombat.name` falls back to `getSpellText(0).n` when there
+      // is no weapon — "Coup de poing".
+      name: lang?.name ?? "Coup de poing",
+      description: lang?.description ?? "",
+    };
+
+    const weapon = await this.repo.findEquippedWeapon(playerId);
+    const info = readWeaponInfo(weapon?.weaponInfo);
+
+    // Something in the weapon slot with no stat block is not a weapon
+    // the player can swing — a captured soul stone, say. Bare hands is
+    // the honest answer.
+    if (!weapon || !info) {
+      return bareHanded;
+    }
+
+    return {
+      spell: buildCloseCombatSpell(punch, {
+        info,
+        effects: parseItemEffects(weapon.effects),
+      }),
+      weaponTemplateId: weapon.id,
+      name: weapon.name,
+      description: weapon.description,
+    };
+  }
 
   async spellLevel(
     spellId: number,
@@ -212,6 +287,18 @@ export class SpellsService implements SpellPort {
         });
       })
     );
+    // The close-combat attack rides along as one more entry, at
+    // `position` 0. That position is outside the 1..42 the hotbar grid
+    // addresses, so no cell can ever draw it — the banner has its own
+    // container for it, exactly like `MouseShortcuts._ctrCC`. Shipping
+    // it as a SpellData is what lets the client's targeting, range ring
+    // and cast machine treat a weapon swing as the spell 1.29 says it is.
+    const closeCombat = await this.closeCombatSpell(playerId);
+
+    if (closeCombat) {
+      out.push(this.toCloseCombatData(closeCombat));
+    }
+
     const tEnd = performance.now();
     this.logger.log(
       `buildSpellList player=${playerId} spells=${rows.length} ` +
@@ -219,6 +306,52 @@ export class SpellsService implements SpellPort {
         `build=${(tEnd - tLang).toFixed(0)}ms total=${(tEnd - t0).toFixed(0)}ms`
     );
     return out;
+  }
+
+  /**
+   * The close-combat entry of the spell list.
+   *
+   * Everything the client needs to draw the container and arm a target:
+   * cost, range, line rules and the primary effect's shape. `position`
+   * is 0 — 1.29's `CloseCombat.position` — which is what keeps it out
+   * of the 14 addressable cells.
+   */
+  private toCloseCombatData(attack: CloseCombatAttack): SpellData {
+    const { spell } = attack;
+    const primary = spell.effects[0];
+
+    return create(SpellDataSchema, {
+      spellId: CLOSE_COMBAT_SPELL_ID,
+      level: 1,
+      position: 0,
+      apCost: spell.apCost,
+      rangeMin: spell.rangeMin,
+      rangeMax: spell.rangeMax,
+      lineOfSight: spell.lineOfSight,
+      modifiableRange: spell.modifiableRange,
+      emptyCell: spell.emptyCell,
+      lineOnly: spell.lineOnly,
+      castPerTurn: spell.castPerTurn,
+      castPerTarget: spell.castPerTarget,
+      cooldown: spell.cooldown,
+      criticalRate: spell.criticalRate,
+      failureRate: spell.failureRate,
+      areaKind: (primary?.areaKind ?? 0) as AreaKind,
+      areaSize: primary?.areaSize ?? 0,
+      targetMask: primary?.targetMask ?? 0,
+      singleTargetSpawn: false,
+      learnLevel: 1,
+      effectIds: [
+        ...new Set(
+          [...spell.effects, ...spell.criticalEffects].map((e) => e.id)
+        ),
+      ],
+      requiredStates: spell.requiredStates ?? [],
+      forbiddenStates: spell.forbiddenStates ?? [],
+      combatUnavailableReason: spell.combatUnavailableReason ?? "",
+      name: attack.name,
+      description: attack.description,
+    });
   }
 
   /**

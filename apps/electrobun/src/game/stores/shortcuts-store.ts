@@ -32,9 +32,16 @@ export interface ShortcutsState {
   page: number;
 }
 
-const initialState: ShortcutsState = {
+/**
+ * The bar opens on the item tab. 1.29 saves the tab in the client's
+ * `SharedObject` and restores it, but a fresh profile starts on
+ * `TAB_ITEMS` — and casting from the map is refused anyway, so the
+ * spell tab has nothing to offer until a fight starts. `hotbar-fight-sync`
+ * flips it for the duration of a fight.
+ */
+export const INITIAL_SHORTCUTS_STATE: ShortcutsState = {
   items: new Map(),
-  tab: "spells",
+  tab: "items",
   page: 0,
 };
 
@@ -51,7 +58,9 @@ const initialState: ShortcutsState = {
  * `SpellEntry.position` in `spells-store`, kept in one place so the two
  * can never disagree.
  */
-export const shortcutsStore = new ExternalStore<ShortcutsState>(initialState);
+export const shortcutsStore = new ExternalStore<ShortcutsState>(
+  INITIAL_SHORTCUTS_STATE
+);
 
 /** OrA — a slot now holds this template. */
 export function handleShortcutAdd(payload: InventoryShortcutAdd): void {

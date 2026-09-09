@@ -6,11 +6,11 @@ import {
   readFileSync,
   realpathSync,
 } from "node:fs";
-import { resolve, join } from "node:path";
+import { join, resolve } from "node:path";
 
 import type { Plugin } from "vite";
-import tailwindcss from "@tailwindcss/vite";
 import { lingui } from "@lingui/vite-plugin";
+import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import compression from "compression";
 import { defineConfig } from "vite";
@@ -31,7 +31,8 @@ const __dirname = import.meta.dirname;
  */
 const velloPkgDir = (() => {
   const root =
-    process.env.VELLO_ROOT ?? resolve(__dirname, "../../../dofus-vello-custom-format");
+    process.env.VELLO_ROOT ??
+    resolve(__dirname, "../../../dofus-vello-custom-format");
   const pkg = join(root, "packages/vello-wasm/pkg");
   try {
     return realpathSync(pkg);
@@ -98,6 +99,54 @@ function clientLogSinkPlugin(): Plugin {
             res.end();
           }
         });
+      });
+    },
+  };
+}
+
+/**
+ * Dev-only route for the quick-connect roster.
+ *
+ * `just dev-accounts` writes `<repo>/dev-accounts.json` from whatever is
+ * seeded locally, holding derived password keys rather than passwords.
+ * The login screen fetches this when `import.meta.env.DEV` is set, and
+ * shows one button per account.
+ *
+ * It lives here, and not under `public/`, precisely so it cannot ship:
+ * `configureServer` runs for `vite dev` only, so a production bundle has
+ * no such route and no copy of the file. Missing file answers 404, which
+ * the client reads as "no quick connect" and hides the strip.
+ */
+function devAccountsPlugin(): Plugin {
+  const rosterPath =
+    process.env.DOFUS_DEV_ACCOUNTS ??
+    resolve(__dirname, "../../dev-accounts.json");
+
+  return {
+    name: "vite-plugin-dev-accounts",
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (req.url !== "/__dev-accounts") {
+          next();
+          return;
+        }
+
+        // Re-read per request: re-seeding and re-running `just
+        // dev-accounts` should not need a dev-server restart.
+        let body: string;
+
+        try {
+          body = readFileSync(rosterPath, "utf-8");
+        } catch {
+          res.statusCode = 404;
+          res.end();
+          return;
+        }
+
+        res.statusCode = 200;
+        res.setHeader("content-type", "application/json");
+        res.setHeader("cache-control", "no-store");
+        res.end(body);
       });
     },
   };
@@ -204,9 +253,19 @@ function svgCompositionPlugin(): Plugin {
   const metadataCache = new Map<string, Record<string, unknown> | null>();
   function loadMetadata(gfxId: string): Record<string, unknown> | null {
     if (metadataCache.has(gfxId)) return metadataCache.get(gfxId)!;
-    const metaPath = join(publicDir, "assets", "spritesheets", "sprites", gfxId, "metadata.json");
+    const metaPath = join(
+      publicDir,
+      "assets",
+      "spritesheets",
+      "sprites",
+      gfxId,
+      "metadata.json"
+    );
     try {
-      if (!existsSync(metaPath)) { metadataCache.set(gfxId, null); return null; }
+      if (!existsSync(metaPath)) {
+        metadataCache.set(gfxId, null);
+        return null;
+      }
       const data = JSON.parse(readFileSync(metaPath, "utf-8"));
       metadataCache.set(gfxId, data);
       return data;
@@ -226,9 +285,15 @@ function svgCompositionPlugin(): Plugin {
   };
 
   // Accessory SVG cache — permanent, keyed by "symbolName/direction"
-  const accSvgCache = new Map<string, { svg: string; offsetX: number; offsetY: number } | null>();
+  const accSvgCache = new Map<
+    string,
+    { svg: string; offsetX: number; offsetY: number } | null
+  >();
 
-  function loadAccessorySvg(symbolName: string, direction: string): { svg: string; offsetX: number; offsetY: number } | null {
+  function loadAccessorySvg(
+    symbolName: string,
+    direction: string
+  ): { svg: string; offsetX: number; offsetY: number } | null {
     const dirs = [direction, ...(DIRECTION_FALLBACKS[direction] ?? [])];
     for (const dir of dirs) {
       const key = `${symbolName}/${dir}`;
@@ -244,8 +309,18 @@ function svgCompositionPlugin(): Plugin {
     return null;
   }
 
-  function tryLoadAccessorySvg(symbolName: string, direction: string): { svg: string; offsetX: number; offsetY: number } | null {
-    const accDir = join(publicDir, "assets", "spritesheets", "accessories", symbolName, direction);
+  function tryLoadAccessorySvg(
+    symbolName: string,
+    direction: string
+  ): { svg: string; offsetX: number; offsetY: number } | null {
+    const accDir = join(
+      publicDir,
+      "assets",
+      "spritesheets",
+      "accessories",
+      symbolName,
+      direction
+    );
     const atlasPath = join(accDir, "atlas.json");
     try {
       if (!existsSync(atlasPath)) return null;
@@ -284,9 +359,15 @@ function svgCompositionPlugin(): Plugin {
     const accessories: Array<{ type: number; gfxId: number } | null> = [];
     if (parts[4]) {
       for (const acc of parts[4].split(",")) {
-        if (!acc) { accessories.push(null); continue; }
+        if (!acc) {
+          accessories.push(null);
+          continue;
+        }
         const [t, g] = acc.split("_");
-        accessories.push({ type: parseInt(t, 10) || 0, gfxId: parseInt(g, 10) || 0 });
+        accessories.push({
+          type: parseInt(t, 10) || 0,
+          gfxId: parseInt(g, 10) || 0,
+        });
       }
     }
     return { gfxId, colors, accessories };
@@ -302,7 +383,8 @@ function svgCompositionPlugin(): Plugin {
     const r = parseInt(h6.substring(0, 2), 16) / 255;
     const g = parseInt(h6.substring(2, 4), 16) / 255;
     const b = parseInt(h6.substring(4, 6), 16) / 255;
-    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    const max = Math.max(r, g, b),
+      min = Math.min(r, g, b);
     const l = (max + min) / 2;
     if (max === min) return [0, 0, l];
     const d = max - min;
@@ -320,24 +402,25 @@ function svgCompositionPlugin(): Plugin {
       return `#${v.toString(16).padStart(2, "0").repeat(3)}`;
     }
     const hue2rgb = (p: number, q: number, t: number) => {
-      if (t < 0) t += 1; if (t > 1) t -= 1;
-      if (t < 1/6) return p + (q - p) * 6 * t;
-      if (t < 1/2) return q;
-      if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+      if (t < 0) t += 1;
+      if (t > 1) t -= 1;
+      if (t < 1 / 6) return p + (q - p) * 6 * t;
+      if (t < 1 / 2) return q;
+      if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
       return p;
     };
     const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
     const p = 2 * l - q;
-    const r = Math.round(hue2rgb(p, q, h + 1/3) * 255);
+    const r = Math.round(hue2rgb(p, q, h + 1 / 3) * 255);
     const g = Math.round(hue2rgb(p, q, h) * 255);
-    const b = Math.round(hue2rgb(p, q, h - 1/3) * 255);
+    const b = Math.round(hue2rgb(p, q, h - 1 / 3) * 255);
     return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
   }
 
   /** Normalize hex: expand 3-char to 6-char, lowercase */
   function normHex(hex: string): string {
     let h = hex.replace("#", "").toLowerCase();
-    if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+    if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
     return `#${h}`;
   }
 
@@ -382,9 +465,19 @@ function svgCompositionPlugin(): Plugin {
   const manifestCache = new Map<string, Record<string, unknown> | null>();
   function loadManifest(gfxId: string): Record<string, unknown> | null {
     if (manifestCache.has(gfxId)) return manifestCache.get(gfxId)!;
-    const p = join(publicDir, "assets", "spritesheets", "sprites", gfxId, "manifest.json");
+    const p = join(
+      publicDir,
+      "assets",
+      "spritesheets",
+      "sprites",
+      gfxId,
+      "manifest.json"
+    );
     try {
-      if (!existsSync(p)) { manifestCache.set(gfxId, null); return null; }
+      if (!existsSync(p)) {
+        manifestCache.set(gfxId, null);
+        return null;
+      }
       const data = JSON.parse(readFileSync(p, "utf-8"));
       manifestCache.set(gfxId, data);
       return data;
@@ -394,7 +487,13 @@ function svgCompositionPlugin(): Plugin {
     }
   }
 
-  function composeAccessory(accData: { svg: string; offsetX: number; offsetY: number }, slot: number, tx: string, ty: string, matrixStr: string | undefined): string {
+  function composeAccessory(
+    accData: { svg: string; offsetX: number; offsetY: number },
+    slot: number,
+    tx: string,
+    ty: string,
+    matrixStr: string | undefined
+  ): string {
     // Namespace ids
     const prefix = `acc${slot}_`;
     let svg = accData.svg
@@ -404,25 +503,34 @@ function svgCompositionPlugin(): Plugin {
 
     if (matrixStr) {
       const [a, b, c, d, mtx, mty] = matrixStr.split(",").map(Number);
-      const scaleTransform = (a === 1 && b === 0 && c === 0 && d === 1)
-        ? ""
-        : ` transform="matrix(${a},${b},${c},${d},0,0)"`;
+      const scaleTransform =
+        a === 1 && b === 0 && c === 0 && d === 1
+          ? ""
+          : ` transform="matrix(${a},${b},${c},${d},0,0)"`;
       const posX = mtx + accData.offsetX;
       const posY = mty + accData.offsetY;
-      svg = svg.replace(/<svg\b/, `<svg x="${posX}" y="${posY}" overflow="visible"`);
+      svg = svg.replace(
+        /<svg\b/,
+        `<svg x="${posX}" y="${posY}" overflow="visible"`
+      );
       if (scaleTransform) {
         const pivotX = -accData.offsetX;
         const pivotY = -accData.offsetY;
-        svg = svg.replace(
-          /(<svg[^>]*>)/,
-          `$1<g transform="translate(${pivotX},${pivotY})"><g${scaleTransform}><g transform="translate(${-pivotX},${-pivotY})">`
-        ).replace(/<\/svg>\s*$/, "</g></g></g></svg>");
+        svg = svg
+          .replace(
+            /(<svg[^>]*>)/,
+            `$1<g transform="translate(${pivotX},${pivotY})"><g${scaleTransform}><g transform="translate(${-pivotX},${-pivotY})">`
+          )
+          .replace(/<\/svg>\s*$/, "</g></g></g></svg>");
       }
       return svg;
     }
     const posX = parseFloat(tx) + accData.offsetX;
     const posY = parseFloat(ty) + accData.offsetY;
-    return svg.replace(/<svg\b/, `<svg x="${posX}" y="${posY}" overflow="visible"`);
+    return svg.replace(
+      /<svg\b/,
+      `<svg x="${posX}" y="${posY}" overflow="visible"`
+    );
   }
 
   return {
@@ -438,7 +546,10 @@ function svgCompositionPlugin(): Plugin {
         const parsed = new URL(url, "http://localhost");
         const look = parsed.searchParams.get("look");
         const resolution = parseFloat(parsed.searchParams.get("r") || "2");
-        if (!look) { next(); return; }
+        if (!look) {
+          next();
+          return;
+        }
 
         const cacheKey = `${parsed.pathname}:${look}:${resolution}`;
         const cached = composedCache.get(cacheKey);
@@ -462,7 +573,10 @@ function svgCompositionPlugin(): Plugin {
           }
         }
 
-        if (!svgContent.includes("data-acc-slot") && !svgContent.includes("__COLOR_STYLE__")) {
+        if (
+          !svgContent.includes("data-acc-slot") &&
+          !svgContent.includes("__COLOR_STYLE__")
+        ) {
           next();
           return;
         }
@@ -483,7 +597,10 @@ function svgCompositionPlugin(): Plugin {
             const accIdx = SLOT_MAP.indexOf(slot);
             const acc = accIdx >= 0 ? lookData.accessories[accIdx] : null;
             if (!acc || !acc.type || !acc.gfxId) return "";
-            const accData = loadAccessorySvg(`${acc.type}_${acc.gfxId}`, direction);
+            const accData = loadAccessorySvg(
+              `${acc.type}_${acc.gfxId}`,
+              direction
+            );
             if (!accData) return "";
             return composeAccessory(accData, slot, tx, ty, matrixStr);
           }
@@ -492,14 +609,22 @@ function svgCompositionPlugin(): Plugin {
         // 2. Replace fill colors per color zone
         const metadata = loadMetadata(lookData.gfxId);
         if (metadata) {
-          const colorMapping = (metadata as { colorMapping?: Record<string, number> }).colorMapping ?? {};
-          const colorZones = (metadata as { colorZones?: Record<string, string[]> }).colorZones ?? {};
+          const colorMapping =
+            (metadata as { colorMapping?: Record<string, number> })
+              .colorMapping ?? {};
+          const colorZones =
+            (metadata as { colorZones?: Record<string, string[]> })
+              .colorZones ?? {};
 
           // Cache color replacement map per gfx+colors combo
           const colorKey = `${lookData.gfxId}:${lookData.colors.join(":")}`;
           let replacements = colorReplacementCache.get(colorKey);
           if (!replacements) {
-            replacements = buildColorReplacements(colorZones, colorMapping, lookData.colors);
+            replacements = buildColorReplacements(
+              colorZones,
+              colorMapping,
+              lookData.colors
+            );
             colorReplacementCache.set(colorKey, replacements);
           }
 
@@ -518,20 +643,37 @@ function svgCompositionPlugin(): Plugin {
         // Hair toggle
         const cssRules: string[] = [];
         const manifest = loadManifest(lookData.gfxId);
-        if (manifest && (manifest as { hairToggle?: { triggerSlot: number; cssClass: string } }).hairToggle) {
-          const ht = (manifest as { hairToggle: { triggerSlot: number; cssClass: string } }).hairToggle;
+        if (
+          manifest &&
+          (
+            manifest as {
+              hairToggle?: { triggerSlot: number; cssClass: string };
+            }
+          ).hairToggle
+        ) {
+          const ht = (
+            manifest as {
+              hairToggle: { triggerSlot: number; cssClass: string };
+            }
+          ).hairToggle;
           const hatIdx = SLOT_MAP.indexOf(ht.triggerSlot);
           if (hatIdx >= 0 && lookData.accessories[hatIdx]?.type) {
             cssRules.push(`.${ht.cssClass}{display:none}`);
           }
         }
         if (cssRules.length > 0) {
-          composed = composed.replace(/\/\* __COLOR_STYLE__ \*\//, cssRules.join(""));
+          composed = composed.replace(
+            /\/\* __COLOR_STYLE__ \*\//,
+            cssRules.join("")
+          );
         }
 
         // 3. Replace __RESOLUTION__ placeholders
         if (resolution > 0) {
-          composed = composed.replace(/__RESOLUTION__/g, (1 / resolution).toString());
+          composed = composed.replace(
+            /__RESOLUTION__/g,
+            (1 / resolution).toString()
+          );
         }
 
         // Cache the result (LRU eviction at 5000 entries)
@@ -556,6 +698,7 @@ export default defineConfig({
     svgResolutionPlugin(),
     compressionPlugin(),
     clientLogSinkPlugin(),
+    devAccountsPlugin(),
     babel({
       babelConfig: {
         plugins: [
@@ -570,9 +713,7 @@ export default defineConfig({
     }) as never,
     react({
       babel: {
-        plugins: [
-          "@lingui/babel-plugin-lingui-macro",
-        ],
+        plugins: ["@lingui/babel-plugin-lingui-macro"],
       },
       // Exclude ECS files that use TypeScript decorators + declare fields
       // — they don't contain JSX and would break Babel's class transform

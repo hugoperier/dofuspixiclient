@@ -37,7 +37,12 @@ import {
 } from "@/game/network/protocol";
 import { appendInfoMessage } from "@/game/stores/chat-store";
 import { fightActor } from "@/game/stores/fight-store";
-import { applySpellCooldown, spellsStore } from "@/game/stores/spells-store";
+import { inventoryStore } from "@/game/stores/inventory-store";
+import {
+  applySpellCooldown,
+  CLOSE_COMBAT_SPELL_ID,
+  spellsStore,
+} from "@/game/stores/spells-store";
 import { createLogger } from "@/utils/logger";
 
 const log = createLogger("FightHandler");
@@ -553,6 +558,38 @@ export class FightHandler {
           this.criticalCasts.get(action.spriteId) === data.value.spellId;
         this.criticalCasts.delete(action.spriteId);
         this.handlers.onSpellCast?.(cast);
+        break;
+      }
+      // A weapon swing. The wire verb differs from a spell cast
+      // (`GA;303`, per 1.29) but the presentation is the same one:
+      // `visualGfxId` 0 means "no spell visual", so the caster plays
+      // the weapon's pose and the damage still gates behind it.
+      case "closeCombat": {
+        // The weapon template is named only when the viewer happens to
+        // own one too — `inventoryStore.templates` holds what the
+        // server sent for *this* player's items, never another
+        // fighter's. Falling back to the bare verb is the honest
+        // reading rather than inventing a weapon name.
+        const weapon = inventoryStore
+          .getSnapshot()
+          .templates.get(data.value.weaponTemplateId)?.name;
+        appendInfoMessage(
+          weapon
+            ? `${this.fighterName(action.spriteId)} frappe avec ${weapon}.`
+            : `${this.fighterName(action.spriteId)} frappe au corps à corps.`
+        );
+        const casterId = Number(action.spriteId) || 0;
+        this.handlers.onSpellCast?.({
+          casterId,
+          spellId: CLOSE_COMBAT_SPELL_ID,
+          visualGfxId: 0,
+          spellLevel: 1,
+          targetCellId: data.value.targetCell,
+          critical:
+            this.criticalCasts.get(action.spriteId) === CLOSE_COMBAT_SPELL_ID,
+          animation: data.value.animation || "anim1",
+        });
+        this.criticalCasts.delete(action.spriteId);
         break;
       }
       case "criticalHit":

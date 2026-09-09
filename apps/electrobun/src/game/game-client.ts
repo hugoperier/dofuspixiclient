@@ -1235,17 +1235,51 @@ export class GameClient {
   async login(username: string, password: string): Promise<void> {
     loginActor.send({ type: "START_LOGIN", username });
 
+    if (!(await this.readyToIdentify())) {
+      return;
+    }
+
+    await this.sendIdentity(
+      username,
+      await derivePasswordKey(password, username)
+    );
+  }
+
+  /**
+   * Sign in with an already-derived key instead of a plaintext.
+   *
+   * The key is exactly what `login` puts on the wire — 1.29's password
+   * never leaves the browser either — so this grants nothing extra. It
+   * exists for the dev quick-connect, which holds pre-derived keys so a
+   * click does not pay 600 000 PBKDF2 rounds before the socket moves.
+   */
+  async loginWithKey(username: string, passwordKey: string): Promise<void> {
+    loginActor.send({ type: "START_LOGIN", username });
+
+    if (!(await this.readyToIdentify())) {
+      return;
+    }
+
+    await this.sendIdentity(username, passwordKey);
+  }
+
+  private async readyToIdentify(): Promise<boolean> {
     try {
       await this.waitForCompatibleContract();
+      return true;
     } catch (error) {
       loginActor.send({
         type: "AUTH_FAILURE",
         reason: `incompatible server contract: ${(error as Error).message}`,
       });
-      return;
+      return false;
     }
+  }
 
-    const passwordKey = await derivePasswordKey(password, username);
+  private async sendIdentity(
+    username: string,
+    passwordKey: string
+  ): Promise<void> {
     this.connection.send(
       encodeClient(
         "accountSendIdentity",

@@ -359,6 +359,12 @@ export interface ItemTemplatesTable {
   description: string;
   /** `items.json`'s `an`; roleplay default is `anim3`. */
   animationId: number;
+  /**
+   * Close-combat statistics for a weapon — `WeaponInfo`, or null for
+   * everything that is not swung. `migrations/0065` seeds it from the
+   * lang bundle; `fight.close-combat.ts` is the only reader.
+   */
+  weaponInfo: Json | null;
 }
 
 export type ItemTemplateRow = Selectable<ItemTemplatesTable>;

@@ -4,6 +4,7 @@ import type { Fight } from "@modules/fight/core/fight.entity";
 import type { Fighter } from "@modules/fight/core/fight.fighter";
 import type { CastContext } from "@modules/fight/effects/fight.buff.types";
 import type { SummonTemplate } from "@modules/spells/combat-catalog.types";
+import type { CloseCombatAttack } from "@modules/spells/spells.service";
 
 export interface SpellPort {
   summonTemplate?(
@@ -15,6 +16,12 @@ export interface SpellPort {
     playerId: string,
     spellId: number
   ): Promise<number | undefined>;
+  /**
+   * Spell 0, built from the equipped weapon. Optional so the test
+   * harnesses that only exercise real spells need not stub it; a caster
+   * with no port for it simply cannot swing.
+   */
+  closeCombatSpell?(playerId: string): Promise<CloseCombatAttack | undefined>;
 }
 
 export interface FightRegistry {
@@ -65,6 +72,12 @@ export interface CastResolution {
   targetCell: number;
   critical: boolean;
   failure: boolean;
+  /**
+   * Set when this is a weapon swing rather than a spell. Carries what
+   * the `GA;303` broadcast needs — which weapon, which pose — because
+   * the client holds no equipment but its own.
+   */
+  closeCombat?: CloseCombatAttack;
   /**
    * Pre-loaded trigger spell levels for spawn effects (glyph/trap/
    * summon). Resolved here so apply() stays synchronous around the

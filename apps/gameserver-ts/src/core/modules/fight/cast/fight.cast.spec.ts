@@ -160,6 +160,47 @@ function harness(over: Partial<SpellLevel> = {}) {
   };
 }
 
+describe("close combat", () => {
+  // Spell 0 is never in `player_spells`: 1.29 builds it from the
+  // equipped item every time the bar redraws. Routing it through
+  // `playerSpellRank` would refuse a swing that is perfectly legal, so
+  // this is the case that pins the branch.
+  test("resolves a swing the player never learned", async () => {
+    const h = harness();
+    const swing: SpellLevel = { ...h.spell, spellId: 0, apCost: 4 };
+    let rankAsked = false;
+
+    h.port.playerSpellRank = async () => {
+      rankAsked = true;
+      return undefined;
+    };
+    (h.port as { closeCombatSpell?: () => Promise<unknown> }).closeCombatSpell =
+      async () => ({
+        spell: swing,
+        weaponTemplateId: 88,
+        name: "Petit Arc de Boisaille",
+        description: "",
+      });
+
+    const resolution = await h.casts.resolve("player", "0;230");
+
+    expect(rankAsked).toBe(false);
+    expect(resolution.spell.apCost).toBe(4);
+    expect(resolution.closeCombat?.weaponTemplateId).toBe(88);
+
+    h.casts.apply(resolution);
+    expect(h.damage).toEqual([30]);
+  });
+
+  test("refuses when nothing can answer for the weapon", async () => {
+    const h = harness();
+
+    await expect(h.casts.resolve("player", "0;230")).rejects.toThrow(
+      "Vous ne pouvez pas frapper."
+    );
+  });
+});
+
 describe("authoritative casting", () => {
   test("ignores a forged rank and resolves death once", async () => {
     const h = harness();

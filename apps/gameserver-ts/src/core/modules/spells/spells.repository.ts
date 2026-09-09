@@ -1,5 +1,7 @@
 import type { TransactionalAdapterKysely } from "@nestjs-cls/transactional-adapter-kysely";
 import type { DB } from "@shared/db/schema";
+import { WEAPON_POSITION } from "@modules/inventory/equip-rules";
+import { playerOwner } from "@modules/items/item-owner";
 import { Injectable } from "@nestjs/common";
 import { TransactionHost } from "@nestjs-cls/transactional";
 
@@ -21,6 +23,34 @@ export class SpellsRepository {
       .selectAll()
       .where("spellId", "=", spellId)
       .where("level", "=", level)
+      .executeTakeFirst();
+  }
+
+  /**
+   * The template of whatever sits in the weapon slot, or undefined for
+   * bare hands.
+   *
+   * Read here rather than through `InventoryRepository` on purpose:
+   * `PlayersModule` already imports `SpellsModule`, and inventory
+   * depends on players, so a module edge from spells to inventory would
+   * close a cycle. One join is a smaller price than a `forwardRef`, and
+   * the close-combat attack is the only thing on this side that ever
+   * needs to know what the player is holding.
+   */
+  findEquippedWeapon(playerId: string) {
+    return this.txHost.tx
+      .selectFrom("items")
+      .innerJoin("itemTemplates", "itemTemplates.id", "items.templateId")
+      .select([
+        "itemTemplates.id as id",
+        "itemTemplates.name as name",
+        "itemTemplates.description as description",
+        "itemTemplates.effects as effects",
+        "itemTemplates.weaponInfo as weaponInfo",
+      ])
+      .where("items.ownerKind", "=", playerOwner(playerId).kind)
+      .where("items.ownerId", "=", playerId)
+      .where("items.position", "=", WEAPON_POSITION)
       .executeTakeFirst();
   }
 

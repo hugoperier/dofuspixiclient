@@ -16,6 +16,7 @@ import type {
 } from "@modules/fight/effects/fight.effect-registry";
 import { castGeometryError } from "@dofus/grid";
 import { CastError } from "@modules/fight/cast/fight.cast.types";
+import { CLOSE_COMBAT_SPELL_ID } from "@modules/fight/cast/fight.close-combat";
 import {
   Characteristic,
   FightStateId,
@@ -86,6 +87,32 @@ export class CastSpellUseCase {
     if (!caster.player) {
       throw new CastError("no_spell", "Personnage introuvable.");
     }
+
+    // Spell 0 is the weapon swing. It is never in `player_spells` — 1.29
+    // builds it from the equipped item every time — so asking for its
+    // rank would fail on a cast that is perfectly legal.
+    if (spellId === CLOSE_COMBAT_SPELL_ID) {
+      const attack = await this.spells.closeCombatSpell?.(
+        String(caster.player.id)
+      );
+
+      if (!attack) {
+        throw new CastError("no_spell", "Vous ne pouvez pas frapper.");
+      }
+
+      const resolution = await this.resolveCast(
+        fight,
+        active,
+        caster,
+        spellId,
+        targetCell,
+        1,
+        attack.spell
+      );
+      resolution.closeCombat = attack;
+      return resolution;
+    }
+
     const level = await this.spells.playerSpellRank(
       String(caster.player.id),
       spellId
@@ -166,10 +193,16 @@ export class CastSpellUseCase {
     caster: Fighter,
     spellId: number,
     targetCell: number,
-    level: number
+    level: number,
+    /**
+     * A spell the caller already built. Only the weapon swing uses it:
+     * its numbers come from an item, so there is no `spell_levels` row
+     * to look up.
+     */
+    prebuilt?: SpellLevel
   ): Promise<CastResolution> {
     const epoch = fight.turnEpoch;
-    const spell = await this.spells.spellLevel(spellId, level);
+    const spell = prebuilt ?? (await this.spells.spellLevel(spellId, level));
     if (!spell) {
       throw new CastError("no_spell", "spell not learned / unknown");
     }

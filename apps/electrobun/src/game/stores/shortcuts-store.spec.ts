@@ -8,6 +8,7 @@ import {
   HOTBAR_SLOTS_PER_PAGE,
   handleShortcutAdd,
   handleShortcutRemove,
+  INITIAL_SHORTCUTS_STATE,
   resolveShortcut,
   shortcutsStore,
   slotAt,
@@ -203,6 +204,13 @@ describe("shortcuts-store", () => {
 
       toggleHotbarTab();
       expect(shortcutsStore.getSnapshot().tab).toBe("spells");
+    });
+
+    // The bar has nothing to offer on the spell tab outside a fight —
+    // casting from the map is refused — so a fresh session opens on the
+    // items. `hotbar-fight-sync` is what moves it.
+    it("opens on the item tab", () => {
+      expect(INITIAL_SHORTCUTS_STATE.tab).toBe("items");
     });
   });
 });

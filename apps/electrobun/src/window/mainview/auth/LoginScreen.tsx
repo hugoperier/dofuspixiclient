@@ -2,6 +2,8 @@ import { useState } from "react";
 
 import type { GameClient } from "@/game/game-client";
 
+import { QuickConnectStrip } from "./QuickConnectStrip";
+
 interface Props {
   client: GameClient;
   failureReason: string | null;
@@ -64,6 +66,7 @@ export function LoginScreen({ client, failureReason, busy }: Props) {
         >
           {submitting ? "Signing in…" : busy ? "Connecting…" : "Sign in"}
         </button>
+        <QuickConnectStrip client={client} disabled={busy || submitting} />
       </form>
     </div>
   );

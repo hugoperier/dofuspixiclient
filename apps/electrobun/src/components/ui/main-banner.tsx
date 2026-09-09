@@ -6,7 +6,9 @@ import {
   forwardRef,
   type ReactNode,
   useContext,
+  useEffect,
   useId,
+  useRef,
   useState,
 } from "react";
 import { match } from "ts-pattern";
@@ -1286,6 +1288,7 @@ function MainBannerGridArrow({
 function MainBannerGrid({
   className,
   children,
+  leading,
   tabs,
   value,
   onValueChange,
@@ -1294,6 +1297,11 @@ function MainBannerGrid({
 }: {
   className?: string;
   children?: ReactNode;
+  /**
+   * The container left of the grid — 1.29's `_ctrCC`, which holds the
+   * close-combat attack and is not one of the 14 cells.
+   */
+  leading?: ReactNode;
   tabs?: { value: string; label: string }[];
   /** Controlled tab, so the SWAP shortcut can drive it from outside. */
   value?: string;
@@ -1306,8 +1314,36 @@ function MainBannerGrid({
     onStep: (delta: number) => void;
   };
 }) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const onStep = pager?.onStep;
+
+  // The wheel pages the bar while the pointer is over it. This has to be
+  // a native listener: React attaches `wheel` at the root as *passive*,
+  // where `preventDefault()` is a no-op and the browser would keep
+  // scrolling whatever is behind the banner.
+  useEffect(() => {
+    const el = rootRef.current;
+
+    if (!el || !onStep) {
+      return;
+    }
+
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY === 0) {
+        return;
+      }
+
+      e.preventDefault();
+      onStep(e.deltaY > 0 ? 1 : -1);
+    };
+
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [onStep]);
+
   return (
     <Tabs.Root
+      ref={rootRef}
       {...(value === undefined ? {} : { value })}
       {...(onValueChange === undefined
         ? {}
@@ -1324,6 +1360,22 @@ function MainBannerGrid({
         className
       )}
     >
+      {/* The close-combat container sits in the 40px left of the pager.
+       * The grid itself cannot move: seven 25px cells and six 3px
+       * gutters are 193px, and starting them at 54 already ends at 247
+       * of the 252 this box is wide — shifting them right by a cell
+       * would push the last column outside the banner. */}
+      {leading && (
+        <div
+          className={cn(
+            "absolute flex items-start",
+            "left-[calc(8px*var(--resolution-factor))]",
+            "top-[calc(13px*var(--resolution-factor))]"
+          )}
+        >
+          {leading}
+        </div>
+      )}
       <div
         className={cn(
           "absolute grid grid-cols-[repeat(7,auto)]",
