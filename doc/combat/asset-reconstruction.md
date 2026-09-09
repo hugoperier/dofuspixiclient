@@ -29,7 +29,21 @@ Les dépendances PHP verrouillées sont nécessaires (`composer install` dans `t
 
 Les noms du manifeste ne suffisaient pas à détecter une table de frames vide. Le lecteur DASF expose désormais les animations compilées et vérifie leurs références. Le pipeline accepte les atlas `atlas_0.svg`, `atlas_1.svg`, etc., conserve la page des frames et sépare les identifiants SVG de chaque page. Un test utilise deux pages avec des rectangles et des identifiants identiques, mais des dessins différents.
 
-Les 145 graphiques ont été reconstruits, dont les quatre tables d’animations vides (1100, 402, 505, 1101). L’exécution des modules révèle encore **68 graphiques avec des symboles manquants** : [rapport des régressions](regression-validation.md), [audit détaillé](animation-audit.json). La présence des tables ne certifie ni ces symboles ni le résultat visuel.
+Les 145 graphiques ont été reconstruits, dont les quatre tables d’animations vides (1100, 402, 505, 1101). La présence des tables ne certifie ni les symboles ni le résultat visuel.
+
+Le chiffre de **68 graphiques** cité ici auparavant venait d’un balayage limité aux 145 graphiques du catalogue de classe. Le balayage complet des 284 `.dofasset` publiés (`just spells-coverage`, [QA-168](../issues/fight/QA-168-animations-de-sorts-absentes-en-combat.md)) a montré que la mesure était partielle et a mis au jour deux défauts de plus :
+
+- **128 tables d’animations vides**, et non quatre — publiées depuis des atlas périmés. Elles ont été reconstruites depuis les SVG versionnés de `tools/combat-exporter/output/spell-anims/`, **sans SWF ni FFDec** : `svg-spritesheet` → `merge-spell-manifests` → `compile spells` → publication après vérification individuelle. Il en reste une (2928, dont la source décompilée est absente).
+- **Une collision de nommage** : l’exporteur écrit `sprite_<charId>` pour les sprites animés et `lib_sprite<charId>` pour ceux à CLIPACTIONRECORD, alors que les modules demandent toujours la forme `lib_`. Le loader résout désormais les deux graphies ; 111 références en dépendent.
+
+État courant après cette passe : **71 graphiques à symboles absents (129 références)**, suivis par le ratchet `doc/combat/spell-symbol-baseline.json`. Rapports : [audit restreint](animation-audit.json), [audit complet](animation-audit-all.json), [régressions](regression-validation.md).
+
+Deux pièges à connaître avant de reprendre ce reste :
+
+- Les identifiants de caractère **diffèrent entre FFDec et Arakne**. Le module du sort 102 demande `lib_sprite9` et `lib_sprite14` d’après les chemins `DefineSprite_<id>` de FFDec, là où Arakne exporte `sprite4` et `sprite5`. C’est le même décalage que celui déjà relevé pour 1005 plus bas.
+- Certaines références n’existent nulle part : `DefineSprite_16` du sort 102 n’a aucune contrepartie dans le SWF — le générateur l’a inventée.
+
+Exporter un sprite le **retire** du SVG du parent : toute entrée ajoutée à `tools/combat-exporter/dynamic-spells.json` doit être vérifiée à l’œil, sous peine de faire disparaître l’élément au lieu de l’animer.
 
 ## Timelines indépendantes : 610, 1005 et 2112
 

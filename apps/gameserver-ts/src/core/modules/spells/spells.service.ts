@@ -68,11 +68,16 @@ export class SpellsService implements SpellPort {
       forbiddenStates: stateIds(row.forbiddenStates),
       effects,
       criticalEffects,
-      // Coalesce NULL → spellId so downstream code (cast handler,
-      // FrameEmitter, client) never has to branch. Pre-StarLoco-import
-      // every spell uses spellId as its gfx; once the canonical sorts
-      // dump is imported the column carries the real value.
-      visualGfxId: row.visualGfxId ?? row.spellId,
+      // NULL means "no spell-specific visual" (canonical sorts.sprite
+      // = -1): the caster plays its own pose and no spell clip is
+      // loaded. Coalesce to 0, which the client already treats as
+      // "skip the visual" (game-client.ts, launchSpellVisual).
+      //
+      // Do NOT fall back to spellId. That was the old behaviour and it
+      // is what made 1158 spells ask the client for a dofasset named
+      // after their spell id, which does not exist — see migration
+      // 0064.
+      visualGfxId: row.visualGfxId ?? 0,
     };
   }
 

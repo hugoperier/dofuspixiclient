@@ -137,6 +137,11 @@ const log = createLogger("GameClient");
  *   Connection → MessageHandler → per-domain handlers → stores + machines.
  */
 export class GameClient {
+  /**
+   * gfx ids already reported to the player as unrenderable. A monster
+   * casting the same broken spell every turn must not fill the chat.
+   */
+  private readonly reportedBrokenVisuals = new Set<number>();
   private readonly connection: Connection;
   private readonly messageHandler: MessageHandler;
   private readonly audioManager: AudioManager;
@@ -581,15 +586,27 @@ export class GameClient {
           if (payload.targetCellId < 0 || payload.visualGfxId <= 0) {
             return;
           }
-          await this.battlefield?.getFightUI()?.playSpell({
-            signal: scope.signal,
-            spellId: payload.visualGfxId,
-            casterId: payload.casterId,
-            casterCellId: payload.targetCellId,
-            targetCellId: payload.targetCellId,
-            spellLevel: payload.spellLevel,
-            playSound: (name) => this.audioManager.playSound(name),
-          });
+          // A rejection here must not escape: this runs inside the
+          // presentation queue, where an unhandled rejection stalls
+          // every later frame of the fight.
+          try {
+            await this.battlefield?.getFightUI()?.playSpell({
+              signal: scope.signal,
+              spellId: payload.visualGfxId,
+              casterId: payload.casterId,
+              casterCellId: payload.targetCellId,
+              targetCellId: payload.targetCellId,
+              spellLevel: payload.spellLevel,
+              playSound: (name) => this.audioManager.playSound(name),
+            });
+          } catch (error) {
+            if (scope.signal.aborted) {
+              return;
+            }
+            log.error(
+              `Glyph visual ${payload.visualGfxId} failed: ${String(error)}`
+            );
+          }
         });
       },
       onDamage: (payload) => {
@@ -2043,9 +2060,12 @@ export class GameClient {
             log.error(
               `Spell visual ${payload.visualGfxId} failed: ${String(error)}`
             );
-            appendErrorMessage(
-              `L’animation du sort ${payload.spellId} n’a pas pu être affichée.`
-            );
+            if (!this.reportedBrokenVisuals.has(payload.visualGfxId)) {
+              this.reportedBrokenVisuals.add(payload.visualGfxId);
+              appendErrorMessage(
+                `L’animation du sort ${payload.spellId} n’a pas pu être affichée.`
+              );
+            }
             resolve();
           });
         } else {

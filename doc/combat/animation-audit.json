@@ -22,6 +22,7 @@
       "requested": [
         "anim1"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -54,6 +55,7 @@
         "lib_sprite7",
         "lib_sprite9"
       ],
+      "aliased": [],
       "missing": [
         "lib_sprite14",
         "lib_sprite15",
@@ -105,6 +107,7 @@
         "lib_baton2",
         "lib_effet"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -134,10 +137,11 @@
         "lib_sprite5",
         "lib_sprite7"
       ],
-      "missing": [
-        "lib_sprite5",
-        "lib_sprite7"
+      "aliased": [
+        "lib_sprite5->sprite_5",
+        "lib_sprite7->sprite_7"
       ],
+      "missing": [],
       "failures": [],
       "cases": 12,
       "longestMs": 2150,
@@ -162,6 +166,7 @@
         "lib_sprite9",
         "lib_tige"
       ],
+      "aliased": [],
       "missing": [
         "lib_sprite7",
         "lib_sprite9"
@@ -184,6 +189,7 @@
       "requested": [
         "anim1"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -209,9 +215,11 @@
         "lib_sprite14",
         "lib_sprite15"
       ],
+      "aliased": [
+        "lib_sprite15->sprite_15"
+      ],
       "missing": [
-        "lib_sprite14",
-        "lib_sprite15"
+        "lib_sprite14"
       ],
       "failures": [],
       "cases": 12,
@@ -231,6 +239,7 @@
       "requested": [
         "anim1"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -262,6 +271,7 @@
       "requested": [
         "anim1"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -309,9 +319,10 @@
         "sprite_11",
         "sprite_9"
       ],
-      "missing": [
-        "lib_sprite5"
+      "aliased": [
+        "lib_sprite5->sprite_5"
       ],
+      "missing": [],
       "failures": [],
       "cases": 12,
       "longestMs": 2200,
@@ -338,6 +349,7 @@
       "requested": [
         "lib_griffes"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -366,9 +378,10 @@
         "etoiles",
         "lib_sprite11"
       ],
-      "missing": [
-        "lib_sprite11"
+      "aliased": [
+        "lib_sprite11->sprite_11"
       ],
+      "missing": [],
       "failures": [],
       "cases": 12,
       "longestMs": 1600,
@@ -422,9 +435,11 @@
         "sprite_18",
         "sprite_22"
       ],
+      "aliased": [
+        "lib_sprite15->sprite_15"
+      ],
       "missing": [
-        "lib_sprite14",
-        "lib_sprite15"
+        "lib_sprite14"
       ],
       "failures": [],
       "cases": 12,
@@ -444,6 +459,7 @@
       "requested": [
         "anim1"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -481,6 +497,7 @@
         "lib_plumes",
         "shoot"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -513,6 +530,7 @@
         "anim1",
         "lib_pierres"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -540,6 +558,7 @@
       "requested": [
         "lib_griffes"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -573,6 +592,7 @@
         "sprite_22",
         "sprite_28"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -592,6 +612,7 @@
       "requested": [
         "shoot"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -625,12 +646,14 @@
         "lib_sprite4",
         "lib_sprite9"
       ],
+      "aliased": [
+        "lib_sprite12->sprite_12",
+        "lib_sprite4->sprite_4"
+      ],
       "missing": [
         "lib_sprite10",
         "lib_sprite11",
-        "lib_sprite12",
         "lib_sprite3",
-        "lib_sprite4",
         "lib_sprite9"
       ],
       "failures": [],
@@ -661,8 +684,10 @@
         "lib_sprite13",
         "lib_sprite3"
       ],
+      "aliased": [
+        "lib_sprite13->sprite_13"
+      ],
       "missing": [
-        "lib_sprite13",
         "lib_sprite3"
       ],
       "failures": [],
@@ -695,11 +720,13 @@
         "lib_sprite3",
         "lib_sprite4"
       ],
+      "aliased": [
+        "lib_sprite24->sprite_24",
+        "lib_sprite4->sprite_4"
+      ],
       "missing": [
         "lib_sprite23",
-        "lib_sprite24",
-        "lib_sprite3",
-        "lib_sprite4"
+        "lib_sprite3"
       ],
       "failures": [],
       "cases": 12,
@@ -740,6 +767,7 @@
         "anim1",
         "lib_pierres"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -786,6 +814,7 @@
         "lib_sprite27",
         "shoot"
       ],
+      "aliased": [],
       "missing": [
         "lib_sprite27"
       ],
@@ -817,9 +846,10 @@
         "lib_sprite5",
         "shoot"
       ],
-      "missing": [
-        "lib_sprite5"
+      "aliased": [
+        "lib_sprite5->sprite_5"
       ],
+      "missing": [],
       "failures": [],
       "cases": 12,
       "longestMs": 1200,
@@ -846,6 +876,7 @@
       "requested": [
         "sprite_24"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -865,6 +896,7 @@
       "requested": [
         "sprite_91"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -893,6 +925,7 @@
         "lib_sprite18",
         "shoot"
       ],
+      "aliased": [],
       "missing": [
         "lib_sprite18"
       ],
@@ -924,10 +957,11 @@
         "lib_sprite9",
         "sprite_21"
       ],
-      "missing": [
-        "lib_sprite4",
-        "lib_sprite9"
+      "aliased": [
+        "lib_sprite4->sprite_4",
+        "lib_sprite9->sprite_9"
       ],
+      "missing": [],
       "failures": [],
       "cases": 12,
       "longestMs": 1600,
@@ -953,10 +987,12 @@
         "lib_sprite7",
         "lib_sprite8"
       ],
+      "aliased": [
+        "lib_sprite8->sprite_8"
+      ],
       "missing": [
         "lib_sprite4",
-        "lib_sprite7",
-        "lib_sprite8"
+        "lib_sprite7"
       ],
       "failures": [],
       "cases": 12,
@@ -995,10 +1031,11 @@
         "sprite_14",
         "sprite_3"
       ],
-      "missing": [
-        "lib_sprite12",
-        "lib_sprite7"
+      "aliased": [
+        "lib_sprite12->sprite_12",
+        "lib_sprite7->sprite_7"
       ],
+      "missing": [],
       "failures": [],
       "cases": 12,
       "longestMs": 2850,
@@ -1023,9 +1060,11 @@
         "lib_sprite18",
         "lib_sprite19"
       ],
+      "aliased": [
+        "lib_sprite19->sprite_19"
+      ],
       "missing": [
-        "lib_sprite18",
-        "lib_sprite19"
+        "lib_sprite18"
       ],
       "failures": [],
       "cases": 12,
@@ -1101,6 +1140,7 @@
       "requested": [
         "anim1"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -1128,6 +1168,7 @@
       "requested": [
         "lib_pepite"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -1174,6 +1215,7 @@
         "lib_sprite14",
         "shoot"
       ],
+      "aliased": [],
       "missing": [
         "lib_sprite14"
       ],
@@ -1204,6 +1246,7 @@
         "anim1",
         "lib_point"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -1223,6 +1266,7 @@
       "requested": [
         "anim1"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -1252,9 +1296,11 @@
         "lib_sprite6",
         "lib_sprite7"
       ],
+      "aliased": [
+        "lib_sprite7->sprite_7"
+      ],
       "missing": [
-        "lib_sprite6",
-        "lib_sprite7"
+        "lib_sprite6"
       ],
       "failures": [],
       "cases": 12,
@@ -1278,6 +1324,7 @@
       "requested": [
         "lib_tige"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -1311,9 +1358,10 @@
         "lib_goutte",
         "lib_sprite18"
       ],
-      "missing": [
-        "lib_sprite18"
+      "aliased": [
+        "lib_sprite18->sprite_18"
       ],
+      "missing": [],
       "failures": [],
       "cases": 12,
       "longestMs": 2500,
@@ -1351,9 +1399,11 @@
         "lib_sprite21",
         "lib_sprite6"
       ],
+      "aliased": [
+        "lib_sprite6->sprite_6"
+      ],
       "missing": [
-        "lib_sprite21",
-        "lib_sprite6"
+        "lib_sprite21"
       ],
       "failures": [],
       "cases": 12,
@@ -1377,6 +1427,7 @@
       "requested": [
         "anim1"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -1404,6 +1455,7 @@
       "requested": [
         "anim1"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -1431,6 +1483,7 @@
       "requested": [
         "anim1"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -1454,6 +1507,7 @@
       "requested": [
         "anim1"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -1474,6 +1528,7 @@
         "lib_sprite3",
         "sprite_14"
       ],
+      "aliased": [],
       "missing": [
         "lib_sprite3"
       ],
@@ -1518,9 +1573,10 @@
         "lib_sprite7",
         "shoot"
       ],
-      "missing": [
-        "lib_sprite7"
+      "aliased": [
+        "lib_sprite7->sprite_7"
       ],
+      "missing": [],
       "failures": [],
       "cases": 12,
       "longestMs": 2750,
@@ -1541,6 +1597,7 @@
         "lib_sprite12",
         "lib_sprite5"
       ],
+      "aliased": [],
       "missing": [
         "lib_sprite12",
         "lib_sprite5"
@@ -1577,12 +1634,14 @@
         "lib_sprite4",
         "lib_sprite9"
       ],
+      "aliased": [
+        "lib_sprite14->sprite_14",
+        "lib_sprite4->sprite_4"
+      ],
       "missing": [
         "lib_sprite10",
         "lib_sprite13",
-        "lib_sprite14",
         "lib_sprite3",
-        "lib_sprite4",
         "lib_sprite9"
       ],
       "failures": [],
@@ -1603,6 +1662,7 @@
       "requested": [
         "anim1"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -1639,11 +1699,13 @@
         "lib_sprite15",
         "lib_terre"
       ],
+      "aliased": [
+        "lib_sprite13->sprite_13",
+        "lib_sprite15->sprite_15"
+      ],
       "missing": [
         "lib_or",
         "lib_pierres",
-        "lib_sprite13",
-        "lib_sprite15",
         "lib_terre"
       ],
       "failures": [],
@@ -1664,6 +1726,7 @@
       "requested": [
         "anim1"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -1694,10 +1757,12 @@
         "lib_sprite7",
         "lib_sprite8"
       ],
+      "aliased": [
+        "lib_sprite7->sprite_7",
+        "lib_sprite8->sprite_8"
+      ],
       "missing": [
-        "lib_sprite6",
-        "lib_sprite7",
-        "lib_sprite8"
+        "lib_sprite6"
       ],
       "failures": [],
       "cases": 12,
@@ -1726,9 +1791,10 @@
         "anim1",
         "lib_sprite8"
       ],
-      "missing": [
-        "lib_sprite8"
+      "aliased": [
+        "lib_sprite8->sprite_8"
       ],
+      "missing": [],
       "failures": [],
       "cases": 12,
       "longestMs": 2450,
@@ -1775,6 +1841,7 @@
         "sprite_28",
         "sprite_42"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -1804,9 +1871,10 @@
         "lib_sprite60",
         "shoot"
       ],
-      "missing": [
-        "lib_sprite60"
+      "aliased": [
+        "lib_sprite60->sprite_60"
       ],
+      "missing": [],
       "failures": [],
       "cases": 12,
       "longestMs": 4350,
@@ -1837,6 +1905,7 @@
       "requested": [
         "shoot"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -1886,9 +1955,10 @@
         "move",
         "shoot"
       ],
-      "missing": [
-        "lib_sprite10"
+      "aliased": [
+        "lib_sprite10->sprite_10"
       ],
+      "missing": [],
       "failures": [],
       "cases": 12,
       "longestMs": 2900,
@@ -1921,12 +1991,14 @@
         "lib_sprite4",
         "lib_sprite9"
       ],
+      "aliased": [
+        "lib_sprite13->sprite_13",
+        "lib_sprite4->sprite_4"
+      ],
       "missing": [
         "lib_sprite10",
         "lib_sprite12",
-        "lib_sprite13",
         "lib_sprite3",
-        "lib_sprite4",
         "lib_sprite9"
       ],
       "failures": [],
@@ -1959,11 +2031,13 @@
         "lib_sprite3",
         "lib_sprite4"
       ],
+      "aliased": [
+        "lib_sprite19->sprite_19",
+        "lib_sprite4->sprite_4"
+      ],
       "missing": [
         "lib_sprite18",
-        "lib_sprite19",
-        "lib_sprite3",
-        "lib_sprite4"
+        "lib_sprite3"
       ],
       "failures": [],
       "cases": 12,
@@ -2013,13 +2087,14 @@
         "lib_sprite25",
         "shoot"
       ],
-      "missing": [
-        "lib_sprite18",
-        "lib_sprite19",
-        "lib_sprite20",
-        "lib_sprite24",
-        "lib_sprite25"
+      "aliased": [
+        "lib_sprite18->sprite_18",
+        "lib_sprite19->sprite_19",
+        "lib_sprite20->sprite_20",
+        "lib_sprite24->sprite_24",
+        "lib_sprite25->sprite_25"
       ],
+      "missing": [],
       "failures": [],
       "cases": 12,
       "longestMs": 1667,
@@ -2047,9 +2122,10 @@
         "anim1",
         "lib_sprite21"
       ],
-      "missing": [
-        "lib_sprite21"
+      "aliased": [
+        "lib_sprite21->sprite_21"
       ],
+      "missing": [],
       "failures": [],
       "cases": 12,
       "longestMs": 2200,
@@ -2068,6 +2144,7 @@
       "requested": [
         "anim1"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -2087,6 +2164,7 @@
       "requested": [
         "anim1"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -2141,6 +2219,7 @@
         "depth_6",
         "sprite_9"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -2190,9 +2269,10 @@
         "move",
         "shoot"
       ],
-      "missing": [
-        "lib_sprite9"
+      "aliased": [
+        "lib_sprite9->sprite_9"
       ],
+      "missing": [],
       "failures": [],
       "cases": 12,
       "longestMs": 2900,
@@ -2231,11 +2311,12 @@
         "lib_sprite38",
         "shoot"
       ],
-      "missing": [
-        "lib_sprite36",
-        "lib_sprite37",
-        "lib_sprite38"
+      "aliased": [
+        "lib_sprite36->sprite_36",
+        "lib_sprite37->sprite_37",
+        "lib_sprite38->sprite_38"
       ],
+      "missing": [],
       "failures": [],
       "cases": 12,
       "longestMs": 1367,
@@ -2264,10 +2345,11 @@
         "lib_sprite6",
         "lib_sprite7"
       ],
-      "missing": [
-        "lib_sprite6",
-        "lib_sprite7"
+      "aliased": [
+        "lib_sprite6->sprite_6",
+        "lib_sprite7->sprite_7"
       ],
+      "missing": [],
       "failures": [],
       "cases": 12,
       "longestMs": 1300,
@@ -2293,8 +2375,10 @@
         "lib_sprite8",
         "lib_sprite9"
       ],
+      "aliased": [
+        "lib_sprite10->sprite_10"
+      ],
       "missing": [
-        "lib_sprite10",
         "lib_sprite8",
         "lib_sprite9"
       ],
@@ -2330,9 +2414,10 @@
         "lib_sprite9",
         "sprite_22"
       ],
-      "missing": [
-        "lib_sprite9"
+      "aliased": [
+        "lib_sprite9->sprite_9"
       ],
+      "missing": [],
       "failures": [],
       "cases": 12,
       "longestMs": 2000,
@@ -2388,10 +2473,12 @@
         "sprite_29",
         "sprite_33"
       ],
+      "aliased": [
+        "lib_sprite31->sprite_31",
+        "lib_sprite32->sprite_32"
+      ],
       "missing": [
-        "lib_sprite30",
-        "lib_sprite31",
-        "lib_sprite32"
+        "lib_sprite30"
       ],
       "failures": [],
       "cases": 12,
@@ -2427,6 +2514,7 @@
       "requested": [
         "anim1"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -2475,9 +2563,10 @@
         "sprite_8",
         "sprite_9"
       ],
-      "missing": [
-        "lib_sprite11"
+      "aliased": [
+        "lib_sprite11->sprite_11"
       ],
+      "missing": [],
       "failures": [],
       "cases": 12,
       "longestMs": 3050,
@@ -2506,9 +2595,11 @@
         "lib_sprite7",
         "lib_sprite8"
       ],
+      "aliased": [
+        "lib_sprite8->sprite_8"
+      ],
       "missing": [
-        "lib_sprite7",
-        "lib_sprite8"
+        "lib_sprite7"
       ],
       "failures": [],
       "cases": 12,
@@ -2544,6 +2635,7 @@
       "requested": [
         "anim1"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -2575,6 +2667,7 @@
       "requested": [
         "anim1"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -2606,6 +2699,7 @@
       "requested": [
         "anim1"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -2637,6 +2731,7 @@
       "requested": [
         "anim1"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -2666,9 +2761,11 @@
         "lib_sprite15",
         "lib_sprite21"
       ],
+      "aliased": [
+        "lib_sprite21->sprite_21"
+      ],
       "missing": [
-        "lib_sprite15",
-        "lib_sprite21"
+        "lib_sprite15"
       ],
       "failures": [],
       "cases": 12,
@@ -2706,9 +2803,10 @@
         "sprite_17",
         "sprite_24"
       ],
-      "missing": [
-        "lib_sprite16"
+      "aliased": [
+        "lib_sprite16->sprite_16"
       ],
+      "missing": [],
       "failures": [],
       "cases": 12,
       "longestMs": 3000,
@@ -2746,10 +2844,11 @@
         "sprite_24",
         "sprite_6"
       ],
-      "missing": [
-        "lib_sprite17",
-        "lib_sprite23"
+      "aliased": [
+        "lib_sprite17->sprite_17",
+        "lib_sprite23->sprite_23"
       ],
+      "missing": [],
       "failures": [],
       "cases": 12,
       "longestMs": 2700,
@@ -2784,10 +2883,12 @@
         "lib_sprite29",
         "lib_sprite5"
       ],
+      "aliased": [
+        "lib_sprite23->sprite_23",
+        "lib_sprite28->sprite_28",
+        "lib_sprite29->sprite_29"
+      ],
       "missing": [
-        "lib_sprite23",
-        "lib_sprite28",
-        "lib_sprite29",
         "lib_sprite5"
       ],
       "failures": [],
@@ -2822,12 +2923,14 @@
         "lib_sprite4",
         "lib_sprite9"
       ],
+      "aliased": [
+        "lib_sprite13->sprite_13",
+        "lib_sprite4->sprite_4"
+      ],
       "missing": [
         "lib_sprite10",
         "lib_sprite12",
-        "lib_sprite13",
         "lib_sprite3",
-        "lib_sprite4",
         "lib_sprite9"
       ],
       "failures": [],
@@ -2858,6 +2961,7 @@
         "sprite_7",
         "sprite_9"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -2886,9 +2990,10 @@
         "anim1",
         "lib_sprite8"
       ],
-      "missing": [
-        "lib_sprite8"
+      "aliased": [
+        "lib_sprite8->sprite_8"
       ],
+      "missing": [],
       "failures": [],
       "cases": 12,
       "longestMs": 3600,
@@ -2916,10 +3021,11 @@
         "lib_sprite10",
         "lib_sprite11"
       ],
-      "missing": [
-        "lib_sprite10",
-        "lib_sprite11"
+      "aliased": [
+        "lib_sprite10->sprite_10",
+        "lib_sprite11->sprite_11"
       ],
+      "missing": [],
       "failures": [],
       "cases": 12,
       "longestMs": 3150,
@@ -2944,9 +3050,11 @@
         "lib_sprite4",
         "lib_sprite6"
       ],
+      "aliased": [
+        "lib_sprite6->sprite_6"
+      ],
       "missing": [
-        "lib_sprite4",
-        "lib_sprite6"
+        "lib_sprite4"
       ],
       "failures": [],
       "cases": 12,
@@ -2990,6 +3098,7 @@
       "requested": [
         "anim1"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -3009,6 +3118,7 @@
       "requested": [
         "anim1"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -3042,9 +3152,10 @@
         "lib_pierres",
         "lib_sprite15"
       ],
-      "missing": [
-        "lib_sprite15"
+      "aliased": [
+        "lib_sprite15->sprite_15"
       ],
+      "missing": [],
       "failures": [],
       "cases": 12,
       "longestMs": 2950,
@@ -3077,9 +3188,10 @@
         "lib_sprite6",
         "shoot"
       ],
-      "missing": [
-        "lib_sprite6"
+      "aliased": [
+        "lib_sprite6->sprite_6"
       ],
+      "missing": [],
       "failures": [],
       "cases": 12,
       "longestMs": 3450,
@@ -3098,6 +3210,7 @@
       "requested": [
         "anim1"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -3133,6 +3246,7 @@
       "requested": [
         "anim1"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -3168,6 +3282,7 @@
       "requested": [
         "duplicate"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -3187,6 +3302,7 @@
       "requested": [
         "anim1"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -3206,6 +3322,7 @@
       "requested": [
         "shoot"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -3230,9 +3347,10 @@
         "lib_sprite8",
         "shoot"
       ],
-      "missing": [
-        "lib_sprite8"
+      "aliased": [
+        "lib_sprite8->sprite_8"
       ],
+      "missing": [],
       "failures": [],
       "cases": 12,
       "longestMs": 1500,
@@ -3256,6 +3374,7 @@
         "lib_fumee",
         "lib_sprite6"
       ],
+      "aliased": [],
       "missing": [
         "lib_sprite6"
       ],
@@ -3287,10 +3406,11 @@
         "lib_sprite7",
         "lib_sprite8"
       ],
-      "missing": [
-        "lib_sprite7",
-        "lib_sprite8"
+      "aliased": [
+        "lib_sprite7->sprite_7",
+        "lib_sprite8->sprite_8"
       ],
+      "missing": [],
       "failures": [],
       "cases": 12,
       "longestMs": 1200,
@@ -3323,12 +3443,14 @@
         "lib_sprite4",
         "lib_sprite9"
       ],
+      "aliased": [
+        "lib_sprite13->sprite_13",
+        "lib_sprite4->sprite_4"
+      ],
       "missing": [
         "lib_sprite10",
         "lib_sprite12",
-        "lib_sprite13",
         "lib_sprite3",
-        "lib_sprite4",
         "lib_sprite9"
       ],
       "failures": [],
@@ -3375,6 +3497,7 @@
         "lib_fumee2",
         "shoot"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -3418,6 +3541,7 @@
         "lib_sprite19",
         "shoot"
       ],
+      "aliased": [],
       "missing": [
         "lib_sprite18",
         "lib_sprite19"
@@ -3453,12 +3577,14 @@
         "lib_sprite3",
         "lib_sprite4"
       ],
+      "aliased": [
+        "lib_sprite14->sprite_14",
+        "lib_sprite4->sprite_4"
+      ],
       "missing": [
         "lib_sprite10",
         "lib_sprite13",
-        "lib_sprite14",
-        "lib_sprite3",
-        "lib_sprite4"
+        "lib_sprite3"
       ],
       "failures": [],
       "cases": 12,
@@ -3478,6 +3604,7 @@
       "requested": [
         "shoot"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -3517,6 +3644,7 @@
       "requested": [
         "lib_cercle"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -3536,6 +3664,7 @@
       "requested": [
         "shoot"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -3569,6 +3698,7 @@
         "sprite_25",
         "sprite_29"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -3607,9 +3737,10 @@
         "sprite_30",
         "sprite_35"
       ],
-      "missing": [
-        "lib_sprite27"
+      "aliased": [
+        "lib_sprite27->sprite_27"
       ],
+      "missing": [],
       "failures": [],
       "cases": 12,
       "longestMs": 2100,
@@ -3628,6 +3759,7 @@
       "requested": [
         "anim1"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -3664,9 +3796,10 @@
         "anim1",
         "lib_sprite6"
       ],
-      "missing": [
-        "lib_sprite6"
+      "aliased": [
+        "lib_sprite6->sprite_6"
       ],
+      "missing": [],
       "failures": [],
       "cases": 12,
       "longestMs": 2800,
@@ -3685,6 +3818,7 @@
       "requested": [
         "sprite_20"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -3705,6 +3839,7 @@
         "anim1",
         "lib_sprite21"
       ],
+      "aliased": [],
       "missing": [
         "lib_sprite21"
       ],
@@ -3746,6 +3881,7 @@
         "sprite_20",
         "sprite_21"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -3779,6 +3915,7 @@
         "sprite_14",
         "sprite_15"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -3810,6 +3947,7 @@
       "requested": [
         "anim1"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -3838,6 +3976,7 @@
         "sprite_17",
         "sprite_18"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -3889,9 +4028,10 @@
         "sprite_25",
         "sprite_6"
       ],
-      "missing": [
-        "lib_sprite14"
+      "aliased": [
+        "lib_sprite14->sprite_14"
       ],
+      "missing": [],
       "failures": [],
       "cases": 12,
       "longestMs": 2000,
@@ -3923,6 +4063,7 @@
         "sprite_11",
         "sprite_17"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -3959,6 +4100,7 @@
         "lib_frag",
         "lib_sol"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -3992,9 +4134,10 @@
         "lib_sprite4",
         "sprite_7"
       ],
-      "missing": [
-        "lib_sprite4"
+      "aliased": [
+        "lib_sprite4->sprite_4"
       ],
+      "missing": [],
       "failures": [],
       "cases": 12,
       "longestMs": 1250,
@@ -4014,6 +4157,7 @@
         "lib_sprite7",
         "sprite_6"
       ],
+      "aliased": [],
       "missing": [
         "lib_sprite7"
       ],
@@ -4040,6 +4184,7 @@
         "sprite_18",
         "sprite_20"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -4073,6 +4218,7 @@
         "move",
         "shoot"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -4108,15 +4254,17 @@
         "lib_sprite4",
         "lib_sprite5"
       ],
+      "aliased": [
+        "lib_sprite21->sprite_21",
+        "lib_sprite5->sprite_5"
+      ],
       "missing": [
         "lib_sprite16",
         "lib_sprite17",
         "lib_sprite18",
         "lib_sprite19",
         "lib_sprite20",
-        "lib_sprite21",
-        "lib_sprite4",
-        "lib_sprite5"
+        "lib_sprite4"
       ],
       "failures": [],
       "cases": 12,
@@ -4154,6 +4302,7 @@
         "sprite_8",
         "sprite_9"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -4173,6 +4322,7 @@
       "requested": [
         "anim1"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -4197,6 +4347,7 @@
         "sprite_2",
         "sprite_4"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -4233,6 +4384,7 @@
         "move",
         "shoot"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -4268,6 +4420,7 @@
       "requested": [
         "sprite_39"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -4306,6 +4459,7 @@
         "lib_sprite47",
         "shoot"
       ],
+      "aliased": [],
       "missing": [
         "lib_sprite46",
         "lib_sprite47"
@@ -4344,6 +4498,7 @@
       "requested": [
         "shoot"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -4379,6 +4534,7 @@
       "requested": [
         "shoot"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -4414,6 +4570,7 @@
       "requested": [
         "shoot"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -4449,6 +4606,7 @@
       "requested": [
         "shoot"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -4490,6 +4648,7 @@
         "sprite_29",
         "sprite_30"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -4509,6 +4668,7 @@
       "requested": [
         "sprite_36"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -4541,6 +4701,7 @@
         "sprite_6",
         "sprite_7"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -4584,6 +4745,7 @@
       "requested": [
         "duplicate"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -4618,10 +4780,12 @@
         "lib_sprite26",
         "lib_sprite27"
       ],
+      "aliased": [
+        "lib_sprite26->sprite_26",
+        "lib_sprite27->sprite_27"
+      ],
       "missing": [
-        "lib_sprite25",
-        "lib_sprite26",
-        "lib_sprite27"
+        "lib_sprite25"
       ],
       "failures": [],
       "cases": 12,
@@ -4658,9 +4822,10 @@
         "anim1",
         "lib_sprite16"
       ],
-      "missing": [
-        "lib_sprite16"
+      "aliased": [
+        "lib_sprite16->sprite_16"
       ],
+      "missing": [],
       "failures": [],
       "cases": 12,
       "longestMs": 2950,
@@ -4679,6 +4844,7 @@
       "requested": [
         "anim1"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -4794,6 +4960,7 @@
       "requested": [
         "staticR"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -4817,6 +4984,7 @@
       "requested": [
         "lib_duplic"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -4836,6 +5004,7 @@
       "requested": [
         "anim1"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -4905,6 +5074,7 @@
         "depth_4",
         "sprite_17"
       ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,

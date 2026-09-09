@@ -60,6 +60,10 @@ export interface LoadedSpell {
 
 class VelloSpellTextureProvider implements SpellTextureProvider {
   private readonly anims = new Map<string, SpellAnimation | null>();
+  /** Requested symbol name → the key that actually exists, or null. */
+  private readonly resolved = new Map<string, string | null>();
+  /** Symbols already reported missing, so the log stays readable. */
+  private readonly warned = new Set<string>();
 
   constructor(
     private readonly spellId: number,
@@ -67,6 +71,45 @@ class VelloSpellTextureProvider implements SpellTextureProvider {
     private readonly vello: SpellVelloRenderer,
     private readonly resolution: number
   ) {}
+
+  /**
+   * The exporter emits animated child sprites as `sprite_<charId>`
+   * (ExtractSpellAnimsCommand::374) but clip-event ones as
+   * `lib_sprite<charId>` (:838), and the generated modules ask for the
+   * `lib_` form in both cases. Accept either spelling rather than fail on
+   * a naming collision that is purely an artefact of the pipeline.
+   */
+  private resolveSymbol(name: string): string | null {
+    const memo = this.resolved.get(name);
+    if (memo !== undefined) {
+      return memo;
+    }
+    let hit: string | null = null;
+    if (name in this.manifest.animations) {
+      hit = name;
+    } else {
+      const numbered = /^lib_sprite(\d+)$/.exec(name);
+      const alt = numbered
+        ? `sprite_${numbered[1]}`
+        : name.startsWith("lib_")
+          ? name.slice(4)
+          : `lib_${name}`;
+      if (alt in this.manifest.animations) {
+        hit = alt;
+      }
+    }
+    this.resolved.set(name, hit);
+    return hit;
+  }
+
+  /** Logs a given missing symbol once per provider instance. */
+  private warnMissing(name: string, reason: string): void {
+    if (this.warned.has(name)) {
+      return;
+    }
+    this.warned.add(name);
+    log.warn(`spell ${this.spellId}: ${reason} (${name}) — visuel dégradé`);
+  }
 
   getTexture(name: string): Texture {
     const idx = name.lastIndexOf("_");
@@ -84,27 +127,30 @@ class VelloSpellTextureProvider implements SpellTextureProvider {
     throw new Error(`Visuel ${this.spellId} : texture ${name} introuvable.`);
   }
 
+  /**
+   * Never throws. A symbol the compiled .dofasset does not carry yields an
+   * empty frame list: a SpellClip with zero frames still runs its
+   * frameScripts, so the spell plays its main animation and merely loses
+   * that layer. Throwing here used to abort the whole visual — one absent
+   * particle sprite meant the player saw nothing at all.
+   */
   getFrames(prefix: string): Texture[] {
-    const cached = this.anims.get(prefix);
+    const key = this.resolveSymbol(prefix);
+    if (key === null) {
+      this.warnMissing(prefix, "symbole absent du fichier compilé");
+      return [];
+    }
+    const cached = this.anims.get(key);
     if (cached !== undefined) {
       return cached?.frames ?? [];
     }
-    if (!(prefix in this.manifest.animations)) {
-      throw new Error(
-        `Visuel ${this.spellId} : symbole ${prefix} absent du fichier compilé.`
-      );
-    }
-    const anim = this.vello.buildAnimation(
-      this.spellId,
-      prefix,
-      this.resolution
-    );
+    const anim = this.vello.buildAnimation(this.spellId, key, this.resolution);
     if (!anim?.frames.length) {
-      throw new Error(
-        `Visuel ${this.spellId} : conversion vide pour ${prefix}.`
-      );
+      this.anims.set(key, null);
+      this.warnMissing(prefix, "conversion vide");
+      return [];
     }
-    this.anims.set(prefix, anim);
+    this.anims.set(key, anim);
     return anim.frames;
   }
 
@@ -113,21 +159,20 @@ class VelloSpellTextureProvider implements SpellTextureProvider {
     if (idx <= 0) {
       return false;
     }
-    const animName = name.slice(0, idx);
-    return animName in this.manifest.animations;
+    return this.resolveSymbol(name.slice(0, idx)) !== null;
   }
 
   getAnimationInfo(name: string): SpellAnimationInfo | null {
-    // Container-only symbols are intentionally absent from the texture table.
-    // Only getFrames/getTexture request an actual drawing and must fail loudly.
-    if (!(name in this.manifest.animations)) {
+    // Container-only symbols are intentionally absent from the texture
+    // table, so an unknown name is not an error here.
+    const key = this.resolveSymbol(name);
+    if (key === null) {
       return null;
     }
-    const cached = this.anims.get(name);
-    if (cached === undefined) {
+    if (!this.anims.has(key)) {
       this.getFrames(name);
     }
-    const anim = this.anims.get(name);
+    const anim = this.anims.get(key);
     if (!anim) {
       return null;
     }

@@ -226,6 +226,17 @@ spells-build:
     @{{pipeline}} compile spells
     @{{pipeline}} publish spells
 
+# Check every published spell .dofasset against its generated module.
+spells-coverage:
+    # Reports missing symbols, unreadable animation tables, and refs that
+    # only resolve through the lib_/sprite_ alias. Ratchets against
+    # doc/combat/spell-symbol-baseline.json — exits 1 if a count grows.
+    @cd {{ root }} && bun apps/electrobun/scripts/audit-spell-animations.ts --all-graphics
+
+# Narrow spell audit (class-catalogue graphics) — writes animation-audit.json.
+spells-audit:
+    @cd {{ root }} && bun apps/electrobun/scripts/audit-spell-animations.ts
+
 # Tactic-view dofassets (gfx.tactic + gfx.cell) — single-frame SVGs repackaged
 # as tile-shaped dofassets so the client's atlas loader can pull them.
 tactic-build:

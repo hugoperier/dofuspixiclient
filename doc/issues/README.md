@@ -91,14 +91,14 @@ causes racines et les notes de méthode, mais plus le détail par entrée.
 
 _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 
-**167 entrées**, dont **163 encore ouvertes**.
+**168 entrées**, dont **164 encore ouvertes**.
 
 ## Par gravité
 
 | Gravité | Restantes | Total |
 |---|---|---|
 | P0 — bloque la session (crash, impossible d'avancer) | 4 | 4 |
-| P1 — fonctionnalité cassée ou absente sur un flux principal | 69 | 69 |
+| P1 — fonctionnalité cassée ou absente sur un flux principal | 70 | 70 |
 | P2 — comportement divergent du 1.29 canonique, contournable | 62 | 62 |
 | P3 — finition, confort, cosmétique | 28 | 29 |
 | Sans gravité — vérifications sans défaut | 0 | 3 |
@@ -110,7 +110,7 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | `open` — observé, non reproduit méthodiquement | 38 |
 | `confirmed` — reproduit, preuve au dossier | 17 |
 | `in-progress` — correctif engagé | 13 |
-| `fixed` — correctif livré, reste à revérifier manette en main | 95 |
+| `fixed` — correctif livré, reste à revérifier manette en main | 96 |
 | `closed` — vérifié, clos | 3 |
 | `wontfix` — écarté, avec la raison en fiche | 1 |
 
@@ -123,7 +123,7 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [`camera-zoom/`](camera-zoom/) | 3 | 3 |
 | [`chat/`](chat/) | 5 | 5 |
 | [`exchange/`](exchange/) | 23 | 23 |
-| [`fight/`](fight/) | 14 | 14 |
+| [`fight/`](fight/) | 15 | 15 |
 | [`hud-banner/`](hud-banner/) | 9 | 9 |
 | [`hud-panels/`](hud-panels/) | 19 | 20 |
 | [`input/`](input/) | 5 | 6 |
@@ -218,6 +218,7 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [QA-156](server-runtime/QA-156-redemarrage-de-gamed-deconnecte-les-clients.md) | P1 | server-runtime | bug | fixed | Un redémarrage de gamed déconnecte les clients, alors que le handoff existe pour l'éviter |
 | [QA-166](worldmap/QA-166-carte-du-monde-morte-et-lente-a-ouvrir.md) | P1 | worldmap | bug | fixed | Carte du monde : aucune entrée ne l'atteint, et 1 à 2 s pour l'ouvrir |
 | [QA-167](input/QA-167-clics-de-la-carte-et-de-la-minimap-atteignent-le-jeu.md) | P1 | input | bug | fixed | Clics et molette de la carte du monde et de la minimap atteignent le jeu dessous |
+| [QA-168](fight/QA-168-animations-de-sorts-absentes-en-combat.md) | P1 | fight | bug | fixed | L'animation de beaucoup de sorts n'est pas affichée en combat |
 
 ## P2 — comportement divergent du 1.29 canonique, contournable
 
