@@ -9,7 +9,7 @@ session: 9
 opened: 2026-09-09
 closed:
 fixed_in:
-related: [QA-168]
+related: [QA-168, QA-171]
 files:
   - apps/electrobun/src/game/game-client.ts
   - apps/electrobun/src/game/game-client.combat.spec.ts
@@ -61,7 +61,7 @@ place (8), Bruit-qui-fait-fuir (783) et retour aux positions initiales (784).
 ## Vérification
 
 ```bash
-cd apps/electrobun/src && bun test game/game-client.combat.spec.ts
+cd apps/electrobun && bun test src/game/game-client.combat.spec.ts
 ```
 
 `a sprite-position frame moves the sprite, not just the fight store` : la
@@ -71,6 +71,5 @@ trame `GA;4` doit atteindre le renderer des combattants, jamais celui de
 À rejouer à la main : Téléportation (Xelor), une poussée et un échange de
 place, en vérifiant que le sprite arrive bien sur la cellule surlignée.
 
-`bun test` depuis `apps/electrobun` ne rend pas la main sur une seule ligne :
-le lanceur épuise les descripteurs de fichiers en parcourant `public/assets`.
-Passer le chemin depuis `apps/electrobun/src` contourne.
+`bun test` depuis `apps/electrobun` ne rendait pas la main sur une seule
+ligne au moment où ce correctif a été écrit ; c'est réglé par QA-171.
