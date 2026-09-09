@@ -4,11 +4,13 @@ import { create, fromBinary } from "@bufbuild/protobuf";
 import { DofusPathfinding } from "@dofus/grid";
 import {
   ClientMessageSchema,
+  DofusMessageSchema,
   GameJoinSchema,
   GameTurnStartSchema,
   SpellDataSchema,
 } from "@dofus/proto";
 
+import type { MessageHandler } from "./network/message-handler";
 import type { Battlefield } from "./scene";
 import { GameClient } from "./game-client";
 import { spellCastActor } from "./machines/spell-cast.machine";
@@ -16,10 +18,20 @@ import { FakeWebSocket, installFakeWebSocket } from "./network/fake-websocket";
 import { fightActor } from "./stores/fight-store";
 import { applySpellList } from "./stores/spells-store";
 
+const tick = async () => {
+  for (let i = 0; i < 20; i++) {
+    await Promise.resolve();
+  }
+};
+
 let client: GameClient;
 let restore: () => void;
 let click: (cell: number) => void;
 const highlights = new Set<string>();
+/** Sprite moves that reached the renderer holding the fighters. */
+const teleports: { id: number; cell: number }[] = [];
+/** Sprite moves that went to the empty FightUI renderer, i.e. nowhere. */
+const strayTeleports: { id: number; cell: number }[] = [];
 beforeEach(() => {
   restore = installFakeWebSocket();
   fightActor.send({ type: "LEAVE" });
@@ -57,6 +69,17 @@ beforeEach(() => {
         cells.length
           ? highlights.add("spell-zone")
           : highlights.delete("spell-zone"),
+      // FightUI owns a PlayerRenderer that nothing ever populates, so a
+      // sprite move sent here is dropped on the floor. Recorded rather
+      // than omitted so the routing is asserted, not assumed.
+      teleportPlayer: (id: number, cell: number) => {
+        strayTeleports.push({ id, cell });
+      },
+    }),
+    getWorldActorRenderer: () => ({
+      teleportPlayer: (id: number, cell: number) => {
+        teleports.push({ id, cell });
+      },
     }),
   } as unknown as Battlefield);
   const map = Reflect.get(client, "mapHandler");
@@ -119,6 +142,8 @@ afterEach(() => {
   spellCastActor.send({ type: "RESET" });
   applySpellList([]);
   highlights.clear();
+  teleports.splice(0);
+  strayTeleports.splice(0);
   restore();
 });
 
@@ -153,4 +178,30 @@ test("changing the prepared spell while busy never queues a cast or a movement",
   ).toMatchObject([
     { case: "gameAction", value: { actionType: 300, params: "2;215;6" } },
   ]);
+});
+
+test("a sprite-position frame moves the sprite, not just the fight store", async () => {
+  const messages = Reflect.get(client, "messageHandler") as MessageHandler;
+  // ACTION_SPRITE_POSITION (4) — what the server emits for every
+  // teleport, push, pull, swap and rollback.
+  messages.handle(
+    create(DofusMessageSchema, {
+      payload: {
+        case: "gameAction",
+        value: {
+          actionType: 4,
+          sequenceId: 4,
+          spriteId: "1",
+          actionData: {
+            case: "spritePosition",
+            value: { spriteId: "1", cellId: 245 },
+          },
+        },
+      },
+    })
+  );
+  await tick();
+  expect(teleports).toEqual([{ id: 1, cell: 245 }]);
+  expect(strayTeleports).toEqual([]);
+  expect(fightActor.getSnapshot().context.fighters.get("1")?.cell).toBe(245);
 });

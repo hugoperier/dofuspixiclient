@@ -672,9 +672,16 @@ export class GameClient {
         ui.showPlacementCells(payload.team1Cells, payload.team2Cells);
       },
       onTeleport: (payload) => {
+        // Same routing trap as onDirectionChange below: the fighters live
+        // in the world-actor PlayerRenderer, never in the FightUI one,
+        // which stays empty. Going through FightUI made every
+        // ACTION_SPRITE_POSITION a silent no-op — the fight store moved
+        // the fighter to its new cell while the sprite stayed behind on
+        // the old one, so no teleport, push, pull, swap or rollback
+        // moved anything on screen.
         this.presentation.enqueue(() => {
           this.battlefield
-            ?.getFightUI()
+            ?.getWorldActorRenderer()
             ?.teleportPlayer(Number(payload.spriteId), payload.cellId);
           this.refreshOccupancyAndHover();
         });
