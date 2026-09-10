@@ -161,6 +161,14 @@ export class MoveAckHandler {
     const group = this.mapMonsters.findGroupAtCell(mapId, cellId);
 
     if (!group) {
+      // The overwhelmingly common case — every ordinary step lands here —
+      // so it stays at debug. It is worth a line all the same: a click on
+      // a monster that walks the player somewhere and does nothing else
+      // is indistinguishable from a dropped frame without it, and this
+      // was exactly the reading that was missing for QA-175.
+      this.logger.debug(
+        `PvM trigger: no group at landing cell mapId=${mapId} cell=${cellId}`
+      );
       return false;
     }
 

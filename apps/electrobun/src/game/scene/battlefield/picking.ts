@@ -156,11 +156,13 @@ export class BattlefieldPicking {
   // 1.29 (`TextWithTitleOverHead.STARS_COLORS`).
   private readonly pickableIdToMonsterGroupBonus = new Map<number, number>();
   // pickableId → list of player IDs that visually belong to the same
-  // monster group (leader + decorative siblings). On hover/un-hover
-  // the picking handler iterates the list and highlights every member
-  // so the whole stack reads as ONE unit. Without this, hovering one
+  // monster group, **leader first**, then the decorative siblings —
+  // the order `world-actors.ts` builds it in. On hover/un-hover the
+  // picking handler iterates the list and highlights every member so
+  // the whole stack reads as ONE unit. Without this, hovering one
   // sibling would only tint that one sprite while the rest stayed
-  // dark — exactly the bug the user reported.
+  // dark — exactly the bug the user reported. `onObjectClick` reads
+  // element 0 to route a click on any member to the group's cell.
   private readonly pickableIdToGroupSpriteIds = new Map<number, number[]>();
   /** cellId → the layer-2 sprite standing on it, for `GDF`. */
   private readonly cellIdToTileSprite = new Map<number, Sprite>();
@@ -755,7 +757,18 @@ export class BattlefieldPicking {
       const isMonsterGroup =
         this.pickableIdToMonsterGroup.has(result.object.id) || playerId < 0;
       if (isMonsterGroup) {
-        const cellId = this.deps.worldActorRenderer()?.getPlayerCell(playerId);
+        // The sprite under the cursor is often NOT the one the server
+        // knows about: every non-leader member is a decorative linked
+        // child standing on a ring cell the client picked itself
+        // (QA-094). A walk onto that cell trips nothing — the server
+        // starts the fight only when the landing cell equals the
+        // group's own cell (`findGroupAtCell`, strict equality). So
+        // walk the click up to the leader, exactly as canonical 1.29
+        // follows `linkedParent` in `DofusBattlefield.onSpriteRelease`.
+        const leaderId =
+          this.pickableIdToGroupSpriteIds.get(result.object.id)?.[0] ??
+          playerId;
+        const cellId = this.deps.worldActorRenderer()?.getPlayerCell(leaderId);
         if (cellId !== undefined) {
           this.deps.onCellPickThrough?.(cellId);
         }

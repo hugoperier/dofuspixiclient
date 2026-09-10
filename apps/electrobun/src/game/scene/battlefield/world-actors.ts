@@ -81,11 +81,14 @@ export interface BattlefieldWorldActorsDeps {
     monsterGroupBonus?: number,
     /**
      * Player IDs of every sprite that visually belongs to the same
-     * monster group as `playerId` (leader + decorative siblings).
-     * When the user rolls over ANY of these sprites the picking
-     * handler highlights ALL of them at once — that's how a group
-     * looks like a single hoverable unit instead of a pile of
-     * individually-pickable sprites.
+     * monster group as `playerId`, **leader first**, then the
+     * decorative siblings. When the user rolls over ANY of these
+     * sprites the picking handler highlights ALL of them at once —
+     * that's how a group looks like a single hoverable unit instead
+     * of a pile of individually-pickable sprites. The order matters
+     * beyond hover: a click on any member is routed to element 0's
+     * cell, because only the leader stands where the server put the
+     * group and only that cell starts the fight.
      */
     groupSpriteIds?: number[],
     /** SPRITE_TYPE_NPC only — keys the action bubble's lang lookup. */
