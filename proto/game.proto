@@ -541,11 +541,19 @@ message ActionAPChange {
   string sprite_id = 1;
   int32  delta = 2;       // Can be negative
   int32  used = 3;        // Amount used (for AP spent)
+  // True when the loss is the price the actor paid for its own action —
+  // a spell's AP cost, a tackle. False for AP a spell effect took from a
+  // target. The two are indistinguishable from the payload otherwise:
+  // both carry attacker == target when a caster hits itself.
+  bool   cost = 4;
 }
 
 message ActionMPChange {
   string sprite_id = 1;
   int32  delta = 2;
+  // See ActionAPChange.cost — a walked step or a tackle, not a spell's
+  // theft of a target's MP.
+  bool   cost = 3;
 }
 
 message ActionDeath {
@@ -591,6 +599,10 @@ message ActionSpellLaunch {
   string animation = 6;
   int32  custom_sprite = 7;    // -1 = default
   bool   front_of_sprite = 8;
+  // Localized spell name, resolved server-side. The client can only name
+  // the spells its own SpellList carries, so without this every monster
+  // cast reads as its bare id in the combat log.
+  string name = 9;
 }
 
 // ActionCriticalHit (GA;301;<casterId>;<spellIdOrZero>)
