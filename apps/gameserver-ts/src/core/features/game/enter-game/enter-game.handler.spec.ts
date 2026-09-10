@@ -76,7 +76,8 @@ describe("EnterGameHandler — job tool snapshot", () => {
         },
         sendAll: async () => {},
       } as never,
-      { sendAll: async () => {} } as never
+      { sendAll: async () => {} } as never,
+      { sendWelcome: async () => {} } as never
     );
 
     await handler.handle(

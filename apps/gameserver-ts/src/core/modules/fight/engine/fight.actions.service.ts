@@ -26,6 +26,7 @@ import { ActiveState } from "@modules/fight/core/fight.active-state";
 import { EffectRegistry } from "@modules/fight/effects/fight.effect-registry";
 import { Characteristic, FighterKind } from "@modules/fight/fight.types";
 import { FightRegistryService } from "@modules/fight/registry/fight.registry";
+import { LangsService } from "@modules/langs/langs.service";
 import { SpellsService } from "@modules/spells/spells.service";
 import { Injectable } from "@nestjs/common";
 import { OnEvent } from "@nestjs/event-emitter";
@@ -52,7 +53,8 @@ export class FightActionsService {
     spells: SpellsService,
     effects: EffectRegistry,
     private readonly emitter: FightFrameEmitter,
-    private readonly end: FightEndService
+    private readonly end: FightEndService,
+    private readonly langs: LangsService
   ) {
     this.casts = new CastSpellUseCase(
       { bySession: (session) => registry.getBySession(session) },
@@ -127,7 +129,7 @@ export class FightActionsService {
         emitter: this.emitter,
         step: (from, to) => {
           this.emitter.emitMovement(fight, fighter.id, [from, to]);
-          this.emitter.emitMPLoss(fight, fighter.id, fighter.id, 1);
+          this.emitter.emitMPLoss(fight, fighter.id, fighter.id, 1, true);
         },
         tackled: (ap, mp) => {
           this.frames.broadcast(
@@ -142,8 +144,8 @@ export class FightActionsService {
               },
             })
           );
-          this.emitter.emitAPLoss(fight, fighter.id, fighter.id, ap);
-          this.emitter.emitMPLoss(fight, fighter.id, fighter.id, mp);
+          this.emitter.emitAPLoss(fight, fighter.id, fighter.id, ap, true);
+          this.emitter.emitMPLoss(fight, fighter.id, fighter.id, mp, true);
         },
       });
       await this.complete(fight, fighter);
@@ -318,6 +320,10 @@ export class FightActionsService {
                 case: "spellLaunch",
                 value: create(ActionSpellLaunchSchema, {
                   spellId,
+                  // The viewer can only name the spells its own
+                  // SpellList carried, so a monster's cast would read
+                  // as a bare id in its combat log without this.
+                  name: this.langs.getSpellSync(spellId)?.name ?? "",
                   cellId: hidesTrap ? -1 : targetCell,
                   param3: spell.visualGfxId,
                   param4: spell.level,
@@ -332,7 +338,7 @@ export class FightActionsService {
       }
     }
     this.casts.apply(resolution);
-    this.emitter.emitAPLoss(fight, caster.id, caster.id, spell.apCost);
+    this.emitter.emitAPLoss(fight, caster.id, caster.id, spell.apCost, true);
     this.sendCooldowns(fight, caster);
     await this.complete(fight, caster);
     if (!fight.ending && failure && spell.critFailureEndsTurn) {

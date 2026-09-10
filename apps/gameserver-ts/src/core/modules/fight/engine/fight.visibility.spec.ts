@@ -4,6 +4,7 @@ import type { DofusMessage } from "@dofus/proto/server_messages_pb";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { GatewayFrameService } from "@shared/gateway-adapter/gateway-frame.service";
 
+import { LangsService } from "../../langs/langs.service";
 import { combatCatalog } from "../../spells/combat-catalog";
 import { SpellsService } from "../../spells/spells.service";
 import { ActiveState } from "../core/fight.active-state";
@@ -42,6 +43,9 @@ beforeAll(async () => {
       },
       { provide: EffectRegistry, useValue: combatRegistry() },
       { provide: FightEndService, useValue: { endFight: async () => {} } },
+      // Names the spell on the launch frame; the log text is the
+      // only thing that reads it, so an empty bundle is enough here.
+      { provide: LangsService, useValue: { getSpellSync: () => undefined } },
     ],
   }).compile();
   emitter = module.get(FightFrameEmitter);

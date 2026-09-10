@@ -49,7 +49,12 @@ export class LoginHandler {
     const session = this.sessions.get(ctx.sessionId);
 
     const addr = session?.remoteAddr;
-    await this.repo.markLoggedIn(account.id, addr && addr !== "unknown" ? addr : null);
+    const ip = addr && addr !== "unknown" ? addr : null;
+    await this.repo.markLoggedIn(account.id, ip);
+    // The history row is what enter-game reads to name the previous
+    // connection; `markLoggedIn` has just overwritten the only other
+    // record of it.
+    await this.repo.recordLogin(account.id, ip);
 
     // One session per account. Deliberately *after* the password and ban
     // checks: evicting on a failed attempt would let anyone disconnect a player

@@ -16,6 +16,7 @@ import { GatewayFrameService } from "@shared/gateway-adapter/gateway-frame.servi
 import { SessionRegistry } from "@shared/gateway-adapter/session-registry";
 
 import type { SpellLevel } from "./fight.spell";
+import { LangsService } from "../../langs/langs.service";
 import { ActiveState } from "../core/fight.active-state";
 import { Fight } from "../core/fight.entity";
 import { Fighter } from "../core/fight.fighter";
@@ -363,6 +364,9 @@ test("Ready starts one runner; validated spells emit launch before damage and fi
           },
         },
       },
+      // Only the combat log reads the name off the launch frame, so an
+      // empty bundle is all these cases need.
+      { provide: LangsService, useValue: { getSpellSync: () => undefined } },
     ],
   }).compile();
   try {
@@ -439,6 +443,7 @@ test.each(["placement", "active"])(
             },
           },
         },
+        { provide: LangsService, useValue: { getSpellSync: () => undefined } },
       ],
     }).compile();
     try {

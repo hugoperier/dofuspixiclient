@@ -1,6 +1,9 @@
 import { describe, expect, it } from "bun:test";
 
-import { decodeEffectPattern } from "./effects-lang";
+import {
+  decodeEffectPattern,
+  patternNeedsMultipleValues,
+} from "./effects-lang";
 
 /**
  * The pattern language is Ankama's; these cases are the four shapes that
@@ -47,5 +50,39 @@ describe("decodeEffectPattern", () => {
     expect(decodeEffectPattern("Vole #1 PM", [null, null, null, null])).toBe(
       "Vole  PM"
     );
+  });
+});
+
+/**
+ * The combat log words a *live* buff, whose frame carries one value. A
+ * template that needs more than that renders with holes, so it is
+ * skipped — see `needsMultipleValues`.
+ */
+describe("patternNeedsMultipleValues", () => {
+  it("accepts a range template, whose second slot is the upper bound", () => {
+    // Dropping #2 is the fixed-value rendering, not a hole.
+    expect(patternNeedsMultipleValues("+#1{~1~2 à }#2 en intelligence")).toBe(
+      false
+    );
+    expect(patternNeedsMultipleValues("-#1{~1~2 à -}#2 PA")).toBe(false);
+  });
+
+  it("accepts a template with a single value", () => {
+    expect(patternNeedsMultipleValues("Porter un joueur")).toBe(false);
+  });
+
+  it("rejects a template whose extra slots are independent numbers", () => {
+    // Chance du Kanigrou — three unrelated numbers, one on the wire.
+    expect(
+      patternNeedsMultipleValues("#3% dommages subis x#1, sinon soigné de x#2")
+    ).toBe(true);
+  });
+
+  it("accepts the two-range template, where both extras are guarded", () => {
+    expect(
+      patternNeedsMultipleValues(
+        "Domm. finaux infligés +#1{~1~3 à }#3%, reçus +#2{~2~4 à }#4%"
+      )
+    ).toBe(false);
   });
 });

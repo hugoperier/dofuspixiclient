@@ -178,6 +178,34 @@ export function formatEffect(effect: EffectValues): FormattedEffect | null {
 }
 
 /**
+ * True when the template needs values a live buff cannot supply.
+ *
+ * Most templates read `+#1{~1~2 à }#2 en intelligence`: `#2` is the top
+ * of a range, and dropping it is exactly how a fixed value renders. But
+ * a few — "#3% dommages subis x#1, sinon soigné de x#2" — use the extra
+ * slots for independent numbers, and the effect frame carries only one.
+ * Wording those leaves holes in the sentence, so the combat log skips
+ * them. The tell is a `#n` with no conditional group naming `n`: a range
+ * always has one, an independent value never does.
+ */
+export function needsMultipleValues(effectId: number): boolean {
+  const template = templates?.get(effectId);
+
+  return template ? patternNeedsMultipleValues(template.description) : false;
+}
+
+/** `needsMultipleValues` on the raw pattern. See it for the rule. */
+export function patternNeedsMultipleValues(pattern: string): boolean {
+  return [2, 3].some((index) => {
+    if (!pattern.includes(`#${index}`)) {
+      return false;
+    }
+
+    return !new RegExp(`\\{~(?:\\d~)?${index}`).test(pattern);
+  });
+}
+
+/**
  * Ankama's `ank.utils.PatternDecoder`. See `formatEffect` above for what the
  * pattern language means.
  *

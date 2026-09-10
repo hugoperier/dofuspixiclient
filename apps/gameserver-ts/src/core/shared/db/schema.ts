@@ -53,6 +53,25 @@ export type AccountRow = Selectable<AccountsTable>;
 export type NewAccount = Insertable<AccountsTable>;
 export type AccountUpdate = Updateable<AccountsTable>;
 
+/**
+ * One row per successful login. Read only to name the *previous*
+ * connection in the welcome line — `accounts.lastLoginAt` is already the
+ * current one by the time the player reaches enter-game.
+ */
+export interface AccountLoginsTable {
+  id: Generated<string>;
+  accountId: string;
+  // Spelled out rather than `Generated<TimestampTz>`: nesting one
+  // ColumnType inside another hides the `Date` select type, and this is
+  // the one timestamp in the schema a query actually reads back.
+  at: ColumnType<Date, Date | string | undefined, never>;
+  ip: string | null;
+}
+
+export type AccountLoginRow = Selectable<AccountLoginsTable>;
+export type NewAccountLogin = Insertable<AccountLoginsTable>;
+export type AccountLoginUpdate = Updateable<AccountLoginsTable>;
+
 export interface AdminCommandAuditTable {
   requestId: string;
   actorAccountId: string;
@@ -1977,6 +1996,7 @@ export type ProvisioningRequestUpdate = Updateable<ProvisioningRequestsTable>;
 export type DB = {
   adminCommandAudit: AdminCommandAuditTable;
   accounts: AccountsTable;
+  accountLogins: AccountLoginsTable;
   gameServers: GameServersTable;
   accountServers: AccountServersTable;
   authTickets: AuthTicketsTable;

@@ -3,6 +3,12 @@ import { create } from "@bufbuild/protobuf";
 import type { Connection } from "@/game/network/connection";
 import type { MessageHandler } from "@/game/network/message-handler";
 import type { CombatPresentation } from "@/game/scene/fight/combat-presentation";
+import { combatant, emphasis, fightLog } from "@/game/chat/fight-log";
+import {
+  formatEffect,
+  loadEffectsLang,
+  needsMultipleValues,
+} from "@/game/lang/effects-lang";
 import { spellCastActor } from "@/game/machines/spell-cast.machine";
 import { encodeFightPath } from "@/game/network/path-codec";
 import {
@@ -131,6 +137,19 @@ export interface FightEventHandlers {
  * (sprite lifecycle) and `gameAction` (one-shot combat events with a
  * typed `action_data` oneof). This handler fans out those events.
  */
+/**
+ * Effects that already reach the log through their own AP/MP frame.
+ *
+ * A timed AP or MP theft broadcasts the loss *and* the buff that holds
+ * it, so wording the buff too would print the same sentence twice. The
+ * loss line is the one that survives; the fighter panel is where the
+ * remaining turns are read. Ids come from the server's `ap-mp` and
+ * `stat-boost` effect handlers.
+ */
+const SELF_ANNOUNCING_EFFECTS = new Set([
+  77, 78, 84, 101, 111, 120, 127, 128, 168, 169,
+]);
+
 export class FightHandler {
   private presentation: CombatPresentation | null = null;
   private fightId = 0;
@@ -156,6 +175,11 @@ export class FightHandler {
     private readonly getMySpriteId: () => string | null = () => null
   ) {
     this.registerHandlers(messageHandler);
+    // The combat log words buffs from the effects bundle, and the first
+    // one lands within a turn of the first cast. Warming it here — the
+    // call is idempotent and shares its promise — costs one fetch per
+    // session and spares the log its cold-start silence.
+    void loadEffectsLang();
   }
 
   setHandlers(handlers: FightEventHandlers): void {
@@ -550,8 +574,19 @@ export class FightHandler {
         });
         break;
       case "spellLaunch": {
-        appendInfoMessage(
-          `${this.fighterName(action.spriteId)} lance ${spellsStore.getSnapshot().byId.get(data.value.spellId)?.name ?? `le sort ${data.value.spellId}`}.`
+        // The frame carries the name the server resolved, which is the
+        // only one that works for a spell the viewer does not own — a
+        // monster's. The store is the fallback for a server that
+        // predates the field, the bare id the fallback for both.
+        const spellName =
+          data.value.name ||
+          spellsStore.getSnapshot().byId.get(data.value.spellId)?.name ||
+          `le sort ${data.value.spellId}`;
+        fightLog(
+          combatant(this.fighterName(action.spriteId)),
+          " lance ",
+          emphasis(spellName),
+          "."
         );
         const cast = spellLaunchToPayload(action, data.value);
         cast.critical =
@@ -573,11 +608,19 @@ export class FightHandler {
         const weapon = inventoryStore
           .getSnapshot()
           .templates.get(data.value.weaponTemplateId)?.name;
-        appendInfoMessage(
-          weapon
-            ? `${this.fighterName(action.spriteId)} frappe avec ${weapon}.`
-            : `${this.fighterName(action.spriteId)} frappe au corps à corps.`
-        );
+        if (weapon) {
+          fightLog(
+            combatant(this.fighterName(action.spriteId)),
+            " frappe avec ",
+            emphasis(weapon),
+            "."
+          );
+        } else {
+          fightLog(
+            combatant(this.fighterName(action.spriteId)),
+            " frappe au corps à corps."
+          );
+        }
         const casterId = Number(action.spriteId) || 0;
         this.handlers.onSpellCast?.({
           casterId,
@@ -595,15 +638,17 @@ export class FightHandler {
       case "criticalHit":
         this.criticalCasts.set(action.spriteId, data.value.spellId);
         this.handlers.onCriticalHit?.();
-        appendInfoMessage(
-          `${this.fighterName(action.spriteId)} : coup critique !`
+        fightLog(
+          combatant(this.fighterName(action.spriteId)),
+          " : coup critique !"
         );
         break;
       case "criticalMiss":
         this.criticalCasts.delete(action.spriteId);
         this.handlers.onCriticalMiss?.();
-        appendInfoMessage(
-          `${this.fighterName(action.spriteId)} : échec critique.`
+        fightLog(
+          combatant(this.fighterName(action.spriteId)),
+          " : échec critique."
         );
         if (action.spriteId === this.getMySpriteId()) {
           spellCastActor.send({ type: "RESET" });
@@ -640,10 +685,29 @@ export class FightHandler {
             patch: { buffs },
           });
         }
-        if (!fighter?.buffs?.some((buff) => buff.id === effect.buffId)) {
-          appendInfoMessage(
-            `${this.fighterName(data.value.targetSpriteId)} reçoit un effet pour ${data.value.duration} tour(s).`
-          );
+        if (
+          !fighter?.buffs?.some((buff) => buff.id === effect.buffId) &&
+          !SELF_ANNOUNCING_EFFECTS.has(effect.effectId) &&
+          !needsMultipleValues(effect.effectId)
+        ) {
+          // The lang bundle words the effect the same way the spell book
+          // does — "+20 en intelligence (3 tours)" — so `max: 0` is what
+          // collapses the range template down to the one value a live
+          // buff actually has. An effect the bundle does not know stays
+          // silent: "reçoit un effet" said nothing worth a line.
+          const formatted = formatEffect({
+            effectId: effect.effectId,
+            min: effect.value,
+            max: 0,
+            special: 0,
+            duration: effect.duration,
+          });
+          if (formatted) {
+            fightLog(
+              combatant(this.fighterName(effect.targetSpriteId)),
+              ` : ${formatted.text}`
+            );
+          }
         }
         break;
       }
@@ -716,18 +780,21 @@ export class FightHandler {
         break;
       }
       case "reduceDamage":
-        appendInfoMessage(
-          `${this.fighterName(data.value.spriteId)} réduit les dommages de ${data.value.amount}.`
+        fightLog(
+          combatant(this.fighterName(data.value.spriteId)),
+          ` réduit les dommages de ${data.value.amount}.`
         );
         break;
       case "returnDamage":
-        appendInfoMessage(
-          `${this.fighterName(data.value.spriteId)} renvoie ${data.value.amount} dommages.`
+        fightLog(
+          combatant(this.fighterName(data.value.spriteId)),
+          ` renvoie ${data.value.amount} dommages.`
         );
         break;
       case "returnSpell":
-        appendInfoMessage(
-          `${this.fighterName(data.value.spriteId)} renvoie le sort.`
+        fightLog(
+          combatant(this.fighterName(data.value.spriteId)),
+          " renvoie le sort."
         );
         break;
       case "apChange": {
@@ -742,9 +809,16 @@ export class FightHandler {
             patch: { ap: Math.max(0, fighter.ap + data.value.delta) },
           });
         }
-        appendInfoMessage(
-          `${this.fighterName(data.value.spriteId)} : ${data.value.delta > 0 ? "+" : ""}${data.value.delta} PA.`
-        );
+        // `cost` is the AP the actor spent on its own turn — a cast, a
+        // tackle. Logging it put one line between every action and its
+        // result; what the player wants told is AP a spell took off
+        // somebody, which arrives with `cost` false.
+        if (!data.value.cost) {
+          fightLog(
+            combatant(this.fighterName(data.value.spriteId)),
+            ` : ${data.value.delta > 0 ? "+" : ""}${data.value.delta} PA.`
+          );
+        }
         // Delta is a signed change (negative = AP spent). Apply
         // relative to current AP, not overwrite, so consecutive casts
         // stack. Only mirror when the event targets the local player.
@@ -770,9 +844,14 @@ export class FightHandler {
             patch: { mp: Math.max(0, fighter.mp + data.value.delta) },
           });
         }
-        appendInfoMessage(
-          `${this.fighterName(data.value.spriteId)} : ${data.value.delta > 0 ? "+" : ""}${data.value.delta} PM.`
-        );
+        // See `apChange` — a walked step is not news, MP a spell stole
+        // is.
+        if (!data.value.cost) {
+          fightLog(
+            combatant(this.fighterName(data.value.spriteId)),
+            ` : ${data.value.delta > 0 ? "+" : ""}${data.value.delta} PM.`
+          );
+        }
         const my = this.getMySpriteId();
         if (my && data.value.spriteId === my) {
           const snap = fightActor.getSnapshot();
@@ -785,8 +864,9 @@ export class FightHandler {
       }
       case "damage": {
         this.handlers.onDamage?.(data.value);
-        appendInfoMessage(
-          `${this.fighterName(data.value.spriteId)} ${data.value.amount < 0 ? "récupère" : "perd"} ${Math.abs(data.value.amount)} PV.`
+        fightLog(
+          combatant(this.fighterName(data.value.spriteId)),
+          ` ${data.value.amount < 0 ? "récupère" : "perd"} ${Math.abs(data.value.amount)} PV.`
         );
         // Mirror HP into the fighters map so the timeline bar and
         // hover tooltips reflect every hit without waiting for the
@@ -800,7 +880,10 @@ export class FightHandler {
       }
       case "death": {
         this.handlers.onDeath?.(data.value);
-        appendInfoMessage(`${this.fighterName(data.value.spriteId)} est mort.`);
+        fightLog(
+          combatant(this.fighterName(data.value.spriteId)),
+          " est mort."
+        );
         fightActor.send({
           type: "FIGHTER_UPDATE",
           spriteId: data.value.spriteId,

@@ -369,11 +369,19 @@ export class FightFrameEmitter implements Emitter {
     );
   }
 
+  /**
+   * `cost` marks the loss as the price of the actor's own action — a
+   * spell's AP, a tackle — rather than AP a spell effect took from a
+   * target. The client needs the distinction to keep the combat log
+   * free of one line per cast: `attackerId === targetId` cannot carry
+   * it, since a self-targeted buff has that shape too.
+   */
   emitAPLoss(
     fight: Fight,
     attackerId: number,
     targetId: number,
-    amount: number
+    amount: number,
+    cost = false
   ): void {
     this.frames.broadcast(
       this.targets(fight),
@@ -390,6 +398,7 @@ export class FightFrameEmitter implements Emitter {
                 spriteId: String(targetId),
                 delta: -amount,
                 used: amount,
+                cost,
               }),
             },
           }),
@@ -398,11 +407,13 @@ export class FightFrameEmitter implements Emitter {
     );
   }
 
+  /** See `emitAPLoss` for what `cost` means. */
   emitMPLoss(
     fight: Fight,
     attackerId: number,
     targetId: number,
-    amount: number
+    amount: number,
+    cost = false
   ): void {
     this.frames.broadcast(
       this.targets(fight),
@@ -418,6 +429,7 @@ export class FightFrameEmitter implements Emitter {
               value: create(ActionMPChangeSchema, {
                 spriteId: String(targetId),
                 delta: -amount,
+                cost,
               }),
             },
           }),

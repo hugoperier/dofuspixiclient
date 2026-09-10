@@ -11,6 +11,7 @@ import {
 } from "@dofus/proto/game_pb";
 import { DofusMessageSchema } from "@dofus/proto/server_messages_pb";
 import { SpellListSchema } from "@dofus/proto/spells_pb";
+import { WelcomeService } from "@modules/accounts/welcome.service";
 import { HarvestService } from "@modules/harvest/harvest.service";
 import { AccessoriesService } from "@modules/inventory/accessories.service";
 import { InventoryFramesService } from "@modules/inventory/inventory.frames.service";
@@ -58,7 +59,8 @@ export class EnterGameHandler {
     private readonly jobs: JobsService,
     private readonly inventory: InventoryService,
     private readonly harvest: HarvestService,
-    private readonly shortcuts: ShortcutsFramesService
+    private readonly shortcuts: ShortcutsFramesService,
+    private readonly welcome: WelcomeService
   ) {}
 
   @MessageHandler(GameCreateRequestSchema)
@@ -262,6 +264,15 @@ export class EnterGameHandler {
         })
       );
     }
+
+    // Last, and only once per session: every map change re-enters the
+    // game through this same handler, and the service is what keeps the
+    // greeting from repeating on each screen.
+    await this.welcome.sendWelcome(
+      ctx.sessionId,
+      session.accountId,
+      player.name
+    );
 
     this.logger.log(
       `enter-game: character=${session.characterId} map=${map.id} peers=${peers.length}`
