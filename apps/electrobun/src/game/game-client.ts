@@ -115,6 +115,12 @@ import {
 } from "@/game/stores/spell-details-store";
 import { spellsStore } from "@/game/stores/spells-store";
 import { BOOST_WIRE_STAT_IDS } from "@/game/types/stats";
+import {
+  isFlagArmed,
+  setFlagArmed,
+  toggleFlagArmed,
+} from "@/hud/fight/fight-flag-store";
+import type { FightOptionCode } from "@/hud/fight/fight-options-store";
 import { HoverPreview } from "@/hud/fight/hover-preview";
 import { formatPath } from "@/utils/format-path";
 import { createLogger } from "@/utils/logger";
@@ -2291,6 +2297,18 @@ export class GameClient {
     const fightMode = fightStore.getSnapshot().mode;
     log.debug(`cell-click cell=${targetCellId} fightMode=${fightMode}`);
 
+    // "Show a cell" is armed: this click drops the arrow for our team
+    // and does nothing else. It comes before placement and combat so a
+    // marker never doubles as a move.
+    if (
+      isFlagArmed() &&
+      (fightMode === "placement" || fightMode === "fighting")
+    ) {
+      this.fightHandler.setFlag(targetCellId);
+      setFlagArmed(false);
+      return;
+    }
+
     // Placement: send GameSetPosition; the server validates against the
     // allowed cells and broadcasts the sprite move.
     if (fightMode === "placement") {
@@ -2521,6 +2539,19 @@ export class GameClient {
 
   fightForfeit(): void {
     this.fightHandler.forfeit();
+  }
+
+  fightToggleOption(option: FightOptionCode): void {
+    this.fightHandler.toggleFightOption(option);
+  }
+
+  /**
+   * Arm the "show a cell" arrow. The next battlefield click places the
+   * marker instead of moving or casting; clicking the button again
+   * disarms it.
+   */
+  fightToggleFlagArmed(): void {
+    toggleFlagArmed();
   }
 
   /**

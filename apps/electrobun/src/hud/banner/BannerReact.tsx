@@ -18,6 +18,7 @@ import {
   MainBannerIconButton,
   MainBannerMorePanel,
   MainBannerRightPanel,
+  MainBannerForfeitButton,
   MainBannerTurnButton,
 } from "@/components/ui/main-banner";
 import { playAudioEvent } from "@/game/audio/audio-events";
@@ -486,11 +487,13 @@ const ICON_BUTTONS = [
 interface BannerReactProps {
   /** Callback when a spell slot is clicked during a fight (cast/select). */
   onSelectSpell?: (spellId: number) => void;
+  onForfeit?: () => void;
   onPassTurn?: () => void;
 }
 
 export function BannerReact({
   onSelectSpell,
+  onForfeit,
   onPassTurn,
 }: BannerReactProps = {}) {
   const gameClient = useGameClient();
@@ -658,6 +661,15 @@ export function BannerReact({
         <MainBannerHeart hp={hp} max={maxHp} />
         {isFighting && !fight.isSpectator && (
           <BannerFightPoints ap={fight.ap} mp={fight.mp} />
+        )}
+        {isFighting && !fight.isSpectator && (
+          <MainBannerForfeitButton
+            data-audio="click2"
+            onClick={onForfeit}
+            disabled={!onForfeit || fight.finishing}
+            aria-label="Abandonner le combat"
+            title="Abandonner le combat"
+          />
         )}
         {fight.isCombat && (
           <MainBannerTurnButton

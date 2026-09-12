@@ -11,6 +11,7 @@ import {
 } from "@dofus/proto/common_pb";
 import {
   GameCreateSchema,
+  GameFightOptionSchema,
   GameJoinSchema,
   GameMovementSchema,
   GamePositionStartSchema,
@@ -18,6 +19,7 @@ import {
   SpriteMovementEntrySchema,
 } from "@dofus/proto/game_pb";
 import { DofusMessageSchema } from "@dofus/proto/server_messages_pb";
+import { ALL_FIGHT_OPTIONS } from "@modules/fight/core/fight.entity.types";
 import { Characteristic, FighterKind } from "@modules/fight/fight.types";
 import { FightMap, parsePlacementCells } from "@modules/fight/map/fight.map";
 import { toSpriteEntry } from "@modules/player-presence/player-presence.sprite-entry";
@@ -198,6 +200,25 @@ export function emitJoinFrames(
       },
     })
   );
+
+  // `GameJoin` carries no leader id, so the option frames are also how a
+  // client learns whether it may toggle help / lock / spectators. Send
+  // the current state of all four on join, even when every one is off.
+  for (const code of ALL_FIGHT_OPTIONS) {
+    frames.broadcast(
+      [sessionId],
+      create(DofusMessageSchema, {
+        payload: {
+          case: "gameFightOption",
+          value: create(GameFightOptionSchema, {
+            enabled: fight.optionEnabled(code),
+            option: code,
+            leaderId: playerFighter.team?.leaderId ?? 0,
+          }),
+        },
+      })
+    );
+  }
 
   const allFighters = [playerFighter, ...opponents];
   const entries = allFighters.map((m) => {

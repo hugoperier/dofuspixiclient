@@ -304,6 +304,7 @@ export function HudOverlay({
                 onSelectSpell: (spellId) =>
                   gameClient.fightSelectSpell(spellId),
                 onPassTurn: () => gameClient.fightPassTurn(),
+                onForfeit: () => gameClient.fightForfeit(),
               }
             : {})}
         />
@@ -318,6 +319,8 @@ export function HudOverlay({
               // (BannerReact). FightOverlay no longer renders its own
               // spell bar — the banner doubles as the in-fight cast UI.
               onSelectSpell: (spellId) => gameClient.fightSelectSpell(spellId),
+              onToggleOption: (option) => gameClient.fightToggleOption(option),
+              onToggleFlagArmed: () => gameClient.fightToggleFlagArmed(),
             }}
           />
         )}

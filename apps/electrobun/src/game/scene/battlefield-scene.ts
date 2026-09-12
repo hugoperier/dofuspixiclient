@@ -54,6 +54,11 @@ import {
   setTacticalMode as setTacticalModeStore,
   tacticalModeStore,
 } from "@/hud/fight/tactical-mode-store";
+import {
+  creatureModeStore,
+  setCreatureMode,
+} from "@/hud/fight/creature-mode-store";
+import { resetFightOptions } from "@/hud/fight/fight-options-store";
 import { loadTheme } from "@/themes";
 
 extensions.add(LayoutSystem);
@@ -106,6 +111,7 @@ export class Battlefield {
   private fightUI: FightUI | null = null;
   private fightActorUnsubscribe: (() => void) | null = null;
   private tacticalUnsubscribe: (() => void) | null = null;
+  private creatureUnsubscribe: (() => void) | null = null;
   private lastFightMode: string = "none";
   private tacticalMode = false;
 
@@ -349,6 +355,12 @@ export class Battlefield {
       // tacticalMode guard dedupe repeated calls.
       void this.setTacticalMode(tacticalModeStore.getSnapshot().tactical);
     });
+
+    this.creatureUnsubscribe = creatureModeStore.subscribe(() => {
+      this.worldActors
+        .getRenderer()
+        ?.setCreatureMode(creatureModeStore.getSnapshot().creature);
+    });
   }
 
   /**
@@ -414,6 +426,10 @@ export class Battlefield {
     if (this.tacticalMode) {
       setTacticalModeStore(false);
     }
+    // Same for creature mode, and for the leader options, which belong
+    // to the fight that just ended and must not leak into the next one.
+    setCreatureMode(false);
+    resetFightOptions();
   }
 
   getFightUI(): FightUI | null {
@@ -1012,6 +1028,8 @@ export class Battlefield {
     this.fightActorUnsubscribe = null;
     this.tacticalUnsubscribe?.();
     this.tacticalUnsubscribe = null;
+    this.creatureUnsubscribe?.();
+    this.creatureUnsubscribe = null;
 
     this.fightUI?.destroy();
     this.fightUI = null;

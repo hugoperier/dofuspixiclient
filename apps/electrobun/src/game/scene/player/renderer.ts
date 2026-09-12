@@ -157,6 +157,7 @@ export class PlayerRenderer {
    * hidden there.
    */
   private fightMode = false;
+  private creatureMode = false;
   /**
    * Fighter id whose turn is currently active — their ground ring
    * renders in the brighter "glow" variant. null while waiting for
@@ -242,6 +243,11 @@ export class PlayerRenderer {
     const player = this.buildActivePlayer(data);
     this.players.set(data.id, player);
     this.registerPlayerActor(data.id, player);
+    // A fighter arriving mid-fight (a summon, a joiner) has to obey the
+    // creature mode already in effect.
+    if (this.creatureMode) {
+      this.applyCreatureMode(player);
+    }
 
     if (data.linkedChildren && data.linkedChildren.length > 0) {
       return this.loadWithLinkedChildren(data, player);
@@ -1255,6 +1261,48 @@ export class PlayerRenderer {
           this.setDirection(player.id, clamped);
         }
       }
+    }
+  }
+
+  /**
+   * Creature mode: drop the animated artwork and leave every fighter as
+   * its team-colored ground ring plus its overhead name/HP panel. 1.29
+   * offers this to keep a crowded battlefield readable, and it costs no
+   * sprite animation while it is on.
+   *
+   * Purely visual: picking, positions and turn order are untouched, so
+   * a fighter can still be clicked and hovered on its ring.
+   */
+  setCreatureMode(enabled: boolean): void {
+    this.creatureMode = enabled;
+    for (const player of this.players.values()) {
+      this.applyCreatureMode(player);
+    }
+  }
+
+  private applyCreatureMode(player: ActivePlayer): void {
+    player.artworkHidden = this.creatureMode;
+    if (player.sprite) {
+      player.sprite.visible = !this.creatureMode;
+    }
+    if (player.placeholderGraphics) {
+      player.placeholderGraphics.visible = !this.creatureMode;
+    }
+    const mount = player.mountLayers;
+    if (mount?.mountFrontSprite) {
+      mount.mountFrontSprite.visible = !this.creatureMode;
+    }
+    if (mount?.chevauchorSprite) {
+      mount.chevauchorSprite.visible = !this.creatureMode;
+    }
+    if (player.groundCircle) {
+      // The ring is the fighter now, so it has to show even during
+      // placement, where fight mode normally keeps it hidden.
+      player.groundCircle.visible = this.fightMode || this.creatureMode;
+    }
+    player.overhead.setVisible(this.creatureMode);
+    if (this.creatureMode) {
+      player.overhead.setHp(player.hp, player.maxHp);
     }
   }
 

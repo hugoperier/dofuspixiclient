@@ -21,6 +21,8 @@ import {
   HighlightType,
   type HighlightTypeValue,
 } from "@/game/scene/overlays/cell-highlighter";
+import { FlagMarkers } from "@/game/scene/overlays/flag-markers";
+import { clearFightFlags } from "@/hud/fight/fight-flag-store";
 import {
   type PlayerAnimationValue,
   PlayerRenderer,
@@ -31,6 +33,7 @@ import { fightActor } from "@/game/stores/fight-store";
 export class FightUI {
   private fightContainer: Container | null = null;
   private cellHighlighter: CellHighlighter | null = null;
+  private flagMarkers: FlagMarkers | null = null;
   private playerRenderer: PlayerRenderer | null = null;
   private damageRenderer: DamageRenderer | null = null;
   private spellRenderer: SpellRenderer | null = null;
@@ -92,6 +95,12 @@ export class FightUI {
       cellDataMap: this.cellDataMap,
     });
     this.scene.add(this.cellHighlighter);
+
+    // Team-only "look here" arrows. Above the fight container so a
+    // fighter standing on a marked cell never hides its arrow.
+    this.flagMarkers = new FlagMarkers(this.mapContainer);
+    this.flagMarkers.setMapDimensions(mapWidth, groundLevel);
+    this.scene.add(this.flagMarkers);
 
     // This PlayerRenderer is kept for API compatibility but holds no
     // players — fighters in this codebase live in the world-actors
@@ -161,6 +170,12 @@ export class FightUI {
       this.scene.remove(this.cellHighlighter.id);
     }
     this.cellHighlighter = null;
+
+    if (this.flagMarkers) {
+      this.scene.remove(this.flagMarkers.id);
+    }
+    this.flagMarkers = null;
+    clearFightFlags();
 
     // Clean up fight renderer registrations
     this.rendererRegistry.unregister("cell-highlighter");
@@ -453,6 +468,7 @@ export class FightUI {
    */
   updateFightMapDimensions(width: number, groundLevel?: number): void {
     this.cellHighlighter?.setMapDimensions(width, groundLevel);
+    this.flagMarkers?.setMapDimensions(width, groundLevel);
     this.playerRenderer?.setMapDimensions(width, groundLevel);
     this.damageRenderer?.setMapDimensions(width, groundLevel);
     this.spellRenderer?.setMapDimensions(width, groundLevel);

@@ -91,7 +91,7 @@ causes racines et les notes de méthode, mais plus le détail par entrée.
 
 _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 
-**175 entrées**, dont **171 encore ouvertes**.
+**177 entrées**, dont **173 encore ouvertes**.
 
 ## Par gravité
 
@@ -99,7 +99,7 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 |---|---|---|
 | P0 — bloque la session (crash, impossible d'avancer) | 5 | 5 |
 | P1 — fonctionnalité cassée ou absente sur un flux principal | 75 | 75 |
-| P2 — comportement divergent du 1.29 canonique, contournable | 63 | 63 |
+| P2 — comportement divergent du 1.29 canonique, contournable | 65 | 65 |
 | P3 — finition, confort, cosmétique | 28 | 29 |
 | Sans gravité — vérifications sans défaut | 0 | 3 |
 
@@ -107,7 +107,7 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 
 | Statut | Entrées |
 |---|---|
-| `open` — observé, non reproduit méthodiquement | 38 |
+| `open` — observé, non reproduit méthodiquement | 40 |
 | `confirmed` — reproduit, preuve au dossier | 17 |
 | `in-progress` — correctif engagé | 13 |
 | `fixed` — correctif livré, reste à revérifier manette en main | 103 |
@@ -123,7 +123,7 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [`camera-zoom/`](camera-zoom/) | 3 | 3 |
 | [`chat/`](chat/) | 5 | 5 |
 | [`exchange/`](exchange/) | 23 | 23 |
-| [`fight/`](fight/) | 20 | 20 |
+| [`fight/`](fight/) | 22 | 22 |
 | [`hud-banner/`](hud-banner/) | 9 | 9 |
 | [`hud-panels/`](hud-panels/) | 19 | 20 |
 | [`input/`](input/) | 7 | 8 |
@@ -293,6 +293,8 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [QA-159](exchange/QA-159-refus-de-fabrication-silencieux.md) | P2 | exchange | gap | fixed | Tout refus de fabrication est silencieux — « Combiner » ne produit rien du tout |
 | [QA-160](progression/QA-160-pods-non-rafraichis-a-l-apprentissage.md) | P2 | progression | bug | fixed | Apprendre un métier ne renvoie pas la trame de poids — les pods maximum restent en arrière |
 | [QA-172](fight/QA-172-impossible-d-enchainer-les-actions-pendant-une-animation.md) | P2 | fight | feature | fixed | Impossible d'enchaîner les actions en combat tant qu'une animation joue |
+| [QA-176](fight/QA-176-rejoindre-un-combat-en-spectateur-n-existe-pas.md) | P2 | fight | gap | open | Rejoindre un combat en spectateur n'existe pas, donc l'option « interdire les spectateurs » ne garde rien |
+| [QA-177](fight/QA-177-option-equipe-seulement-diffusee-sans-etre-appliquee.md) | P2 | fight | gap | open | L'option « équipe seulement » est diffusée sans être appliquée — il n'y a pas de module groupe |
 
 ## P3 — finition, confort, cosmétique
 

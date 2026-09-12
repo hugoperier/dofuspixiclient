@@ -39,6 +39,7 @@ import { SpellsIcon } from "./icons/banner/spells";
 import { StatsIcon } from "./icons/banner/stats";
 import { TitleIcon } from "./icons/banner/title";
 import { TurnButtonDown, TurnButtonUp } from "./icons/banner/turn-button";
+import { WhiteFlag } from "./icons/fight/white-flag";
 import { Scrollbar } from "./scrollbar";
 
 const BANNER_ICONS = {
@@ -1187,6 +1188,139 @@ function MainBannerTurnButton({
   );
 }
 
+// `MainBannerCircle` occupies a 119x119 native box centred on the
+// medallion, so drawing the lens in that same box makes "concentric"
+// a matter of using its middle — no offset arithmetic to get wrong.
+const MEDALLION_BOX = 119;
+const MEDALLION_MID = MEDALLION_BOX / 2;
+
+// The lens is one arc, stroked. Stroking a centreline rather than
+// filling an annular sector is what gives the ends their round caps:
+// a filled sector cuts them off along radii and reads as a bib.
+// Everything then follows from three numbers, and the shape can never
+// leave the band [rMid - half - border, rMid + half + border].
+const LENS_MID_R = 28.5;
+const LENS_THICKNESS = 12;
+const LENS_HALF_ANGLE = 30;
+const LENS_BORDER = 1;
+
+// Those three plus the border put the furthest painted pixel at
+// 28.5 + 6 + 1 = 35.5 from the medallion centre. That has to stay under
+// 37, the portrait's rim, because the turn gauge starts just outside it
+// at r 39 (`circleRingArc` r1..r2 = 39..56 above) and the lens must not
+// sit on the timer. Change a number here and redo that sum.
+
+/** Centre of the band, minus half the icon, so the flag rides the curve. */
+const LENS_FLAG_TOP = MEDALLION_MID + LENS_MID_R - 5.5;
+
+/**
+ * The lens centreline: an arc concentric with the medallion, centred on
+ * straight down and spanning ±`LENS_HALF_ANGLE`.
+ *
+ * Left-to-right it passes under the centre — 9 to 6 to 3 o'clock, which
+ * is anticlockwise on screen — hence the 0 sweep flag.
+ */
+function lensArcPath(radius: number, halfAngleDeg: number) {
+  const a = (halfAngleDeg * Math.PI) / 180;
+  const at = (t: number) =>
+    `${(MEDALLION_MID + radius * Math.sin(t)).toFixed(3)},${(
+      MEDALLION_MID +
+      radius * Math.cos(t)
+    ).toFixed(3)}`;
+  return `M${at(-a)} A${radius},${radius} 0 0 0 ${at(a)}`;
+}
+
+const LENS_PATH = lensArcPath(LENS_MID_R, LENS_HALF_ANGLE);
+
+/**
+ * The surrender control: the orange lens carrying a white flag that
+ * DOFUS Retro sets into the medallion.
+ *
+ * Retro drops it in the empty band between the map disc and the timer
+ * ring. This banner has no such band — the disc reaches r 37 and the
+ * gauge starts at r 39 — so the lens sits ON the portrait instead, low
+ * but wholly inside it, and curved to follow the dial rather than
+ * cutting across it.
+ *
+ * The button covers the medallion's whole box and is itself
+ * click-through; only the painted arc takes the pointer. That keeps the
+ * hit area equal to the lens the user sees, and leaves the medallion's
+ * own hover target working everywhere else.
+ */
+function MainBannerForfeitButton({
+  className,
+  disabled,
+  ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  const gradId = useId();
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      className={cn(
+        "group/forfeit absolute z-20 border-none bg-transparent p-0",
+        "pointer-events-none overflow-visible",
+        "disabled:grayscale disabled:opacity-40",
+        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ffa800]",
+        "left-[calc(358px*var(--resolution-factor))]",
+        "top-[calc(6px*var(--resolution-factor))]",
+        "w-[calc(119px*var(--resolution-factor))]",
+        "h-[calc(119px*var(--resolution-factor))]",
+        className
+      )}
+      {...props}
+    >
+      <svg
+        className="absolute inset-0 h-full w-full overflow-visible"
+        viewBox={`0 0 ${MEDALLION_BOX} ${MEDALLION_BOX}`}
+        fill="none"
+        role="presentation"
+        shapeRendering="geometricPrecision"
+      >
+        <defs>
+          {/* userSpaceOnUse: on a stroke, an objectBoundingBox ramp is
+              measured against the path's own thin bbox and flattens out. */}
+          <linearGradient
+            id={gradId}
+            gradientUnits="userSpaceOnUse"
+            x1="0"
+            y1={MEDALLION_MID + LENS_MID_R - LENS_THICKNESS / 2}
+            x2="0"
+            y2={MEDALLION_MID + LENS_MID_R + LENS_THICKNESS / 2}
+          >
+            <stop offset="0" stopColor="#ff9a52" />
+            <stop offset="1" stopColor="#e2530a" />
+          </linearGradient>
+        </defs>
+        <path
+          d={LENS_PATH}
+          stroke="#8f3403"
+          strokeWidth={LENS_THICKNESS + LENS_BORDER * 2}
+          strokeLinecap="round"
+        />
+        <path
+          d={LENS_PATH}
+          stroke={`url(#${gradId})`}
+          strokeWidth={LENS_THICKNESS}
+          strokeLinecap="round"
+          className={cn(
+            "group-active/forfeit:stroke-[#c44a06]",
+            disabled
+              ? "pointer-events-none"
+              : "pointer-events-auto cursor-pointer"
+          )}
+        />
+      </svg>
+      <span
+        className="pointer-events-none absolute left-1/2 -translate-x-1/2"
+        style={{ top: `calc(${LENS_FLAG_TOP}px * var(--resolution-factor))` }}
+      >
+        <WhiteFlag className="h-[calc(11px*var(--resolution-factor))] w-[calc(11px*var(--resolution-factor))]" />
+      </span>
+    </button>
+  );
+}
+
 const MainBannerGridSlot = forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
@@ -1472,6 +1606,7 @@ export {
   MainBannerChatInput,
   MainBannerCircle,
   MainBannerFightControls,
+  MainBannerForfeitButton,
   MainBannerGrid,
   MainBannerGridSlot,
   MainBannerGridArrow,

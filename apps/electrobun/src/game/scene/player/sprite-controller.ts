@@ -311,6 +311,7 @@ export class PlayerSpriteController {
       sprite.x = flipped ? -animation.offsetX : animation.offsetX;
       sprite.y = animation.offsetY;
       sprite.zIndex = 0;
+      sprite.visible = !player.artworkHidden;
       player.container.addChild(sprite);
       player.sprite = sprite;
     } else {

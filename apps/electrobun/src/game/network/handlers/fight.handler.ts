@@ -12,6 +12,10 @@ import {
 import { spellCastActor } from "@/game/machines/spell-cast.machine";
 import { encodeFightPath } from "@/game/network/path-codec";
 import {
+  FightBlockJoinExceptPartyRequestSchema,
+  FightBlockJoinRequestSchema,
+  FightBlockSpectatorsRequestSchema,
+  FightNeedHelpRequestSchema,
   type ActionAPChange,
   type ActionDamage,
   type ActionDeath,
@@ -31,6 +35,7 @@ import {
   type GameMovement,
   type GamePositionStart,
   type GameReady,
+  GameSetFlagSchema,
   GameSetPositionSchema,
   GameSetReadySchema,
   GameTurnEndSchema,
@@ -49,6 +54,12 @@ import {
   CLOSE_COMBAT_SPELL_ID,
   spellsStore,
 } from "@/game/stores/spells-store";
+import { setFightFlag } from "@/hud/fight/fight-flag-store";
+import {
+  type FightOptionCode,
+  FightOptionCode as FightOption,
+  applyFightOption,
+} from "@/hud/fight/fight-options-store";
 import { createLogger } from "@/utils/logger";
 
 const log = createLogger("FightHandler");
@@ -468,6 +479,21 @@ export class FightHandler {
           patch: { ready: payload.isReady },
         });
         this.handlers.onReady?.(payload);
+      })
+    );
+
+    // The four leader-only options (`Go`) and the team-only cell marker
+    // (`Gf`). Both are broadcast state: the server has already decided
+    // who receives them, so the client just records what it is told.
+    this.unsubscribers.push(
+      mh.on("gameFightOption", (payload) => {
+        applyFightOption(payload.option, payload.enabled, payload.leaderId);
+      })
+    );
+
+    this.unsubscribers.push(
+      mh.on("gameFlag", (payload) => {
+        setFightFlag(payload.spriteId, payload.cellId);
       })
     );
 
@@ -1022,6 +1048,49 @@ export class FightHandler {
   setReady(ready: boolean): void {
     this.connection.send(
       encodeClient("gameSetReady", create(GameSetReadySchema, { ready }))
+    );
+  }
+
+  /**
+   * Toggle one of the four leader-only fight options. The request
+   * bodies are empty — the server flips the flag and mirrors the new
+   * value back as `gameFightOption`, so nothing is applied optimistically.
+   */
+  toggleFightOption(option: FightOptionCode): void {
+    switch (option) {
+      case FightOption.NeedHelp:
+        this.connection.send(
+          encodeClient("fightNeedHelp", create(FightNeedHelpRequestSchema, {}))
+        );
+        break;
+      case FightOption.BlockJoin:
+        this.connection.send(
+          encodeClient("fightBlockJoin", create(FightBlockJoinRequestSchema, {}))
+        );
+        break;
+      case FightOption.PartyOnly:
+        this.connection.send(
+          encodeClient(
+            "fightBlockJoinExceptParty",
+            create(FightBlockJoinExceptPartyRequestSchema, {})
+          )
+        );
+        break;
+      case FightOption.BlockSpectators:
+        this.connection.send(
+          encodeClient(
+            "fightBlockSpectators",
+            create(FightBlockSpectatorsRequestSchema, {})
+          )
+        );
+        break;
+    }
+  }
+
+  /** Drop the red "look here" arrow on a cell, for our team only. */
+  setFlag(cellId: number): void {
+    this.connection.send(
+      encodeClient("gameSetFlag", create(GameSetFlagSchema, { cellId }))
     );
   }
 

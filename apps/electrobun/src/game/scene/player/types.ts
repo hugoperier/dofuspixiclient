@@ -210,6 +210,13 @@ export interface ActivePlayer {
   childIndex?: number;
   mount?: MountDisplay;
   mountLayers: PlayerMountLayers | null;
+  /**
+   * Creature mode is on and this fighter's animated artwork must stay
+   * hidden. Kept on the entry rather than read from a store because the
+   * sprite is created asynchronously, well after the toggle: whoever
+   * builds it consults this flag instead of racing the mode.
+   */
+  artworkHidden?: boolean;
 }
 
 export interface PlayerRendererConfig {

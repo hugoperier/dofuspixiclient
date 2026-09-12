@@ -59,6 +59,13 @@ export class FightJoinHandler {
       return;
     }
 
+    // The leader's padlock. `partyOnly` is broadcast and stored but not
+    // enforced: there is no party module yet, so there is nothing to
+    // test membership against — see the QA gap filed alongside it.
+    if (fight.lockedTeam) {
+      return;
+    }
+
     const session = this.sessions.get(ctx.sessionId);
     if (!session?.characterId) {
       return;
