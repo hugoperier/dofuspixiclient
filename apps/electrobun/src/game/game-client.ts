@@ -1,16 +1,20 @@
 import type { AdminCommandRequest } from "@dofus/proto/admin_pb";
 import { create } from "@bufbuild/protobuf";
-import { AreaKind, cellsInArea, hasLineOfSight } from "@dofus/grid";
+import { AreaKind, cellsInArea } from "@dofus/grid";
 import { ExchangeType } from "@dofus/proto";
 import { AdminCommandSource } from "@dofus/proto/admin_pb";
 import { match } from "ts-pattern";
 
 import type { Battlefield } from "@/game/scene";
 import type { CharacterStats } from "@/game/types/stats";
+import { bindAudioEvents, playAudioEvent } from "@/game/audio/audio-events";
 import { AudioManager } from "@/game/audio/audio-manager";
+import { WorldAudio } from "@/game/audio/world-audio";
 import { derivePasswordKey } from "@/game/auth/pbkdf2";
 import { loadJobsLang } from "@/game/lang/jobs-lang";
 import { loginActor } from "@/game/machines/actors";
+import { fightMovementPath } from "@/game/machines/fight-movement-targeting";
+import { spellTargetError } from "@/game/machines/fight-targeting";
 import { spellCastActor } from "@/game/machines/spell-cast.machine";
 import {
   isTerminalClose,
@@ -30,7 +34,7 @@ import { ExchangeHandler } from "@/game/network/handlers/exchange.handler";
 import { FightHandler } from "@/game/network/handlers/fight.handler";
 import { InventoryHandler } from "@/game/network/handlers/inventory.handler";
 import { JobsHandler } from "@/game/network/handlers/jobs.handler";
-import { MapHandler } from "@/game/network/handlers/map.handler";
+import { encodeLook, MapHandler } from "@/game/network/handlers/map.handler";
 import { NpcDialogHandler } from "@/game/network/handlers/npc-dialog.handler";
 import { SpellHandler } from "@/game/network/handlers/spell.handler";
 import {
@@ -80,9 +84,18 @@ import {
   SpellUpgradeRequestSchema,
 } from "@/game/network/protocol";
 import { numericId } from "@/game/network/sprite-id";
+import {
+  CombatPresentation,
+  type PresentationPhases,
+  type PresentationScope,
+} from "@/game/scene/fight/combat-presentation";
 import { HighlightType } from "@/game/scene/overlays/cell-highlighter";
 import { PlayerAnimation } from "@/game/scene/player/animation";
 import { characterStore, closeNpcDialog } from "@/game/stores";
+import {
+  appendErrorMessage,
+  appendInfoMessage,
+} from "@/game/stores/chat-store";
 import {
   type LostCause,
   markConnected,
@@ -100,8 +113,14 @@ import {
   markSpellDetailsPending,
   spellDetailsStore,
 } from "@/game/stores/spell-details-store";
-import { spellsStore, tickCooldowns } from "@/game/stores/spells-store";
+import { spellsStore } from "@/game/stores/spells-store";
 import { BOOST_WIRE_STAT_IDS } from "@/game/types/stats";
+import {
+  isFlagArmed,
+  setFlagArmed,
+  toggleFlagArmed,
+} from "@/hud/fight/fight-flag-store";
+import type { FightOptionCode } from "@/hud/fight/fight-options-store";
 import { HoverPreview } from "@/hud/fight/hover-preview";
 import { formatPath } from "@/utils/format-path";
 import { createLogger } from "@/utils/logger";
@@ -124,9 +143,16 @@ const log = createLogger("GameClient");
  *   Connection → MessageHandler → per-domain handlers → stores + machines.
  */
 export class GameClient {
+  /**
+   * gfx ids already reported to the player as unrenderable. A monster
+   * casting the same broken spell every turn must not fill the chat.
+   */
+  private readonly reportedBrokenVisuals = new Set<number>();
   private readonly connection: Connection;
   private readonly messageHandler: MessageHandler;
   private readonly audioManager: AudioManager;
+  private readonly worldAudio: WorldAudio;
+  private readonly unbindAudioEvents: () => void;
 
   private readonly authHandler: AuthHandler;
   private readonly adminHandler: AdminHandler;
@@ -138,6 +164,7 @@ export class GameClient {
 
   private battlefield: Battlefield | null = null;
   private hoverPreview: HoverPreview | null = null;
+  private readonly battlefieldUnsubscribers: Array<() => void> = [];
 
   /**
    * Whether the user is currently rolling over their own avatar in the
@@ -203,7 +230,31 @@ export class GameClient {
    * promise; onDamage then defers the popup behind the most recent
    * chain, falling through immediately when no spell is in flight.
    */
-  private spellSequencer: Promise<void> = Promise.resolve();
+  private readonly presentation = new CombatPresentation(
+    (pending) => {
+      fightActor.send({ type: "PRESENTATION_PENDING", pending });
+      this.hoverPreview?.refreshFromCurrentHover();
+    },
+    (error) => log.error(`Combat presentation failed: ${String(error)}`)
+  );
+
+  /**
+   * The click the player made while the previous action was still in
+   * the air, replayed as soon as the server answers.
+   *
+   * That window is one round-trip, so it never swallows more than a
+   * fraction of a second of intent, but on a remote server it is
+   * exactly where a fast second click lands. Only the most recent one
+   * is kept: a player clicking twice means the second cell.
+   */
+  private bufferedFightClick: number | null = null;
+
+  /**
+   * Destination of the blue "path I chose" tint currently on the board,
+   * so a walk finishing early in a chain does not erase the tint of the
+   * move queued behind it. Null when no tint is up.
+   */
+  private selectedPathDestination: number | null = null;
 
   private onConnected?: () => void;
   private onDisconnected?: () => void;
@@ -222,6 +273,8 @@ export class GameClient {
     this.messageHandler = createMessageHandler();
     this.audioManager = AudioManager.getInstance();
     this.audioManager.init();
+    this.worldAudio = new WorldAudio(this.audioManager);
+    this.unbindAudioEvents = bindAudioEvents(this.audioManager);
 
     this.authHandler = new AuthHandler(this.messageHandler, {
       onCompatible: () => this.setContractCompatible(),
@@ -251,6 +304,35 @@ export class GameClient {
       this.connection,
       () => this.characterHandler.getCurrentCharacter()?.spriteId ?? null
     );
+    this.messageHandler.on("partyInvite", (p) => {
+      if (
+        p.success &&
+        p.targetName === this.characterHandler.getCurrentCharacter()?.name
+      ) {
+        playAudioEvent("invitation");
+      }
+    });
+    this.messageHandler.on("guildJoin", (p) => {
+      if (
+        p.type === 1 &&
+        p.inviterId !== this.characterHandler.getCurrentCharacter()?.spriteId
+      ) {
+        playAudioEvent("invitation");
+      }
+    });
+    this.messageHandler.on("guildTaxAttacked", () =>
+      playAudioEvent("taxAttack")
+    );
+    this.messageHandler.on("gameAction", (p) => {
+      if (
+        p.actionData.case === "challenge" &&
+        p.actionData.value.actionSubtype === 900 &&
+        p.actionData.value.spriteId ===
+          this.characterHandler.getCurrentCharacter()?.spriteId
+      ) {
+        playAudioEvent("invitation");
+      }
+    });
     this.spellHandler = new SpellHandler(this.messageHandler);
     void this.spellHandler;
     this.mapHandler = new MapHandler(
@@ -258,7 +340,8 @@ export class GameClient {
       this.connection,
       this.audioManager,
       this.characterHandler,
-      () => this.battlefield
+      () => this.battlefield,
+      (map) => this.worldAudio.setMap(map)
     );
     this.chatHandler = new ChatHandler(
       this.messageHandler,
@@ -317,9 +400,10 @@ export class GameClient {
             markReconnecting();
           }
           loginActor.send({ type: "LOGOUT" });
+          this.fightHandler.cancelPresentation();
           // The world is gone — so is its music. A pivot disconnect returns
           // above, so the track survives the gamed handoff.
-          this.audioManager.stop();
+          this.worldAudio.stop();
           this.onDisconnected?.();
         })
         .with({ type: "message" }, (e) => {
@@ -376,6 +460,9 @@ export class GameClient {
   }
 
   setBattlefield(battlefield: Battlefield): void {
+    for (const unsubscribe of this.battlefieldUnsubscribers.splice(0)) {
+      unsubscribe();
+    }
     this.battlefield = battlefield;
     battlefield.setOnCellClick((cellId) => this.handleCellClick(cellId));
     battlefield.setOnInteractiveUse((cellId, skillId) =>
@@ -430,8 +517,7 @@ export class GameClient {
       battlefield,
       fightUI: () => this.battlefield?.getFightUI() ?? null,
       pathfinding: () => this.mapHandler.getPathfinding(),
-      currentCellId: () => this.mapHandler.getCurrentCellId(),
-      isMoving: () => this.mapHandler.isCharacterMoving(),
+      currentCellId: () => this.myFightCell(),
       mapDimensions: () => {
         const d = this.battlefield?.getCurrentMapData();
         return d ? { width: d.width, height: d.height } : null;
@@ -449,7 +535,13 @@ export class GameClient {
         // the corpse is being torn down server-side.
         const out = new Set<number>();
         for (const f of fightStore.getSnapshot().fighters.values()) {
-          if (!f.dead && f.hp > 0) {
+          if (
+            !f.dead &&
+            f.hp > 0 &&
+            !f.hidden &&
+            !f.carriedById &&
+            f.cell >= 0
+          ) {
             out.add(f.cell);
           }
         }
@@ -469,206 +561,89 @@ export class GameClient {
     // Bridge fight network events to the canvas overlays. fightActor
     // already drives enter/exit lifecycle via Battlefield.init's
     // subscription; here we route per-frame visual events.
+    this.mapHandler.setCombatPresentation(this.presentation);
+    this.fightHandler.setCombatPresentation(this.presentation);
     this.fightHandler.setHandlers({
-      onSpellCast: (payload) => {
-        // Drive the cast machine forward the moment the server echoes
-        // back our launch (casterId == our sprite id). Opposing-caster
-        // launches still play their animation but don't touch the
-        // machine — it tracks only *our* cast UX.
-        const myIdStr = this.characterHandler.getCurrentCharacter()?.spriteId;
-        const myId = myIdStr === undefined ? null : Number(myIdStr);
-        if (myId !== null && payload.casterId === myId) {
-          const snap = spellCastActor.getSnapshot();
-          if (snap.matches("pending")) {
-            spellCastActor.send({ type: "SERVER_ACK" });
-          }
+      onFightStart: () => {
+        void this.worldAudio.startFight();
+      },
+      onFightJoined: (payload) => {
+        void import("./assets/combat-spell-graphics.json")
+          .then(({ default: index }) => {
+            const bySpell: Record<string, number[]> = index;
+            const graphics = spellsStore
+              .getSnapshot()
+              .spells.flatMap((spell) => bySpell[spell.spellId] ?? []);
+            return this.battlefield
+              ?.getFightUI()
+              ?.getSpellRenderer()
+              ?.preload(graphics);
+          })
+          .catch((error) =>
+            log.error(`Préchargement des sorts : ${String(error)}`)
+          );
+        if (payload.isSpectator && payload.state === 3) {
+          void this.worldAudio.startFight();
         }
-        // Resolve the caster cell from the world-actor renderer — that
-        // is where fighters actually live in this codebase (both during
-        // roleplay AND combat). The FightUI's internal PlayerRenderer
-        // stays empty, so querying it would always miss and fall
-        // through to cell 0. The fight-store fighter snapshot is a
-        // last-ditch fallback in case the sprite hasn't been added yet.
-        const casterCellId =
-          this.battlefield
-            ?.getWorldActorRenderer()
-            ?.getPlayerCell(payload.casterId) ??
-          fightStore.getSnapshot().fighters.get(String(payload.casterId))
-            ?.cell ??
-          payload.targetCellId;
-        // Play the caster's CAST pose, then launch the spell visual
-        // ONCE THE POSE COMPLETES. Mirrors canonical SpriteHandler.as
-        // launchVisualEffect:
-        //   addAction(18, blocking=true, setAnim, [castPose, false, true])
-        //   addAction(20, blocking=false, addEffect, [...])
-        // The blocking=true flag makes the sequencer wait for setAnim
-        // to report completion (= last frame reached) before running
-        // the addEffect step. Without this gate the visual fires in
-        // parallel with the cast pose, which the user perceives as
-        // "no delay before the spell fires".
-        const actorRenderer = this.battlefield?.getWorldActorRenderer();
-        const fightUI = this.battlefield?.getFightUI();
-        // Hit gate — resolves when the spell visual fires its canonical
-        // `runtime.signalHit()` (clip/harness.ts LANDED branch for
-        // projectile displayTypes 30/31/40/41). For instant spells
-        // without a separate hit phase, the runtime never fires this,
-        // so the chain falls back to `launchedVisual` completion (or
-        // the SEQUENCER_HOLD_CAP_MS cap below).
-        let hitFiredResolve!: () => void;
-        const hitFired = new Promise<void>((resolve) => {
-          hitFiredResolve = resolve;
-        });
-        const launchSpellVisual = (): Promise<void> | undefined =>
-          fightUI?.playSpell({
-            // visualGfxId comes from the server's GA;300 param3 (the
-            // SWF filename / sorts.sprite); spell.spellId stays for
-            // gameplay logic + lang lookup.
-            spellId: payload.visualGfxId,
-            casterCellId,
-            targetCellId: payload.targetCellId,
-            casterId: payload.casterId,
-            spellLevel: payload.spellLevel,
-            critical: payload.critical,
-            onHit: () => hitFiredResolve(),
-          });
-        // Canonical timing pulls from two distinct hooks on the
-        // caster's animation, so damage popups land at the perceived
-        // "hit" instead of mid-windup:
-        //
-        //   1. applyEnd (mid-anim) — `GAC.applyEnd(this)` routes to
-        //      `GlobalSpriteHandler.applyEnd → sequencer.onActionEnd()`,
-        //      which is the canonical signal to LAUNCH the spell visual
-        //      (advance past the blocking setAnim action to action 20 =
-        //      `addEffect`). PlayerRenderer fires `onComplete` here.
-        //
-        //   2. lastFrame (end of anim) — the inner timeline's `stop()`
-        //      lands on the last frame, which the Sequencer treats as
-        //      "the cast/melee sequence finished". GA;100 damage actions
-        //      queue AFTER the spell visual on the same Sequencer, so the
-        //      damage popup canonical fires at lastFrame + visual end —
-        //      that is when the punch contacts (close combat) or when the
-        //      projectile lands (ranged spells with proper visuals).
-        //
-        // The 1500 ms cap is a defensive fallback (canonical Sequencer
-        // hard cap is 1000 ms in Sprite.as:60; we add a small buffer for
-        // the visual completion). It only fires when the metadata-driven
-        // hooks don't (sprite not loaded, monster sprite without applyEnd
-        // metadata, etc.).
-        const SEQUENCER_HOLD_CAP_MS = 1500;
-        const noCaster =
-          !actorRenderer || !actorRenderer.hasPlayer?.(payload.casterId);
-        // The cast pose's last-frame promise — gates the damage popup
-        // (so it lands at fist-contact / windup-end, not mid-anim).
-        let castPoseDoneResolve!: () => void;
-        const castPoseDone = new Promise<void>((resolve) => {
-          castPoseDoneResolve = resolve;
-          if (noCaster) {
-            // No tracked sprite to animate — resolve immediately so the
-            // chain doesn't stall.
-            resolve();
+      },
+      onTurnStart: (payload) => {
+        if (
+          payload.spriteId ===
+            this.characterHandler.getCurrentCharacter()?.spriteId &&
+          !payload.passiveTurn
+        ) {
+          playAudioEvent("turn");
+        }
+      },
+      onCriticalHit: () => playAudioEvent("criticalHit"),
+      onCriticalMiss: () => playAudioEvent("criticalMiss"),
+      onSpellCast: (payload) => {
+        const snap = spellCastActor.getSnapshot();
+        const selectionVersion = snap.context.selectionVersion;
+        // Acknowledge here, at message time, not from inside the
+        // presentation. The server has accepted the cast the moment
+        // this frame lands; leaving the machine in `pending` until the
+        // animation gets its turn in the queue would block the next
+        // click for as long as the backlog lasts.
+        const myIdStr = this.characterHandler.getCurrentCharacter()?.spriteId;
+        if (
+          myIdStr !== undefined &&
+          payload.casterId === Number(myIdStr) &&
+          snap.matches("pending")
+        ) {
+          spellCastActor.send({ type: "SERVER_ACK" });
+        }
+        this.presentation.enqueue((scope) =>
+          this.animateFightSpell(payload, scope, selectionVersion)
+        );
+      },
+      onTriggeredSpell: (payload) => {
+        this.presentation.enqueue(async (scope) => {
+          if (payload.targetCellId < 0 || payload.visualGfxId <= 0) {
+            return;
           }
-          // Defensive cap (sprite never finishes its anim, e.g. metadata
-          // race or the renderer drops the player mid-cast).
-          setTimeout(resolve, SEQUENCER_HOLD_CAP_MS);
-        });
-        let visualPromise: Promise<void> | undefined;
-        // Spell-launch promise — fires when the visual has completed
-        // (or is skipped). Wired separately so we can `Promise.all`
-        // both signals into a single hit-resolution gate.
-        const launchedVisual = new Promise<void>((resolve) => {
-          let fired = false;
-          const fire = (): void => {
-            if (fired) {
+          // A rejection here must not escape: this runs inside the
+          // presentation queue, where an unhandled rejection stalls
+          // every later frame of the fight.
+          try {
+            await this.battlefield?.getFightUI()?.playSpell({
+              signal: scope.signal,
+              spellId: payload.visualGfxId,
+              casterId: payload.casterId,
+              casterCellId: payload.targetCellId,
+              targetCellId: payload.targetCellId,
+              spellLevel: payload.spellLevel,
+              playSound: (name) => this.audioManager.playSound(name),
+            });
+          } catch (error) {
+            if (scope.signal.aborted) {
               return;
             }
-            fired = true;
-            visualPromise = launchSpellVisual();
-            if (visualPromise) {
-              void visualPromise.finally(resolve);
-            } else {
-              resolve();
-            }
-          };
-          // Pick the cast pose based on the server-supplied animation
-          // hint. Canonical Dofus 1.29 sends "anim0" for close-combat
-          // (the melee punch frame in every player's atlas) and "anim1"
-          // for any ranged / magic spell. Without this gate the punch
-          // (spell 0) used to play the same cast pose as a fireball.
-          // Direction handling has moved to the server — fight-turn
-          // handler emits an authoritative `directionChange` action
-          // before every SpellLaunch (and before close combat).
-          const castPose =
-            payload.animation === "anim0"
-              ? PlayerAnimation.ATTACK
-              : PlayerAnimation.CAST;
-          actorRenderer?.setAnimation(payload.casterId, castPose, {
-            revertTo: PlayerAnimation.IDLE,
-            // Spell visual launches at applyEnd — the canonical hook
-            // (`GAC.applyEnd → sequencer.onActionEnd`).
-            onComplete: fire,
-            // Cast pose's actual end — gate for the damage popup.
-            onLastFrame: () => castPoseDoneResolve(),
-          });
-          setTimeout(fire, SEQUENCER_HOLD_CAP_MS);
-          if (noCaster) {
-            fire();
+            log.error(
+              `Glyph visual ${payload.visualGfxId} failed: ${String(error)}`
+            );
           }
         });
-        // Damage popup gate — resolves the moment the spell visual
-        // signals hit. For melee impact spells (displayType 11) this
-        // is the cast pose's `applyEnd` (Spell0.onSpellStart fires
-        // signalHit immediately, and onSpellStart runs when playSpell
-        // launches — i.e. at applyEnd). For ranged projectiles
-        // (displayType 30/31/40/41) this is the harness's LANDED
-        // branch (clip/harness.ts:195). Crucially this does NOT wait
-        // for `castPoseDone` — that hook fires at the cast pose's
-        // last frame, which is ~500 ms past `applyEnd` for a melee
-        // punch. Gating damage on castPoseDone made the popup land
-        // half a second after fist contact.
-        //
-        // Defensive race: launchedVisual covers spells that finish
-        // their entire visual without ever calling signalHit
-        // (legacy / pre-rendered fallback at the wrong displayType);
-        // HIT_CAP_MS = 1500 mirrors the canonical per-sprite Sequencer
-        // hard cap (`new Sequencer(1000)` in Sprite.as:60, plus a 500
-        // ms buffer for the visual completion), so the popup never
-        // stalls indefinitely for a misconfigured spell.
-        const HIT_CAP_MS = 1500;
-        const damageGate = Promise.race([
-          hitFired,
-          launchedVisual,
-          new Promise<void>((r) => setTimeout(r, HIT_CAP_MS)),
-        ]);
-        // Update the in-fight sequencer so subsequent damage events
-        // queue behind THIS spell's hit moment. Mirrors the canonical
-        // per-sprite `oSeq.addAction` queueing where GA;100 (damage)
-        // actions come AFTER GA;300 (SpellLaunch) actions on the same
-        // sequencer.
-        this.spellSequencer = damageGate.catch(() => undefined);
-        if (myId !== null && payload.casterId === myId) {
-          // Spell-cast machine completion gate — separate from the
-          // damage gate. The XState actor stays in `animating` until
-          // both the caster's cast pose has fully run (so the sprite
-          // is back at idle) AND the spell visual is fully done (so
-          // we don't allow a follow-up cast while a fireball is still
-          // in flight). Today damage / ap-change all arrive before
-          // playSpell resolves, so we collapse ANIMATION_COMPLETE +
-          // EFFECTS_RESOLVED at the same moment.
-          const machineGate = Promise.all([castPoseDone, launchedVisual]);
-          void machineGate.finally(() => {
-            const s = spellCastActor.getSnapshot();
-            if (s.matches("animating")) {
-              spellCastActor.send({ type: "ANIMATION_COMPLETE" });
-              spellCastActor.send({ type: "EFFECTS_RESOLVED" });
-            } else if (s.matches("pending")) {
-              // Rare: animation finished before the SERVER_ACK reducer
-              // ran (same microtask). Drive straight through.
-              spellCastActor.send({ type: "SERVER_ACK" });
-              spellCastActor.send({ type: "ANIMATION_COMPLETE" });
-              spellCastActor.send({ type: "EFFECTS_RESOLVED" });
-            }
-          });
-        }
       },
       onDamage: (payload) => {
         // Server emits ActionDamage with sprite_id = target + amount
@@ -694,7 +669,6 @@ export class GameClient {
         // which the user noticed as "damage view shows straight away
         // instead of waiting for the actual hit".
         const targetId = Number(payload.spriteId) || 0;
-        const chain = this.spellSequencer;
         const apply = (): void => {
           const ui = this.battlefield?.getFightUI();
           if (!ui) {
@@ -704,7 +678,7 @@ export class GameClient {
           const cell =
             actorRenderer?.getPlayerCell(targetId) ??
             fightStore.getSnapshot().fighters.get(payload.spriteId)?.cell;
-          if (cell === undefined) {
+          if (cell === undefined || cell < 0) {
             return;
           }
           if (payload.amount >= 0) {
@@ -718,7 +692,7 @@ export class GameClient {
             ui.showHealAtCell(cell, -payload.amount);
           }
         };
-        chain.then(apply, apply);
+        this.presentation.enqueue(apply);
       },
       onPositionStart: (payload) => {
         // Server tells us which cells each team can occupy during
@@ -734,14 +708,76 @@ export class GameClient {
         ui.showPlacementCells(payload.team1Cells, payload.team2Cells);
       },
       onTeleport: (payload) => {
-        const targetId = Number(payload.spriteId) || 0;
-        this.battlefield
-          ?.getFightUI()
-          ?.teleportPlayer(targetId, payload.cellId);
-        // Same reason as onDeath: a fighter just changed cells without
-        // a walk animation, so the pathfinder's occupancy snapshot is
-        // stale. Refresh + re-fire the active hover preview.
-        this.refreshOccupancyAndHover();
+        // Same routing trap as onDirectionChange below: the fighters live
+        // in the world-actor PlayerRenderer, never in the FightUI one,
+        // which stays empty. Going through FightUI made every
+        // ACTION_SPRITE_POSITION a silent no-op — the fight store moved
+        // the fighter to its new cell while the sprite stayed behind on
+        // the old one, so no teleport, push, pull, swap or rollback
+        // moved anything on screen.
+        this.presentation.enqueue(() => {
+          this.battlefield
+            ?.getWorldActorRenderer()
+            ?.teleportPlayer(Number(payload.spriteId), payload.cellId);
+          this.refreshOccupancyAndHover();
+        });
+      },
+      onSummon: (payload) => {
+        const sd = payload.spriteData;
+        if (!sd) {
+          return;
+        }
+        this.presentation.enqueue(async (scope) => {
+          await this.battlefield?.addWorldActor({
+            id: Number(sd.spriteId),
+            name: sd.name,
+            cellId: payload.cellId,
+            direction: sd.direction,
+            look: encodeLook(sd),
+            isCurrentPlayer:
+              sd.spriteId ===
+              this.characterHandler.getCurrentCharacter()?.spriteId,
+            linkedChildren: [],
+            team: sd.team,
+          });
+          if (!scope.isCurrent()) {
+            return;
+          }
+          const renderer = this.battlefield?.getWorldActorRenderer();
+          renderer?.setAnimation(Number(sd.spriteId), PlayerAnimation.IDLE);
+          this.refreshOccupancyAndHover();
+        });
+      },
+      onVisibility: (id, visibility) => {
+        this.presentation.enqueue(() => {
+          this.battlefield
+            ?.getWorldActorRenderer()
+            ?.setCombatVisibility(Number(id), visibility);
+          this.refreshOccupancyAndHover();
+        });
+      },
+      onAppearance: (id, gfxId) => {
+        this.presentation.enqueue(() => {
+          this.battlefield
+            ?.getWorldActorRenderer()
+            ?.setCombatAppearance(Number(id), gfxId);
+        });
+      },
+      onCarry: (carrier, carried) => {
+        this.presentation.enqueue(() => {
+          this.battlefield
+            ?.getWorldActorRenderer()
+            ?.carryPlayer(Number(carrier), Number(carried));
+          this.refreshOccupancyAndHover();
+        });
+      },
+      onUncarry: (id, cell, thrown) => {
+        this.presentation.enqueue(async () => {
+          await this.battlefield
+            ?.getWorldActorRenderer()
+            ?.uncarryPlayer(Number(id), cell, thrown);
+          this.refreshOccupancyAndHover();
+        });
       },
       onAPChange: (payload) => {
         // Server emits ACTION_AP_SPENT (102) + relatives 101/111/120/168
@@ -754,15 +790,20 @@ export class GameClient {
         if (payload.delta === 0) {
           return;
         }
-        const ui = this.battlefield?.getFightUI();
-        const actorRenderer = this.battlefield?.getWorldActorRenderer();
-        const targetId = Number(payload.spriteId) || 0;
-        const cell =
-          actorRenderer?.getPlayerCell(targetId) ??
-          fightStore.getSnapshot().fighters.get(payload.spriteId)?.cell;
-        if (cell !== undefined) {
-          ui?.showStatChangeAtCell(cell, payload.delta, "AP");
-        }
+        this.presentation.enqueue(
+          () => {
+            const ui = this.battlefield?.getFightUI();
+            const actorRenderer = this.battlefield?.getWorldActorRenderer();
+            const targetId = Number(payload.spriteId) || 0;
+            const cell =
+              actorRenderer?.getPlayerCell(targetId) ??
+              fightStore.getSnapshot().fighters.get(payload.spriteId)?.cell;
+            if (cell !== undefined) {
+              ui?.showStatChangeAtCell(cell, payload.delta, "AP");
+            }
+          },
+          { statistic: true }
+        );
       },
       onMPChange: (payload) => {
         if (payload.delta === 0) {
@@ -793,14 +834,7 @@ export class GameClient {
             ui?.showStatChangeAtCell(cell, payload.delta, "MP");
           }
         };
-        const fireAfterMove = (): void => {
-          if (this.mapHandler.isCharacterMoving()) {
-            setTimeout(fireAfterMove, 50);
-            return;
-          }
-          fire();
-        };
-        fireAfterMove();
+        this.presentation.enqueue(fire, { statistic: true });
       },
       onDirectionChange: (payload) => {
         const targetId = Number(payload.spriteId) || 0;
@@ -810,9 +844,11 @@ export class GameClient {
         // change — the visible bug for this is the punch animation
         // playing in the caster's stale facing instead of toward
         // their target.
-        this.battlefield
-          ?.getWorldActorRenderer()
-          ?.setDirection(targetId, payload.direction);
+        this.presentation.enqueue(() =>
+          this.battlefield
+            ?.getWorldActorRenderer()
+            ?.setDirection(targetId, payload.direction)
+        );
       },
       onDeath: (payload) => {
         const targetId = Number(payload.spriteId) || 0;
@@ -829,82 +865,78 @@ export class GameClient {
         // owns GA;300 (SpellLaunch) and GA;100 (Damage), so the death
         // pose only kicks in once the cast pose + spell visual have
         // finished — otherwise the target collapses mid-windup.
-        const chain = this.spellSequencer;
-        const apply = (): void => {
-          const actorRenderer = this.battlefield?.getWorldActorRenderer();
-          if (!actorRenderer) {
-            return;
-          }
-          actorRenderer.setAnimation(targetId, PlayerAnimation.DEATH, {
+        this.presentation.enqueue(async (scope) => {
+          const renderer = this.battlefield?.getWorldActorRenderer();
+          renderer?.setAnimation(targetId, PlayerAnimation.DEATH, {
             revertTo: PlayerAnimation.IDLE,
           });
-          // Corpse cell becomes walkable + LoS-transparent immediately
-          // for preview purposes — fightStore already has `dead: true`,
-          // we just need to push the new occupancy snapshot into the
-          // pathfinder and re-fire the hover so the cursor's path /
-          // spell preview updates without waiting for the next mouse
-          // move.
           this.refreshOccupancyAndHover();
-          const DEATH_REMOVE_DELAY_MS = 1500;
-          setTimeout(() => {
-            // Re-check the fight is still running before removing — if
-            // the fight ended in the meantime, the renderer's clear()
-            // already wiped the sprite and a stray remove would log.
-            if (
-              this.battlefield?.getWorldActorRenderer()?.hasPlayer?.(targetId)
-            ) {
-              this.battlefield?.getWorldActorRenderer()?.removePlayer(targetId);
+          await new Promise<void>((resolve) => {
+            const timer = setTimeout(done, 1500);
+            function done() {
+              clearTimeout(timer);
+              scope.signal.removeEventListener("abort", done);
+              resolve();
             }
-          }, DEATH_REMOVE_DELAY_MS);
-        };
-        chain.then(apply, apply);
+            scope.signal.addEventListener("abort", done, { once: true });
+          });
+          if (scope.isCurrent()) {
+            renderer?.removePlayer(targetId);
+          }
+        });
       },
-      onFightEnd: () => {
+      onFightEnd: async () => {
+        await this.presentation.whenIdle();
         this.battlefield?.getFightUI()?.clearFightVisuals();
+        await this.worldAudio.endFight();
       },
       onZoneAdd: (zone) => {
-        // Glyphs and traps share GameZoneData. Server supplies the
-        // zone shape (areaKind), size, and the canonical element
-        // colour (looked up server-side from the trigger spell's
-        // primary damage element). The client renders the zone via
-        // the canonical Zone.drawCircle path: 30% alpha translucent
-        // fill across the whole zone polygon + 1px solid border on
-        // the outer perimeter only. areaKind=0 (None) is the legacy
-        // default = Circle.
-        const ui = this.battlefield?.getFightUI();
-        const highlighter = ui?.getCellHighlighter();
-        const dims = this.battlefield?.getCurrentMapData();
-        if (!highlighter || !dims) {
-          return;
-        }
-        const isTrap = zone.color === 0xff8000;
-        const type = isTrap ? HighlightType.TRAP : HighlightType.GLYPH;
-        const kind: AreaKind =
-          zone.areaKind === AreaKind.None
-            ? AreaKind.Circle
-            : (zone.areaKind as AreaKind);
-        const cells = cellsInArea(
-          { width: dims.width, height: dims.height },
-          zone.cellId,
-          zone.cellId,
-          kind,
-          zone.size
-        );
-        highlighter.addZone(zone.cellId, cells, type, zone.color);
+        this.presentation.enqueue(() => {
+          // Glyphs and traps share GameZoneData. Server supplies the
+          // zone shape (areaKind), size, and the canonical element
+          // colour (looked up server-side from the trigger spell's
+          // primary damage element). The client renders the zone via
+          // the canonical Zone.drawCircle path: 30% alpha translucent
+          // fill across the whole zone polygon + 1px solid border on
+          // the outer perimeter only. areaKind=0 (None) is the legacy
+          // default = Circle.
+          const ui = this.battlefield?.getFightUI();
+          const highlighter = ui?.getCellHighlighter();
+          const dims = this.battlefield?.getCurrentMapData();
+          if (!highlighter || !dims) {
+            return;
+          }
+          const isTrap = zone.color === 0xff8000;
+          const type = isTrap ? HighlightType.TRAP : HighlightType.GLYPH;
+          const kind: AreaKind =
+            zone.areaKind === AreaKind.None
+              ? AreaKind.Circle
+              : (zone.areaKind as AreaKind);
+          const cells = cellsInArea(
+            { width: dims.width, height: dims.height },
+            zone.cellId,
+            zone.cellId,
+            kind,
+            zone.size
+          );
+          highlighter.addZone(zone.cellId, cells, type, zone.color);
+        });
       },
       onZoneRemove: (zone) => {
-        const highlighter = this.battlefield
-          ?.getFightUI()
-          ?.getCellHighlighter();
-        if (!highlighter) {
-          return;
-        }
-        // Remove the matching zone instance — the highlighter keeps
-        // the cell footprint per (centerCell, type) so we don't need
-        // to recompute it from areaKind/size here. Try both types
-        // since the wire only carries the centre cell.
-        highlighter.removeZone(zone.cellId, HighlightType.GLYPH);
-        highlighter.removeZone(zone.cellId, HighlightType.TRAP);
+        this.presentation.enqueue(() => {
+          const highlighter = this.battlefield
+            ?.getFightUI()
+            ?.getCellHighlighter();
+          if (!highlighter) {
+            return;
+          }
+          // Remove the matching zone instance — the highlighter keeps
+          // the cell footprint per (centerCell, type) so we don't need
+          // to recompute it from areaKind/size here. Try both types
+          // since the wire only carries the centre cell.
+          highlighter.removeZone(zone.cellId, HighlightType.GLYPH);
+          highlighter.removeZone(zone.cellId, HighlightType.TRAP);
+        });
       },
     });
 
@@ -913,15 +945,17 @@ export class GameClient {
     // either by the server's own `GDF` or by the duration the server
     // announced — see `queuedAfterHarvest`.
     let wasHarvesting = isHarvesting();
-    jobsStore.subscribe(() => {
-      const harvesting = isHarvesting();
-      const ended = wasHarvesting && !harvesting;
-      wasHarvesting = harvesting;
+    this.battlefieldUnsubscribers.push(
+      jobsStore.subscribe(() => {
+        const harvesting = isHarvesting();
+        const ended = wasHarvesting && !harvesting;
+        wasHarvesting = harvesting;
 
-      if (ended) {
-        this.flushQueuedAfterHarvest();
-      }
-    });
+        if (ended) {
+          this.flushQueuedAfterHarvest();
+        }
+      })
+    );
 
     // Tint the MP-bound reachable cells whenever it becomes the
     // player's turn (and clear them on every other transition). Lives
@@ -942,6 +976,7 @@ export class GameClient {
     // (battlefield/mc/Sprite.as:753), where the green pattern is a
     // roll-over decoration on the fighter, not a turn indicator.
     let lastMyTurn = false;
+    let lastMyCell: number | null = null;
     let lastMode: string | null = null;
     let lastModeDump = "";
     this.mapHandler.setOnSelfMoveComplete(() => {
@@ -951,7 +986,18 @@ export class GameClient {
       // and the flash is imperceptible, so we hold it through the
       // animation so the click registers visibly.
       const ui = this.battlefield?.getFightUI();
-      ui?.clearHighlightType("selected");
+      // Only drop the tint when the sprite actually reached the cell
+      // that tint was painted for. Chained clicks repaint it for a
+      // later destination, and the walk finishing here is an earlier
+      // one: erasing then would blank the path the player is watching
+      // being queued up.
+      if (
+        this.selectedPathDestination === null ||
+        this.mapHandler.getCurrentCellId() === this.selectedPathDestination
+      ) {
+        ui?.clearHighlightType("selected");
+        this.selectedPathDestination = null;
+      }
       // Only re-paint the range if the user is still pointing at
       // their avatar — otherwise the move ends with a clean board.
       if (this.selfHovered) {
@@ -971,7 +1017,7 @@ export class GameClient {
       // the "you clicked this path" color until the walk finishes.
       this.battlefield?.getFightUI()?.clearHighlightType("movement-path");
     });
-    fightActor.subscribe((snap) => {
+    const fightUiSubscription = fightActor.subscribe((snap) => {
       const isMyTurn =
         typeof snap.value === "object" &&
         snap.value !== null &&
@@ -1010,9 +1056,57 @@ export class GameClient {
       if (lastMyTurn && !isMyTurn) {
         ui.clearHighlightType("movement");
         ui.clearHighlightType("movement-path");
+        // Catch-all for a tint whose move never landed, a path the
+        // server refused being the usual case.
+        ui.clearHighlightType("selected");
+        this.selectedPathDestination = null;
       }
       lastMyTurn = isMyTurn;
+
+      // The action we were waiting on came back. Replay the click the
+      // player made in the meantime, against the state as it now
+      // stands: `handleCellClick` re-derives everything, so a buffered
+      // intent that has become illegal is simply refused like any
+      // other click.
+      const pending = snap.context.actionPending;
+      const buffered = this.bufferedFightClick;
+      if (buffered !== null && (!pending || !isMyTurn)) {
+        this.bufferedFightClick = null;
+        if (!pending && isMyTurn) {
+          this.handleCellClick(buffered);
+        }
+      }
+
+      // Our cell moved, at message time, which is well before the walk
+      // finishes on screen. Everything anchored on it has to follow now
+      // rather than at the end of the animation, or an action lined up
+      // behind that walk would be aimed from where we no longer are.
+      const myCell =
+        snap.context.fighters.get(snap.context.mySpriteId ?? "")?.cell ?? null;
+      if (myCell !== null && myCell >= 0 && myCell !== lastMyCell) {
+        const previous = lastMyCell;
+        lastMyCell = myCell;
+        if (previous !== null) {
+          const cast = spellCastActor.getSnapshot();
+          const spell = cast.context.spell;
+          if (cast.matches("targeting") && spell) {
+            const targetingCells = this.spellTargetingCells(spell, myCell);
+            if (targetingCells) {
+              spellCastActor.send({
+                type: "CASTER_MOVED",
+                casterCellId: myCell,
+                targetingCells,
+              });
+            }
+          }
+          if (this.selfHovered) {
+            this.refreshReachableRange();
+          }
+        }
+      }
+      this.hoverPreview?.refreshFromCurrentHover();
     });
+    this.battlefieldUnsubscribers.push(() => fightUiSubscription.unsubscribe());
 
     // (The MP overlay's hover-on-self subscription is wired in
     // `setBattlefield` below — Battlefield doesn't exist yet at this
@@ -1025,7 +1119,7 @@ export class GameClient {
     // auto-restored here — it follows sprite hover only, so cancelling
     // a spell selection without re-hovering the avatar correctly
     // leaves the map clean.
-    spellCastActor.subscribe((snap) => {
+    const castUiSubscription = spellCastActor.subscribe((snap) => {
       const ui = this.battlefield?.getFightUI();
       if (!ui) {
         return;
@@ -1052,28 +1146,20 @@ export class GameClient {
           // Also exclude `hp <= 0` — same defensive double-check
           // as `occupiedCells()` above; protects against a stale
           // `gameTurnMiddle` patch that flips `dead` back to false.
-          if (!f.dead && f.hp > 0) {
+          if (
+            !f.dead &&
+            f.hp > 0 &&
+            !f.hidden &&
+            !f.carriedById &&
+            f.cell >= 0
+          ) {
             occupants.add(f.cell);
           }
         }
         const allowed: number[] = [];
         if (spell && caster !== null && dims) {
-          const fmap = {
-            width: dims.width,
-            height: dims.height,
-            occupantOf: (cell: number): number | undefined =>
-              occupants.has(cell) ? cell : undefined,
-            losBlocked: (cell: number): boolean =>
-              this.battlefield?.isCellLosBlocked(cell) ?? false,
-          };
           for (const cell of targeting) {
-            // Caster cell is always "allowed" visually — never paint
-            // its own square as blocked.
-            if (cell === caster) {
-              allowed.push(cell);
-              continue;
-            }
-            if (!spell.lineOfSight || hasLineOfSight(fmap, caster, cell)) {
+            if (this.isSpellTargetAllowed(spell, cell)) {
               allowed.push(cell);
             }
           }
@@ -1093,12 +1179,14 @@ export class GameClient {
       }
     });
 
+    this.battlefieldUnsubscribers.push(() => castUiSubscription.unsubscribe());
+
     // TURN_START / TURN_END on the fight machine bubbles into the
     // cast machine as TURN_ENDED so any in-flight selection is dropped
     // when the active fighter changes — the server rejects stale casts
     // anyway and we must not carry highlights across turns.
     let lastFighting: string | null = null;
-    fightActor.subscribe((snap) => {
+    const turnSelectionSubscription = fightActor.subscribe((snap) => {
       const state =
         typeof snap.value === "object" &&
         snap.value !== null &&
@@ -1109,16 +1197,13 @@ export class GameClient {
         if (lastFighting === "myTurn" && state !== "myTurn") {
           spellCastActor.send({ type: "TURN_ENDED" });
         }
-        if (state === "myTurn" && lastFighting !== "myTurn") {
-          // Dofus 1.29 cooldowns tick down at the start of the
-          // caster's turn — the server only emits SpellCooldown on
-          // initial lock-out, so the client owns the countdown.
-          tickCooldowns();
-        }
         lastFighting = state;
       }
     });
 
+    this.battlefieldUnsubscribers.push(() =>
+      turnSelectionSubscription.unsubscribe()
+    );
     const stats = this.characterHandler.getCurrentStats();
     if (stats) {
       characterStore.setState({ stats });
@@ -1156,17 +1241,51 @@ export class GameClient {
   async login(username: string, password: string): Promise<void> {
     loginActor.send({ type: "START_LOGIN", username });
 
+    if (!(await this.readyToIdentify())) {
+      return;
+    }
+
+    await this.sendIdentity(
+      username,
+      await derivePasswordKey(password, username)
+    );
+  }
+
+  /**
+   * Sign in with an already-derived key instead of a plaintext.
+   *
+   * The key is exactly what `login` puts on the wire — 1.29's password
+   * never leaves the browser either — so this grants nothing extra. It
+   * exists for the dev quick-connect, which holds pre-derived keys so a
+   * click does not pay 600 000 PBKDF2 rounds before the socket moves.
+   */
+  async loginWithKey(username: string, passwordKey: string): Promise<void> {
+    loginActor.send({ type: "START_LOGIN", username });
+
+    if (!(await this.readyToIdentify())) {
+      return;
+    }
+
+    await this.sendIdentity(username, passwordKey);
+  }
+
+  private async readyToIdentify(): Promise<boolean> {
     try {
       await this.waitForCompatibleContract();
+      return true;
     } catch (error) {
       loginActor.send({
         type: "AUTH_FAILURE",
         reason: `incompatible server contract: ${(error as Error).message}`,
       });
-      return;
+      return false;
     }
+  }
 
-    const passwordKey = await derivePasswordKey(password, username);
+  private async sendIdentity(
+    username: string,
+    passwordKey: string
+  ): Promise<void> {
     this.connection.send(
       encodeClient(
         "accountSendIdentity",
@@ -1942,6 +2061,233 @@ export class GameClient {
     this.adminHandler.execute(request);
   }
 
+  private animateFightSpell(
+    payload: import("@/game/network/handlers/fight.handler").SpellCastPayload,
+    scope: PresentationScope,
+    selectionVersion: number
+  ): PresentationPhases {
+    // The acknowledgement itself happens at message time in
+    // `onSpellCast`; by the time this runs the machine is normally
+    // already past `pending`. What is left here is the tail of the
+    // flow, which does belong to the animation: `animating` →
+    // `resolving` → `idle` once the pose and the visual are done.
+    // Opposing-caster launches still play their animation but never
+    // touch the machine, which tracks only *our* cast UX.
+    const myIdStr = this.characterHandler.getCurrentCharacter()?.spriteId;
+    const myId = myIdStr === undefined ? null : Number(myIdStr);
+    // Resolve the caster cell from the world-actor renderer — that
+    // is where fighters actually live in this codebase (both during
+    // roleplay AND combat). The FightUI's internal PlayerRenderer
+    // stays empty, so querying it would always miss and fall
+    // through to cell 0. The fight-store fighter snapshot is a
+    // last-ditch fallback in case the sprite hasn't been added yet.
+    const casterCellId =
+      this.battlefield
+        ?.getWorldActorRenderer()
+        ?.getPlayerCell(payload.casterId) ??
+      fightStore.getSnapshot().fighters.get(String(payload.casterId))?.cell ??
+      payload.targetCellId;
+    // Play the caster's CAST pose, then launch the spell visual
+    // ONCE THE POSE COMPLETES. Mirrors canonical SpriteHandler.as
+    // launchVisualEffect:
+    //   addAction(18, blocking=true, setAnim, [castPose, false, true])
+    //   addAction(20, blocking=false, addEffect, [...])
+    // The blocking=true flag makes the sequencer wait for setAnim
+    // to report completion (= last frame reached) before running
+    // the addEffect step. Without this gate the visual fires in
+    // parallel with the cast pose, which the user perceives as
+    // "no delay before the spell fires".
+    const actorRenderer = this.battlefield?.getWorldActorRenderer();
+    const fightUI = this.battlefield?.getFightUI();
+    // Hit gate — resolves when the spell visual fires its canonical
+    // `runtime.signalHit()` (clip/harness.ts LANDED branch for
+    // projectile displayTypes 30/31/40/41). For instant spells
+    // without a separate hit phase, the runtime never fires this,
+    // so the chain falls back to `launchedVisual` completion (or
+    // the SEQUENCER_HOLD_CAP_MS cap below).
+    let hitFiredResolve!: () => void;
+    const hitFired = new Promise<void>((resolve) => {
+      hitFiredResolve = resolve;
+    });
+    const launchSpellVisual = (): Promise<void> | undefined =>
+      payload.targetCellId < 0 ||
+      casterCellId < 0 ||
+      (payload.visualGfxId <= 0 && payload.spellId !== 0)
+        ? undefined
+        : fightUI?.playSpell({
+            signal: scope.signal,
+            // visualGfxId comes from the server's GA;300 param3 (the
+            // SWF filename / sorts.sprite); spell.spellId stays for
+            // gameplay logic + lang lookup.
+            spellId: payload.visualGfxId,
+            casterCellId,
+            targetCellId: payload.targetCellId,
+            casterId: payload.casterId,
+            spellLevel: payload.spellLevel,
+            critical: payload.critical,
+            playSound: (name) => this.audioManager.playSound(name),
+            onHit: () => hitFiredResolve(),
+          });
+    // Canonical timing pulls from two distinct hooks on the
+    // caster's animation, so damage popups land at the perceived
+    // "hit" instead of mid-windup:
+    //
+    //   1. applyEnd (mid-anim) — `GAC.applyEnd(this)` routes to
+    //      `GlobalSpriteHandler.applyEnd → sequencer.onActionEnd()`,
+    //      which is the canonical signal to LAUNCH the spell visual
+    //      (advance past the blocking setAnim action to action 20 =
+    //      `addEffect`). PlayerRenderer fires `onComplete` here.
+    //
+    //   2. lastFrame (end of anim) — the inner timeline's `stop()`
+    //      lands on the last frame, which the Sequencer treats as
+    //      "the cast/melee sequence finished". GA;100 damage actions
+    //      queue AFTER the spell visual on the same Sequencer, so the
+    //      damage popup canonical fires at lastFrame + visual end —
+    //      that is when the punch contacts (close combat) or when the
+    //      projectile lands (ranged spells with proper visuals).
+    //
+    // The 1500 ms cap is a defensive fallback (canonical Sequencer
+    // hard cap is 1000 ms in Sprite.as:60; we add a small buffer for
+    // the visual completion). It only fires when the metadata-driven
+    // hooks don't (sprite not loaded, monster sprite without applyEnd
+    // metadata, etc.).
+    const SEQUENCER_HOLD_CAP_MS = 1500;
+    const noCaster =
+      !actorRenderer || !actorRenderer.hasPlayer?.(payload.casterId);
+    // The cast pose's last-frame promise — gates the damage popup
+    // (so it lands at fist-contact / windup-end, not mid-anim).
+    let castPoseDoneResolve!: () => void;
+    const castPoseDone = new Promise<void>((resolve) => {
+      castPoseDoneResolve = resolve;
+      if (noCaster) {
+        // No tracked sprite to animate — resolve immediately so the
+        // chain doesn't stall.
+        resolve();
+      }
+      // Defensive cap (sprite never finishes its anim, e.g. metadata
+      // race or the renderer drops the player mid-cast).
+      setTimeout(resolve, SEQUENCER_HOLD_CAP_MS);
+    });
+    let visualPromise: Promise<void> | undefined;
+    // Spell-launch promise — fires when the visual has completed
+    // (or is skipped). Wired separately so we can `Promise.all`
+    // both signals into a single hit-resolution gate.
+    const launchedVisual = new Promise<void>((resolve) => {
+      let fired = false;
+      const fire = (): void => {
+        if (fired) {
+          return;
+        }
+        fired = true;
+        if (!scope.isCurrent()) {
+          resolve();
+          return;
+        }
+        visualPromise = launchSpellVisual();
+        if (visualPromise) {
+          void visualPromise.then(resolve, (error: unknown) => {
+            log.error(
+              `Spell visual ${payload.visualGfxId} failed: ${String(error)}`
+            );
+            if (!this.reportedBrokenVisuals.has(payload.visualGfxId)) {
+              this.reportedBrokenVisuals.add(payload.visualGfxId);
+              appendErrorMessage(
+                `L’animation du sort ${payload.spellId} n’a pas pu être affichée.`
+              );
+            }
+            resolve();
+          });
+        } else {
+          resolve();
+        }
+      };
+      // Pick the cast pose based on the server-supplied animation
+      // hint. Canonical Dofus 1.29 sends "anim0" for close-combat
+      // (the melee punch frame in every player's atlas) and "anim1"
+      // for any ranged / magic spell. Without this gate the punch
+      // (spell 0) used to play the same cast pose as a fireball.
+      // Direction handling has moved to the server — fight-turn
+      // handler emits an authoritative `directionChange` action
+      // before every SpellLaunch (and before close combat).
+      const castPose =
+        payload.animation === "anim0"
+          ? PlayerAnimation.ATTACK
+          : PlayerAnimation.CAST;
+      actorRenderer?.setAnimation(payload.casterId, castPose, {
+        revertTo: PlayerAnimation.IDLE,
+        // Spell visual launches at applyEnd — the canonical hook
+        // (`GAC.applyEnd → sequencer.onActionEnd`).
+        onComplete: fire,
+        // Cast pose's actual end — gate for the damage popup.
+        onLastFrame: () => castPoseDoneResolve(),
+      });
+      setTimeout(fire, SEQUENCER_HOLD_CAP_MS);
+      if (noCaster) {
+        fire();
+      }
+    });
+    // Damage popup gate — resolves the moment the spell visual
+    // signals hit. For melee impact spells (displayType 11) this
+    // is the cast pose's `applyEnd` (Spell0.onSpellStart fires
+    // signalHit immediately, and onSpellStart runs when playSpell
+    // launches — i.e. at applyEnd). For ranged projectiles
+    // (displayType 30/31/40/41) this is the harness's LANDED
+    // branch (clip/harness.ts:195). Crucially this does NOT wait
+    // for `castPoseDone` — that hook fires at the cast pose's
+    // last frame, which is ~500 ms past `applyEnd` for a melee
+    // punch. Gating damage on castPoseDone made the popup land
+    // half a second after fist contact.
+    //
+    // Defensive race: launchedVisual covers spells that finish
+    // their entire visual without ever calling signalHit
+    // (legacy / pre-rendered fallback at the wrong displayType);
+    // The pose has its own fallback. Once launched, a valid long visual
+    // must reach its impact; SpellActor reports and terminates failed clips.
+    const damageGate = Promise.race([hitFired, launchedVisual]);
+    // Update the in-fight sequencer so subsequent damage events
+    // queue behind THIS spell's hit moment. Mirrors the canonical
+    // per-sprite `oSeq.addAction` queueing where GA;100 (damage)
+    // actions come AFTER GA;300 (SpellLaunch) actions on the same
+    // sequencer.
+
+    if (myId !== null && payload.casterId === myId) {
+      // Spell-cast machine completion gate — separate from the
+      // damage gate. The XState actor stays in `animating` until
+      // both the caster's cast pose has fully run (so the sprite
+      // is back at idle) AND the spell visual is fully done (so
+      // we don't allow a follow-up cast while a fireball is still
+      // in flight). Today damage / ap-change all arrive before
+      // playSpell resolves, so we collapse ANIMATION_COMPLETE +
+      // EFFECTS_RESOLVED at the same moment.
+      const machineGate = Promise.all([castPoseDone, launchedVisual]);
+      void machineGate.finally(() => {
+        const s = spellCastActor.getSnapshot();
+        if (
+          !scope.isCurrent() ||
+          s.context.selectionVersion !== selectionVersion
+        ) {
+          return;
+        }
+        if (s.matches("animating")) {
+          spellCastActor.send({ type: "ANIMATION_COMPLETE" });
+          spellCastActor.send({ type: "EFFECTS_RESOLVED" });
+        } else if (s.matches("pending")) {
+          // Rare: animation finished before the SERVER_ACK reducer
+          // ran (same microtask). Drive straight through.
+          spellCastActor.send({ type: "SERVER_ACK" });
+          spellCastActor.send({ type: "ANIMATION_COMPLETE" });
+          spellCastActor.send({ type: "EFFECTS_RESOLVED" });
+        }
+      });
+    }
+
+    return {
+      impact: damageGate,
+      finished: Promise.all([castPoseDone, launchedVisual]),
+      cleanup: launchedVisual,
+    };
+  }
+
   private handleCellClick(targetCellId: number): void {
     if (isHarvesting()) {
       log.debug("cell-click ignored: harvest owns the character");
@@ -1950,6 +2296,18 @@ export class GameClient {
 
     const fightMode = fightStore.getSnapshot().mode;
     log.debug(`cell-click cell=${targetCellId} fightMode=${fightMode}`);
+
+    // "Show a cell" is armed: this click drops the arrow for our team
+    // and does nothing else. It comes before placement and combat so a
+    // marker never doubles as a move.
+    if (
+      isFlagArmed() &&
+      (fightMode === "placement" || fightMode === "fighting")
+    ) {
+      this.fightHandler.setFlag(targetCellId);
+      setFlagArmed(false);
+      return;
+    }
 
     // Placement: send GameSetPosition; the server validates against the
     // allowed cells and broadcasts the sprite move.
@@ -1963,26 +2321,36 @@ export class GameClient {
     // machine to `pending` and fire the cast request. Otherwise the
     // click is a movement command.
     if (fightMode === "fighting") {
-      // Ignore clicks while our sprite is still animating a previous
-      // move. `currentCellId` on the map-handler is only updated
-      // when handleActorPath resolves; a click mid-animation would
-      // compute a path from the STALE pre-move cell — the server
-      // would then reject it (fighter already moved, distance
-      // check fails) and the position would silently desync.
-      if (this.mapHandler.isCharacterMoving()) {
-        log.debug(
-          "fight-click ignored: self sprite still animating previous move"
-        );
+      const state = fightStore.getSnapshot();
+      if (!state.isMyTurn || state.finishing) {
         return;
       }
-      const castSnap = spellCastActor.getSnapshot();
-      if (castSnap.matches("targeting") && castSnap.context.spell) {
-        const spell = castSnap.context.spell;
-        if (!castSnap.context.targetingCells.includes(targetCellId)) {
-          // Click outside the range ring — cancel targeting and fall
-          // through to the movement branch.
+      const cast = spellCastActor.getSnapshot();
+      // `pending` means our own cast is in the air and we have not
+      // heard back yet; anything sent now would be computed on stats
+      // the server is about to change. `animating` and `resolving`
+      // are pure presentation states and must not swallow a click —
+      // that was the whole "wait for the fireball to land before you
+      // may move" complaint.
+      if (cast.matches("pending")) {
+        return;
+      }
+      if (cast.matches("targeting") && cast.context.spell) {
+        const spell = cast.context.spell;
+        const refusal =
+          this.spellTargetRefusal(spell, targetCellId) ??
+          (!cast.context.targetingCells.includes(targetCellId)
+            ? "Cellule hors portée de ce sort."
+            : null);
+        if (refusal) {
           spellCastActor.send({ type: "DESELECT" });
+          appendErrorMessage(refusal);
+          return;
         } else {
+          if (state.actionPending) {
+            this.bufferedFightClick = targetCellId;
+            return;
+          }
           log.info(
             `cast spell=${spell.spellId} target=${targetCellId} level=${spell.level}`
           );
@@ -1991,7 +2359,15 @@ export class GameClient {
           return;
         }
       }
-      const fightCurrentCell = this.mapHandler.getCurrentCellId();
+      if (state.actionPending) {
+        this.bufferedFightClick = targetCellId;
+        return;
+      }
+      // Where the server has us, not where the sprite happens to be:
+      // a move queued behind a running animation has to start from the
+      // cell the previous action landed on, which the server already
+      // told us about.
+      const fightCurrentCell = this.myFightCell();
       const fightPathfinding = this.mapHandler.getPathfinding();
       if (fightCurrentCell === null || !fightPathfinding) {
         log.warn(
@@ -2006,7 +2382,9 @@ export class GameClient {
       // like it was silently swallowed.
       this.syncFightOccupiedCells(fightPathfinding, fightCurrentCell);
       // Fight paths must stay on the 4 cardinal-isometric directions.
-      const fightPath = fightPathfinding.findFightPath(
+      const fightPath = fightMovementPath(
+        state,
+        fightPathfinding,
         fightCurrentCell,
         targetCellId
       );
@@ -2017,7 +2395,7 @@ export class GameClient {
         return;
       }
       const mp = fightStore.getSnapshot().mp;
-      if (mp > 0 && fightPath.length - 1 > mp) {
+      if (mp <= 0 || fightPath.length - 1 > mp) {
         log.warn(
           `fight-move dropped: ${fightPath.length - 1} steps needed but only ${mp} MP`
         );
@@ -2038,6 +2416,7 @@ export class GameClient {
         ui.clearHighlightType("movement-path");
         ui.highlightCells(fightPath.slice(1), "selected");
       }
+      this.selectedPathDestination = targetCellId;
       this.fightHandler.sendMove(fightPath, mapWidth);
       return;
     }
@@ -2134,18 +2513,45 @@ export class GameClient {
     this.startInteractive(queued.cellId, queued.skillId);
   }
 
+  fightHoverFighter(spriteId: string | null): void {
+    this.battlefield?.hoverFightFighter(spriteId);
+  }
+
   // ── Fight actions (called by FightOverlay) ───────────────────────
 
   fightReady(): void {
-    this.fightHandler.setReady(true);
+    const fight = fightStore.getSnapshot();
+    this.fightHandler.setReady(
+      !fight.fighters.get(fight.mySpriteId ?? "")?.ready
+    );
   }
 
   fightPassTurn(): void {
+    const fight = fightStore.getSnapshot();
+    if (!fight.isMyTurn || fight.actionPending || fight.finishing) {
+      return;
+    }
+    // Animations still queued keep playing: the client holds its
+    // `gameTurnOk` for the next turn until the queue drains, so
+    // nothing is cut off by passing early.
     this.fightHandler.passTurn();
   }
 
   fightForfeit(): void {
     this.fightHandler.forfeit();
+  }
+
+  fightToggleOption(option: FightOptionCode): void {
+    this.fightHandler.toggleFightOption(option);
+  }
+
+  /**
+   * Arm the "show a cell" arrow. The next battlefield click places the
+   * marker instead of moving or casting; clicking the button again
+   * disarms it.
+   */
+  fightToggleFlagArmed(): void {
+    toggleFlagArmed();
   }
 
   /**
@@ -2154,7 +2560,45 @@ export class GameClient {
    * a cast target. Re-clicking the same slot deselects (mirrors the
    * original Dofus 1.29 behavior).
    */
+  private isSpellTargetAllowed(
+    spell: import("@/game/stores/spells-store").SpellEntry,
+    cell: number
+  ): boolean {
+    return this.spellTargetRefusal(spell, cell) === null;
+  }
+
+  private spellTargetRefusal(
+    spell: import("@/game/stores/spells-store").SpellEntry,
+    cell: number
+  ): string | null {
+    const fight = fightStore.getSnapshot();
+    const mine = fight.fighters.get(fight.mySpriteId ?? "");
+    const map = this.battlefield?.getCurrentMapData();
+    if (!mine || !map) {
+      return "La carte du combat n’est pas encore prête.";
+    }
+    const terrain = map.cells.find((entry) => entry.id === cell);
+    return spellTargetError(
+      spell,
+      mine,
+      [...fight.fighters.values()],
+      {
+        ...map,
+        occupantOf: () => undefined,
+        losBlocked: (id) => this.battlefield?.isCellLosBlocked(id) ?? true,
+      },
+      cell,
+      Boolean(
+        terrain && terrain.active !== false && (terrain.movement ?? 0) > 1
+      )
+    );
+  }
+
   fightSelectSpell(spellId: number): void {
+    const fight = fightStore.getSnapshot();
+    if (!fight.isMyTurn || fight.finishing) {
+      return;
+    }
     const snap = spellCastActor.getSnapshot();
     if (snap.context.spell?.spellId === spellId && snap.matches("targeting")) {
       spellCastActor.send({ type: "DESELECT" });
@@ -2165,28 +2609,34 @@ export class GameClient {
       log.warn(`fight-select-spell: unknown spell ${spellId}`);
       return;
     }
-    const casterCellId = this.mapHandler.getCurrentCellId();
-    const pf = this.mapHandler.getPathfinding();
-    if (casterCellId === null || !pf) {
+    if (spell.combatUnavailableReason) {
+      appendInfoMessage(spell.combatUnavailableReason);
+      return;
+    }
+    if (spell.apCost > fight.ap || spell.cooldownRemaining > 0) {
+      return;
+    }
+    const mine = fight.fighters.get(fight.mySpriteId ?? "");
+    if (
+      (spell.requiredStates ?? []).some((id) => !mine?.states?.includes(id)) ||
+      (spell.forbiddenStates ?? []).some((id) => mine?.states?.includes(id))
+    ) {
+      return;
+    }
+    const casterCellId = this.myFightCell();
+    if (casterCellId === null) {
       log.warn(
         `fight-select-spell: no caster cell or pathfinding for ${spellId}`
       );
       return;
     }
-    // Spell range = canonical Dofus 1.29 4-way Manhattan diamond
-    // expansion (BFS over the 4 diamond-adjacent cells = SE/SW/NW/NE).
-    // `orthogonalOnly=true` switches the BFS to those 4 directions so
-    // the preview shape matches the server's distance check (which
-    // uses the same 4-way metric in fightDistance) AND the canonical
-    // diamond range overlay players know from the original client.
-    // The 8-way default would produce a SQUARE shape with ~2x the
-    // cells, which is what the user reported as "wrong".
-    const targetingCells = pf.cellsInRange(
-      casterCellId,
-      spell.rangeMin,
-      spell.rangeMax,
-      true
-    );
+    const targetingCells = this.spellTargetingCells(spell, casterCellId);
+    if (!targetingCells) {
+      log.warn(
+        `fight-select-spell: no caster cell or pathfinding for ${spellId}`
+      );
+      return;
+    }
     spellCastActor.send({
       type: "SELECT_SPELL",
       spell,
@@ -2202,6 +2652,60 @@ export class GameClient {
    * player can start a path from where they stand. Called before any
    * fight-mode pathfinding query.
    */
+  /**
+   * My cell as the *server* knows it, which is what every fight
+   * decision has to be built on.
+   *
+   * `MapHandler.currentCellId` only commits when the walk animation
+   * ends, so it lags a queued action by the whole length of that
+   * animation. The fight store applies the movement frame the moment
+   * it arrives, which is also the moment the server considers the
+   * fighter moved. Reading the store is what lets the player line up a
+   * second action while the first one is still playing on screen.
+   *
+   * Falls back to the map handler outside combat, and for the window
+   * between joining a fight and receiving the first roster.
+   */
+  private myFightCell(): number | null {
+    const fight = fightStore.getSnapshot();
+    const mine = fight.fighters.get(fight.mySpriteId ?? "");
+    if (mine && mine.cell >= 0) {
+      return mine.cell;
+    }
+    return this.mapHandler.getCurrentCellId();
+  }
+
+  /**
+   * The range ring for `spell` cast from `casterCellId`.
+   *
+   * Canonical Dofus 1.29 4-way Manhattan diamond expansion (BFS over
+   * the 4 diamond-adjacent cells = SE/SW/NW/NE). `orthogonalOnly=true`
+   * switches the BFS to those 4 directions so the preview matches the
+   * server's own distance check (same 4-way metric in `fightDistance`)
+   * and the diamond overlay players know from the original client. The
+   * 8-way default would draw a square with roughly twice the cells.
+   */
+  private spellTargetingCells(
+    spell: import("@/game/stores/spells-store").SpellEntry,
+    casterCellId: number
+  ): number[] | null {
+    const pf = this.mapHandler.getPathfinding();
+    if (!pf) {
+      return null;
+    }
+    const fight = fightStore.getSnapshot();
+    const mine = fight.fighters.get(fight.mySpriteId ?? "");
+    return pf.cellsInRange(
+      casterCellId,
+      spell.rangeMin,
+      Math.max(
+        spell.rangeMin,
+        spell.rangeMax + (spell.modifiableRange ? (mine?.rangeBonus ?? 0) : 0)
+      ),
+      true
+    );
+  }
+
   private syncFightOccupiedCells(
     pf: ReturnType<MapHandler["getPathfinding"]>,
     selfCellId: number
@@ -2216,7 +2720,7 @@ export class GameClient {
       // that should not block pathing. Defensive double-check
       // because `gameTurnMiddle` patches sometimes overwrite the
       // dead flag with the server's transient state.
-      if (f.dead || f.hp <= 0) {
+      if (f.dead || f.hp <= 0 || f.hidden || f.carriedById || f.cell < 0) {
         continue;
       }
       if (f.cell === selfCellId) {
@@ -2227,12 +2731,14 @@ export class GameClient {
   }
 
   /**
-   * Recompute the MP-bound reachable cells for my fighter. Guarded on
-   * `isCharacterMoving()` — during a move animation the server has
-   * already dispatched the MP delta but our currentCellId still points
-   * at the pre-move cell, so recomputing now would render a ring
-   * centered on the wrong cell. The map handler replays this hook
-   * after the animation resolves.
+   * Recompute the MP-bound reachable cells for my fighter.
+   *
+   * Anchored on `myFightCell()`, so it follows the server's idea of
+   * where we stand rather than the sprite's. During a queued move the
+   * ring therefore sits on the destination while the sprite is still
+   * walking towards it. That is deliberate: the ring answers "where
+   * can I go from here", and "here" is what the server will validate
+   * the next click against.
    */
   private refreshReachableRange(): void {
     const ui = this.battlefield?.getFightUI();
@@ -2247,12 +2753,7 @@ export class GameClient {
     if (!isMyTurn) {
       return;
     }
-    if (this.mapHandler.isCharacterMoving()) {
-      // Animation still running; the move-complete hook will call us
-      // back with the settled currentCellId.
-      return;
-    }
-    const cell = this.mapHandler.getCurrentCellId();
+    const cell = this.myFightCell();
     const pf = this.mapHandler.getPathfinding();
     const mp = snap.context.mp;
     if (cell === null || !pf) {
@@ -2315,8 +2816,13 @@ export class GameClient {
   }
 
   destroy(): void {
+    for (const unsubscribe of this.battlefieldUnsubscribers.splice(0)) {
+      unsubscribe();
+    }
     this.connection.destroy();
     this.messageHandler.clear();
+    this.worldAudio.stop();
+    this.unbindAudioEvents();
     this.audioManager.destroy();
     this.fightHandler.destroy();
     this.characterHandler.destroy();

@@ -5,6 +5,8 @@ import { DISPLAY_HEIGHT, FULL_HEIGHT } from "@/game/constants/battlefield";
 import { characterStore, closeAllPanels, hudStore } from "@/game/stores";
 import { fightActor } from "@/game/stores/fight-store";
 
+import { AudioSettingsControl } from "./audio/AudioSettingsControl";
+import { audioClick } from "./audio/audio-click";
 import { BannerReact } from "./banner/BannerReact";
 import { BigStoreWindow } from "./bigstore/BigStoreWindow";
 import { TooltipProvider } from "./components/Tooltip";
@@ -25,6 +27,7 @@ import { InventoryWindow } from "./inventory/InventoryWindow";
 import { JobsPanel } from "./jobs/JobsPanel";
 import { MountPanel } from "./mount/MountPanel";
 import { NpcDialog } from "./npc/NpcDialog";
+import { OptionsPanel } from "./options/OptionsPanel";
 import { QuestsPanel } from "./quests/QuestsPanel";
 import { SpellBook } from "./spells/SpellBook";
 import { StatsPanel } from "./stats/StatsPanel";
@@ -87,6 +90,7 @@ export function HudOverlay({
   return (
     <TooltipProvider>
       <div
+        onClickCapture={audioClick}
         style={{
           position: "absolute",
           left: canvasRect.left,
@@ -97,6 +101,12 @@ export function HudOverlay({
           zIndex: 10,
         }}
       >
+        {gameClient && (
+          <AudioSettingsControl
+            audio={gameClient.getAudioManager()}
+            zoom={baseZoom}
+          />
+        )}
         {activePanel === "stats" && (
           <div style={panelWrapStyle}>
             <StatsPanel
@@ -170,6 +180,12 @@ export function HudOverlay({
         {activePanel === "conquest" && (
           <div style={panelWrapStyle}>
             <ConquestPanel zoom={baseZoom} onClose={() => closeAllPanels()} />
+          </div>
+        )}
+
+        {activePanel === "options" && (
+          <div style={panelWrapStyle}>
+            <OptionsPanel zoom={baseZoom} onClose={() => closeAllPanels()} />
           </div>
         )}
 
@@ -287,6 +303,8 @@ export function HudOverlay({
             ? {
                 onSelectSpell: (spellId) =>
                   gameClient.fightSelectSpell(spellId),
+                onPassTurn: () => gameClient.fightPassTurn(),
+                onForfeit: () => gameClient.fightForfeit(),
               }
             : {})}
         />
@@ -294,17 +312,20 @@ export function HudOverlay({
         {gameClient && (
           <FightOverlay
             actions={{
-              onPassTurn: () => gameClient.fightPassTurn(),
+              onHoverFighter: (id) => gameClient.fightHoverFighter(id),
               onForfeit: () => gameClient.fightForfeit(),
               onReady: () => gameClient.fightReady(),
               // Spell selection now lives on the main banner grid
               // (BannerReact). FightOverlay no longer renders its own
               // spell bar — the banner doubles as the in-fight cast UI.
               onSelectSpell: (spellId) => gameClient.fightSelectSpell(spellId),
+              onToggleOption: (option) => gameClient.fightToggleOption(option),
+              onToggleFlagArmed: () => gameClient.fightToggleFlagArmed(),
             }}
           />
         )}
         <FightEndDialog
+          playArea={{ width: canvasRect.w, height: bannerTopPx }}
           onClose={() => {
             // Local-only dismissal — the server already emitted GameEnd
             // and tore down the fight on its side. Sending gameLeave

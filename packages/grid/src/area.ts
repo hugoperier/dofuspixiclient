@@ -1,6 +1,6 @@
 import { match } from "ts-pattern";
 
-import { cellToCoord } from "./cell.ts";
+import { cellToCoord, totalCells } from "./cell.ts";
 
 export const AreaKind = {
   None: 0,
@@ -30,6 +30,48 @@ export interface FightMapLos extends FightMapDims {
    * keep working.
    */
   losBlocked?(cell: number): boolean;
+}
+
+export interface CastGeometry {
+  rangeMin: number;
+  rangeMax: number;
+  rangeBonus: number;
+  modifiableRange: boolean;
+  lineOnly: boolean;
+  lineOfSight: boolean;
+  emptyCell: boolean;
+}
+
+/** Geometry only: the server also checks ownership, resources, states and usage. */
+export function castGeometryError(
+  fmap: FightMapLos,
+  from: number,
+  to: number,
+  rules: CastGeometry
+): string | null {
+  if (!inBounds(fmap, from) || !inBounds(fmap, to)) {
+    return "bad_cell";
+  }
+  const max = Math.max(
+    rules.rangeMin,
+    rules.rangeMax + (rules.modifiableRange ? rules.rangeBonus : 0)
+  );
+  const range = fightDistance(fmap, from, to);
+  if (range < rules.rangeMin || range > max) {
+    return "out_of_range";
+  }
+  const a = cellToCoord(from, fmap.width);
+  const b = cellToCoord(to, fmap.width);
+  if (rules.lineOnly && a.x !== b.x && a.y !== b.y) {
+    return "not_in_line";
+  }
+  if (rules.emptyCell && fmap.occupantOf(to) !== undefined) {
+    return "occupied_cell";
+  }
+  if (rules.lineOfSight && !hasLineOfSight(fmap, from, to)) {
+    return "no_los";
+  }
+  return null;
 }
 
 function directionDelta(dir: number, width: number): number {
@@ -64,8 +106,20 @@ const CARDINAL_DIRECTIONS = [1, 3, 5, 7] as const;
 const STRAIGHT_DIRECTIONS = [0, 2, 4, 6] as const;
 
 function inBounds(fmap: FightMapDims, cell: number): boolean {
-  const total = fmap.width * fmap.height * 2;
-  return cell >= 0 && cell < total;
+  return (
+    Number.isInteger(cell) &&
+    cell >= 0 &&
+    cell < totalCells(fmap.width, fmap.height)
+  );
+}
+
+function validStep(fmap: FightMapDims, from: number, to: number): boolean {
+  if (!inBounds(fmap, from) || !inBounds(fmap, to)) {
+    return false;
+  }
+  const a = cellToCoord(from, fmap.width);
+  const b = cellToCoord(to, fmap.width);
+  return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) === 1;
 }
 
 function projectLine(
@@ -79,12 +133,11 @@ function projectLine(
   const delta = directionDelta(dir, fmap.width);
 
   for (let i = 0; i < steps; i++) {
-    cell += delta;
-
-    if (!inBounds(fmap, cell)) {
+    const next = cell + delta;
+    if (!validStep(fmap, cell, next)) {
       break;
     }
-
+    cell = next;
     out.push(cell);
   }
 
@@ -105,7 +158,7 @@ function dominantDirection(
   // (N/E/S/W in pixels = STRAIGHT_DIRECTIONS in cellId terms).
   // D (DiagonalLine) zones extend along a screen-diagonal axis
   // (NE/SE/SW/NW = CARDINAL_DIRECTIONS in cellId terms).
-  const candidates = diagonal ? CARDINAL_DIRECTIONS : STRAIGHT_DIRECTIONS;
+  const candidates = diagonal ? STRAIGHT_DIRECTIONS : CARDINAL_DIRECTIONS;
   let best: number = candidates[0] ?? 0;
   let bestScore = -1;
 
@@ -140,6 +193,9 @@ export function cellsInArea(
   kind: AreaKind,
   size: number
 ): number[] {
+  if (!inBounds(fmap, origin)) {
+    return [];
+  }
   return match(kind)
     .with(AreaKind.None, () => [origin])
     .with(AreaKind.Cross, () => crossCells(fmap, origin, size))
@@ -160,11 +216,9 @@ function crossCells(
   origin: number,
   size: number
 ): number[] {
-  // X zones (Xa, Xb, …) draw a "+" on screen: 4 lines extending
-  // visually N / E / S / W. Those visual axes correspond to the
-  // 2-cell-jump directions on the iso grid (cellId offsets ±1, ±stride).
+  // Retail Zone.drawCross walks ±width and ±(width-1), adjacent diamonds.
   const out = [origin];
-  for (const dir of STRAIGHT_DIRECTIONS) {
+  for (const dir of CARDINAL_DIRECTIONS) {
     out.push(...projectLine(fmap, origin, dir, size));
   }
   return out;
@@ -179,7 +233,7 @@ function perpCrossCells(
   // NE / SE / SW / NW (the iso-screen diagonals). Those map to the
   // adjacent-cell directions on the iso grid (cellId offsets ±W, ±(W-1)).
   const out = [origin];
-  for (const dir of CARDINAL_DIRECTIONS) {
+  for (const dir of STRAIGHT_DIRECTIONS) {
     out.push(...projectLine(fmap, origin, dir, size));
   }
   return out;
@@ -242,7 +296,7 @@ function bfsCells(
     for (const dir of directions) {
       const n = cell + directionDelta(dir, fmap.width);
 
-      if (!inBounds(fmap, n) || seen.has(n)) {
+      if (!validStep(fmap, cell, n) || seen.has(n)) {
         continue;
       }
 
@@ -301,6 +355,9 @@ export function hasLineOfSight(
   from: number,
   to: number
 ): boolean {
+  if (!inBounds(fmap, from) || !inBounds(fmap, to)) {
+    return false;
+  }
   if (from === to) {
     return true;
   }
@@ -338,7 +395,8 @@ export function hasLineOfSight(
 
     const cellId = x * fmap.width + (fmap.width - 1) * y;
 
-    if (cellId < 0 || cellId >= fmap.width * fmap.height * 2) {
+    const coord = cellToCoord(cellId, fmap.width);
+    if (!inBounds(fmap, cellId) || coord.x !== x || coord.y !== y) {
       return false;
     }
 
@@ -359,53 +417,14 @@ export function fightDistance(
   a: number,
   b: number
 ): number {
+  if (!inBounds(fmap, a) || !inBounds(fmap, b)) {
+    return 1 << 20;
+  }
   if (a === b) {
     return 0;
   }
 
-  const total = fmap.width * fmap.height * 2;
-
-  if (a < 0 || a >= total || b < 0 || b >= total) {
-    return 1 << 20;
-  }
-
-  const visited = new Map<number, number>([[a, 0]]);
-  const queue = [a];
-
-  let head = 0;
-
-  while (head < queue.length) {
-    const cell = queue[head] ?? 0;
-    const d = visited.get(cell) ?? 0;
-
-    head++;
-
-    if (d > 128) {
-      break;
-    }
-    // Canonical Dofus 1.29 spell + fight distance uses 4-way Manhattan
-    // BFS over the diamond-adjacent cells (SE/SW/NW/NE = direction
-    // indices 1/3/5/7), NOT the 8-way Chebyshev distance over all
-    // diagonals. The 8-way variant would let cells diagonally 2 cells
-    // away count as distance 2 (Chebyshev), shrinking large ranges
-    // dramatically and producing a SQUARE preview shape instead of
-    // the canonical diamond.
-    for (const dir of CARDINAL_DIRECTIONS) {
-      const n = cell + directionDelta(dir, fmap.width);
-
-      if (n < 0 || n >= total || visited.has(n)) {
-        continue;
-      }
-
-      visited.set(n, d + 1);
-
-      if (n === b) {
-        return d + 1;
-      }
-
-      queue.push(n);
-    }
-  }
-
-  return 1 << 20;
+  const from = cellToCoord(a, fmap.width);
+  const to = cellToCoord(b, fmap.width);
+  return Math.abs(from.x - to.x) + Math.abs(from.y - to.y);
 }

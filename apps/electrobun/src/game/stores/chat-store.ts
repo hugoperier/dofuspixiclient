@@ -6,6 +6,7 @@ import {
   SIDE_CHAT_FILTER_CHANNELS,
   type SideChatChannel,
 } from "@/components/ui/side-chat-panel.channels";
+import { playAudioEvent } from "@/game/audio/audio-events";
 import { cooldownMsFor, styleFor } from "@/game/chat/chat-channels";
 
 import { ExternalStore } from "./game-store";
@@ -20,6 +21,21 @@ type Side = "left" | "right";
  * rendering never has to reach back into the channel registry. `player` and
  * `time` are absent for locally generated lines (errors, system notices).
  */
+/**
+ * A run of text with its own emphasis inside one chat line.
+ *
+ * The chat has no rich-text renderer and needs none: every line that
+ * wants emphasis is one we build ourselves, so a list of typed runs is
+ * cheaper and safer than parsing the `<b>` markup the retail lang
+ * bundles ship. `ChatEntry.text` stays the flat concatenation, so
+ * filters, tests and the fallback render keep working unchanged.
+ */
+export interface ChatSegment {
+  text: string;
+  bold?: boolean;
+  underline?: boolean;
+}
+
 export interface ChatEntry {
   id: string;
   channel?: ChatChannel;
@@ -28,6 +44,12 @@ export interface ChatEntry {
   time?: string;
   player?: string;
   text: string;
+  /**
+   * Emphasis for `text`, when the line was built rather than received.
+   * Absent means "render `text` as-is"; when present the runs must
+   * concatenate back to `text`.
+   */
+  segments?: ChatSegment[];
   /** Overrides the channel colour — used by locally generated error lines. */
   color?: string;
 }
@@ -110,9 +132,16 @@ export function appendChatMessage(entry: Omit<ChatEntry, "id">): void {
  * to end. The `infos` entry is kept so the side panel needs no second call
  * site the day it comes back.
  */
-export function appendInfoMessage(text: string): void {
+export function appendInfoMessage(
+  text: string,
+  segments?: ChatSegment[]
+): void {
   const { infos } = chatStore.getSnapshot();
-  const entry = { filter: SIDE_CHAT_CHANNEL.INFOS, text };
+  const entry = {
+    filter: SIDE_CHAT_CHANNEL.INFOS,
+    text,
+    ...(segments ? { segments } : {}),
+  };
 
   chatStore.setState({
     infos: tail([...infos, { id: makeId(), ...entry }], MAX_INFOS),
@@ -129,6 +158,7 @@ export function appendInfoMessage(text: string): void {
  * rejection. Rendered in the retail error red and never hidden by a filter.
  */
 export function appendErrorMessage(text: string): void {
+  playAudioEvent("error");
   appendChatMessage({
     text,
     color: "var(--color-side-chat-channel-errors)",

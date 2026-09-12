@@ -1,3 +1,4 @@
+import { withClipEventParent } from "../scene/fight/placed-event-symbol";
 /**
  * Spell 301 — Setag (Sadida).
  *
@@ -411,6 +412,7 @@ export class Spell301 extends RuntimeSpell {
     this.registry.register(this.sprite4Sym);
     this.registry.register(this.sprite23Sym);
     this.registry.register(this.sprite23AltSym);
+    this.sprite24Sym = withClipEventParent(this.sprite24Sym);
     this.registry.register(this.sprite24Sym);
     this.registry.register(this.anim1Sym);
   }

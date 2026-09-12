@@ -1,0 +1,1328 @@
+{
+    "unmatchedAnimations": {
+        "10": [
+            "_liaison_"
+        ],
+        "11": [
+            "_liaison_"
+        ],
+        "20": [
+            "_liaison_"
+        ],
+        "21": [
+            "_liaison_"
+        ],
+        "30": [
+            "_liaison_"
+        ],
+        "31": [
+            "_liaison_"
+        ],
+        "40": [
+            "_liaison_"
+        ],
+        "41": [
+            "_liaison_"
+        ],
+        "50": [
+            "_liaison_"
+        ],
+        "51": [
+            "_liaison_"
+        ],
+        "60": [
+            "_liaison_"
+        ],
+        "61": [
+            "_liaison_"
+        ],
+        "70": [
+            "_liaison_"
+        ],
+        "71": [
+            "_liaison_"
+        ],
+        "80": [
+            "_liaison_"
+        ],
+        "81": [
+            "_liaison_"
+        ],
+        "90": [
+            "_liaison_"
+        ],
+        "91": [
+            "_liaison_"
+        ],
+        "100": [
+            "_liaison_"
+        ],
+        "101": [
+            "_liaison_"
+        ],
+        "110": [
+            "_liaison_"
+        ],
+        "111": [
+            "_liaison_"
+        ],
+        "120": [
+            "_liaison_"
+        ],
+        "121": [
+            "_liaison_"
+        ],
+        "1085": [
+            "_hitR"
+        ],
+        "1197": [
+            "_liaison_"
+        ],
+        "1202": [
+            "_liaison_"
+        ],
+        "1203": [
+            "_liaison_"
+        ],
+        "1204": [
+            "_liaison_"
+        ],
+        "1206": [
+            "_liaison_"
+        ],
+        "1217": [
+            "Tenat01_Touch__"
+        ],
+        "1246": [
+            "Boule_degat_Centre",
+            "Boule_degat_exterieur",
+            "Boule_degats",
+            "Magie_anim",
+            "Point_D_exclamation",
+            "Point_D_exclamation_Anim",
+            "Poison_Bulle_Anim"
+        ],
+        "1264": [
+            "_liaison_"
+        ],
+        "1460": [
+            "_liaison_"
+        ],
+        "1476": [
+            "_dieL",
+            "_dieR"
+        ],
+        "1501": [
+            "_liaison_"
+        ],
+        "1502": [
+            "_liaison_"
+        ],
+        "1524": [
+            "_liaison_"
+        ],
+        "1545": [
+            "_liaison_"
+        ],
+        "1576": [
+            "_liaison_"
+        ],
+        "1711": [
+            "anim1R"
+        ],
+        "1719": [
+            "_liaison_"
+        ],
+        "1723": [
+            "_liaison_"
+        ],
+        "1724": [
+            "_liaison_"
+        ],
+        "1725": [
+            "_liaison_"
+        ],
+        "1726": [
+            "_liaison_"
+        ],
+        "1727": [
+            "_liaison_"
+        ],
+        "1731": [
+            "_liaison_"
+        ],
+        "1732": [
+            "_liaison_"
+        ],
+        "1800": [
+            "staticR"
+        ],
+        "7029": [
+            "Boule_degat_Centre",
+            "Boule_degat_exterieur",
+            "Boule_degats",
+            "Point_D_exclamation",
+            "Point_D_exclamation_Anim",
+            "Symbole_1"
+        ],
+        "7030": [
+            "_liaison_"
+        ],
+        "7031": [
+            "_liaison_"
+        ],
+        "7032": [
+            "Boule_degat_Centre",
+            "Boule_degat_exterieur",
+            "Boule_degats",
+            "Point_D_exclamation",
+            "Point_D_exclamation_Anim"
+        ],
+        "8000": [
+            "_liaison_"
+        ],
+        "8001": [
+            "_liaison_"
+        ],
+        "8002": [
+            "_liaison_"
+        ],
+        "8003": [
+            "_liaison_"
+        ],
+        "8004": [
+            "Copie_de_emote3R"
+        ],
+        "8006": [
+            "_liaison_"
+        ],
+        "8007": [
+            "_liaison_"
+        ],
+        "8008": [
+            "_liaison_"
+        ],
+        "8009": [
+            "_liaison_"
+        ],
+        "8010": [
+            "_liaison_"
+        ],
+        "8011": [
+            "_liaison_"
+        ],
+        "8032": [
+            "_liaison_"
+        ],
+        "8033": [
+            "_liaison_"
+        ],
+        "8034": [
+            "_liaison_"
+        ],
+        "8035": [
+            "_liaison_"
+        ],
+        "8038": [
+            "_liaison_"
+        ],
+        "9012": [
+            "_liaison_"
+        ],
+        "9013": [
+            "_liaison_"
+        ],
+        "9038": [
+            "_liaison_"
+        ],
+        "9041": [
+            "_liaison_"
+        ],
+        "9045": [
+            "_liaison_"
+        ],
+        "9069": [
+            "_liaison_"
+        ],
+        "9070": [
+            "_liaison_"
+        ],
+        "9078": [
+            "_liaison_"
+        ],
+        "9079": [
+            "_liaison_"
+        ],
+        "9212": [
+            "_liaison_"
+        ],
+        "9272": [
+            "_liaison_"
+        ],
+        "9280": [
+            "_liaison_"
+        ],
+        "9292": [
+            "_liaison_"
+        ],
+        "9294": [
+            "_liaison_"
+        ],
+        "9301": [
+            "_liaison_"
+        ],
+        "9303": [
+            "_liaison_"
+        ],
+        "9309": [
+            "_liaison_"
+        ],
+        "9313": [
+            "_liaison_"
+        ],
+        "9322": [
+            "_liaison_"
+        ],
+        "9323": [
+            "_liaison_"
+        ],
+        "9327": [
+            "_liaison_"
+        ],
+        "9329": [
+            "_liaison_"
+        ],
+        "9333": [
+            "_liaison_"
+        ],
+        "9354": [
+            "_liaison_"
+        ],
+        "9355": [
+            "_liaison_"
+        ],
+        "9372": [
+            "_liaison_"
+        ],
+        "9374": [
+            "_liaison_"
+        ],
+        "9375": [
+            "_liaison_"
+        ],
+        "201505": [
+            "runR",
+            "staticB",
+            "staticF",
+            "staticL",
+            "staticR",
+            "staticS"
+        ],
+        "207030": [
+            "_liaison_",
+            "anim0L",
+            "anim0R",
+            "anim1L",
+            "anim1R",
+            "anim2L",
+            "anim2R",
+            "anim3L",
+            "anim3R",
+            "anim4L",
+            "anim4R",
+            "anim5L",
+            "anim5R",
+            "anim6L",
+            "anim6R",
+            "anim7L",
+            "anim7R",
+            "anim8L",
+            "anim8R",
+            "anim9L",
+            "anim9R",
+            "staticL",
+            "staticR"
+        ],
+        "207031": [
+            "_liaison_",
+            "anim0L",
+            "anim0R",
+            "anim1L",
+            "anim1R",
+            "anim2L",
+            "anim2R",
+            "anim3L",
+            "anim3R",
+            "anim4L",
+            "anim4R",
+            "anim5L",
+            "anim5R",
+            "anim6L",
+            "anim6R",
+            "anim7L",
+            "anim7R",
+            "anim8L",
+            "anim8R",
+            "anim9L",
+            "anim9R",
+            "staticL",
+            "staticR"
+        ],
+        "207032": [
+            "_liaison_",
+            "aileG_R",
+            "anim0L",
+            "anim0R",
+            "anim1L",
+            "anim1R",
+            "bomb",
+            "chapo",
+            "Corps",
+            "effet",
+            "ficelle",
+            "FXnuage",
+            "oeil1",
+            "oeil2",
+            "ombre",
+            "patteD_R",
+            "patteG_R",
+            "staticL",
+            "staticR"
+        ],
+        "208000": [
+            "_liaison_",
+            "anim10L",
+            "anim10R",
+            "anim111L",
+            "anim111R",
+            "anim112L",
+            "anim112R",
+            "anim113L",
+            "anim113R",
+            "anim114L",
+            "anim114R",
+            "anim115L",
+            "anim115R",
+            "anim116L",
+            "anim116R",
+            "anim117L",
+            "anim117R",
+            "anim11L",
+            "anim11R",
+            "anim12L",
+            "anim12R",
+            "anim13L",
+            "anim13R",
+            "anim14L",
+            "anim14R",
+            "anim15L",
+            "anim15R",
+            "anim16L",
+            "anim16R",
+            "anim17L",
+            "anim17R",
+            "anim18EndL",
+            "anim18EndR",
+            "anim18L",
+            "anim18R",
+            "anim1L",
+            "anim1R",
+            "anim2L",
+            "anim2R",
+            "anim3L",
+            "anim3R",
+            "anim4L",
+            "anim4R",
+            "anim5L",
+            "anim5R",
+            "anim6L",
+            "anim6R",
+            "anim7L",
+            "anim7R",
+            "emote10L",
+            "emote10R",
+            "emote11L",
+            "emote11R",
+            "emote12L",
+            "emote12R",
+            "emote13L",
+            "emote13R",
+            "emote14L",
+            "emote14R",
+            "emote15L",
+            "emote15R",
+            "emote16L",
+            "emote16R",
+            "emote17L",
+            "emote17R",
+            "emote18L",
+            "emote18R",
+            "emote2L",
+            "emote2R",
+            "emote3L",
+            "emote3R",
+            "emote4L",
+            "emote4R",
+            "emote5L",
+            "emote5R",
+            "emote6L",
+            "emote6R",
+            "emote9L",
+            "emote9R",
+            "staticB",
+            "staticF",
+            "staticL",
+            "staticR",
+            "staticS"
+        ],
+        "208001": [
+            "_liaison_",
+            "anim10L",
+            "anim10R",
+            "anim111L",
+            "anim111R",
+            "anim112L",
+            "anim112R",
+            "anim113L",
+            "anim113R",
+            "anim114L",
+            "anim114R",
+            "anim115L",
+            "anim115R",
+            "anim116L",
+            "anim116R",
+            "anim117L",
+            "anim117R",
+            "anim11L",
+            "anim11R",
+            "anim12L",
+            "anim12R",
+            "anim13L",
+            "anim13R",
+            "anim14L",
+            "anim14R",
+            "anim15L",
+            "anim15R",
+            "anim16L",
+            "anim16R",
+            "anim17L",
+            "anim17R",
+            "anim18EndL",
+            "anim18EndR",
+            "anim18L",
+            "anim18R",
+            "anim1L",
+            "anim1R",
+            "anim2L",
+            "anim2R",
+            "anim3L",
+            "anim3R",
+            "anim4L",
+            "anim4R",
+            "anim5L",
+            "anim5R",
+            "anim6L",
+            "anim6R",
+            "anim7L",
+            "anim7R",
+            "emote10L",
+            "emote10R",
+            "emote11L",
+            "emote11R",
+            "emote12L",
+            "emote12R",
+            "emote13L",
+            "emote13R",
+            "emote14L",
+            "emote14R",
+            "emote15L",
+            "emote15R",
+            "emote16L",
+            "emote16R",
+            "emote17L",
+            "emote17R",
+            "emote18L",
+            "emote18R",
+            "emote2L",
+            "emote2R",
+            "emote3L",
+            "emote3R",
+            "emote4L",
+            "emote4R",
+            "emote5L",
+            "emote5R",
+            "emote6L",
+            "emote6R",
+            "emote9L",
+            "emote9R",
+            "staticB",
+            "staticF",
+            "staticL",
+            "staticR",
+            "staticS"
+        ],
+        "208002": [
+            "_liaison_",
+            "anim0L",
+            "anim0R",
+            "anim10L",
+            "anim10R",
+            "anim111L",
+            "anim111R",
+            "anim112L",
+            "anim112R",
+            "anim114L",
+            "anim114R",
+            "anim115L",
+            "anim115R",
+            "anim116L",
+            "anim116R",
+            "anim117L",
+            "anim117R",
+            "anim11L",
+            "anim11R",
+            "anim12L",
+            "anim12R",
+            "anim13L",
+            "anim13R",
+            "anim14L",
+            "anim14R",
+            "anim15L",
+            "anim15R",
+            "anim16L",
+            "anim16R",
+            "anim17L",
+            "anim17R",
+            "anim18EndL",
+            "anim18EndR",
+            "anim18L",
+            "anim18R",
+            "anim1L",
+            "anim1R",
+            "anim2L",
+            "anim2R",
+            "anim3L",
+            "anim3R",
+            "anim4L",
+            "anim4R",
+            "anim5L",
+            "anim5R",
+            "anim6L",
+            "anim6R",
+            "anim7L",
+            "anim7R",
+            "emote10L",
+            "emote10R",
+            "emote11L",
+            "emote11R",
+            "emote12L",
+            "emote12R",
+            "emote13L",
+            "emote13R",
+            "emote14L",
+            "emote14R",
+            "emote15L",
+            "emote15R",
+            "emote16L",
+            "emote16R",
+            "emote17L",
+            "emote17R",
+            "emote18L",
+            "emote18R",
+            "emote2L",
+            "emote2R",
+            "emote3L",
+            "emote3R",
+            "emote4L",
+            "emote4R",
+            "emote5L",
+            "emote5R",
+            "emote6L",
+            "emote6R",
+            "emote9L",
+            "emote9R",
+            "staticB",
+            "staticF",
+            "staticL",
+            "staticR",
+            "staticS"
+        ],
+        "208005": [
+            "appearL",
+            "appearR",
+            "dieL",
+            "dieR",
+            "hitL",
+            "hitR",
+            "runL",
+            "runR",
+            "staticL",
+            "staticR",
+            "walkL",
+            "walkR"
+        ],
+        "208006": [
+            "_liaison_",
+            "anim10L",
+            "anim10R",
+            "anim111L",
+            "anim111R",
+            "anim112L",
+            "anim112R",
+            "anim113L",
+            "anim113R",
+            "anim114L",
+            "anim114R",
+            "anim115L",
+            "anim115R",
+            "anim116L",
+            "anim116R",
+            "anim117L",
+            "anim117R",
+            "anim11L",
+            "anim11R",
+            "anim12L",
+            "anim12R",
+            "anim13L",
+            "anim13R",
+            "anim14L",
+            "anim14R",
+            "anim15L",
+            "anim15R",
+            "anim16L",
+            "anim16R",
+            "anim17L",
+            "anim17R",
+            "anim18EndL",
+            "anim18EndR",
+            "anim18L",
+            "anim18R",
+            "anim1L",
+            "anim1R",
+            "anim2L",
+            "anim2R",
+            "anim3L",
+            "anim3R",
+            "anim4L",
+            "anim4R",
+            "anim5L",
+            "anim5R",
+            "anim6L",
+            "anim6R",
+            "anim7L",
+            "anim7R",
+            "emote10L",
+            "emote10R",
+            "emote11L",
+            "emote11R",
+            "emote12L",
+            "emote12R",
+            "emote13L",
+            "emote13R",
+            "emote14L",
+            "emote14R",
+            "emote15L",
+            "emote15R",
+            "emote16L",
+            "emote16R",
+            "emote17L",
+            "emote17R",
+            "emote18L",
+            "emote18R",
+            "emote2L",
+            "emote2R",
+            "emote3L",
+            "emote3R",
+            "emote4L",
+            "emote4R",
+            "emote5L",
+            "emote5R",
+            "emote6L",
+            "emote6R",
+            "emote9L",
+            "emote9R",
+            "staticB",
+            "staticF",
+            "staticL",
+            "staticR",
+            "staticS"
+        ],
+        "208007": [
+            "_liaison_",
+            "anim10L",
+            "anim10R",
+            "anim111L",
+            "anim111R",
+            "anim112L",
+            "anim112R",
+            "anim113L",
+            "anim113R",
+            "anim114L",
+            "anim114R",
+            "anim115L",
+            "anim115R",
+            "anim116L",
+            "anim116R",
+            "anim117L",
+            "anim117R",
+            "anim11L",
+            "anim11R",
+            "anim12L",
+            "anim12R",
+            "anim13L",
+            "anim13R",
+            "anim14L",
+            "anim14R",
+            "anim15L",
+            "anim15R",
+            "anim16L",
+            "anim16R",
+            "anim17L",
+            "anim17R",
+            "anim18EndL",
+            "anim18EndR",
+            "anim18L",
+            "anim18R",
+            "anim1L",
+            "anim1R",
+            "anim2L",
+            "anim2R",
+            "anim3L",
+            "anim3R",
+            "anim4L",
+            "anim4R",
+            "anim5L",
+            "anim5R",
+            "anim6L",
+            "anim6R",
+            "anim7L",
+            "anim7R",
+            "emote10L",
+            "emote10R",
+            "emote11L",
+            "emote11R",
+            "emote12L",
+            "emote12R",
+            "emote13L",
+            "emote13R",
+            "emote14L",
+            "emote14R",
+            "emote15L",
+            "emote15R",
+            "emote16L",
+            "emote16R",
+            "emote17L",
+            "emote17R",
+            "emote18L",
+            "emote18R",
+            "emote2L",
+            "emote2R",
+            "emote3L",
+            "emote3R",
+            "emote4L",
+            "emote4R",
+            "emote5L",
+            "emote5R",
+            "emote6L",
+            "emote6R",
+            "emote9L",
+            "emote9R",
+            "staticB",
+            "staticF",
+            "staticL",
+            "staticR",
+            "staticS"
+        ],
+        "208009": [
+            "_liaison_",
+            "anim10L",
+            "anim10R",
+            "anim111L",
+            "anim111R",
+            "anim112L",
+            "anim112R",
+            "anim113L",
+            "anim113R",
+            "anim114L",
+            "anim114R",
+            "anim115L",
+            "anim115R",
+            "anim116L",
+            "anim116R",
+            "anim117L",
+            "anim117R",
+            "anim11L",
+            "anim11R",
+            "anim12L",
+            "anim12R",
+            "anim13L",
+            "anim13R",
+            "anim14L",
+            "anim14R",
+            "anim15L",
+            "anim15R",
+            "anim16L",
+            "anim16R",
+            "anim17L",
+            "anim17R",
+            "anim18EndL",
+            "anim18EndR",
+            "anim18L",
+            "anim18R",
+            "anim1L",
+            "anim1R",
+            "anim2L",
+            "anim2R",
+            "anim3L",
+            "anim3R",
+            "anim4L",
+            "anim4R",
+            "anim5L",
+            "anim5R",
+            "anim6L",
+            "anim6R",
+            "anim7L",
+            "anim7R",
+            "emote10L",
+            "emote10R",
+            "emote11L",
+            "emote11R",
+            "emote12L",
+            "emote12R",
+            "emote13L",
+            "emote13R",
+            "emote14L",
+            "emote14R",
+            "emote15L",
+            "emote15R",
+            "emote16L",
+            "emote16R",
+            "emote17L",
+            "emote17R",
+            "emote18L",
+            "emote18R",
+            "emote2L",
+            "emote2R",
+            "emote3L",
+            "emote3R",
+            "emote4L",
+            "emote4R",
+            "emote5L",
+            "emote5R",
+            "emote6L",
+            "emote6R",
+            "emote9L",
+            "emote9R",
+            "staticB",
+            "staticF",
+            "staticL",
+            "staticR",
+            "staticS"
+        ],
+        "208010": [
+            "_liaison_",
+            "anim0L",
+            "anim0R",
+            "anim10L",
+            "anim10R",
+            "anim111L",
+            "anim111R",
+            "anim112L",
+            "anim112R",
+            "anim113L",
+            "anim113R",
+            "anim114L",
+            "anim114R",
+            "anim115L",
+            "anim115R",
+            "anim116L",
+            "anim116R",
+            "anim117L",
+            "anim117R",
+            "anim11L",
+            "anim11R",
+            "anim12L",
+            "anim12R",
+            "anim13L",
+            "anim13R",
+            "anim14L",
+            "anim14R",
+            "anim15L",
+            "anim15R",
+            "anim16L",
+            "anim16R",
+            "anim17L",
+            "anim17R",
+            "anim18EndL",
+            "anim18EndR",
+            "anim18L",
+            "anim18R",
+            "anim1L",
+            "anim1R",
+            "anim2L",
+            "anim2R",
+            "anim3L",
+            "anim3R",
+            "anim4L",
+            "anim4R",
+            "anim5L",
+            "anim5R",
+            "anim6L",
+            "anim6R",
+            "anim7L",
+            "anim7R",
+            "anim8L",
+            "anim8R",
+            "emote10L",
+            "emote10R",
+            "emote11L",
+            "emote11R",
+            "emote12L",
+            "emote12R",
+            "emote13L",
+            "emote13R",
+            "emote14L",
+            "emote14R",
+            "emote15L",
+            "emote15R",
+            "emote16L",
+            "emote16R",
+            "emote17L",
+            "emote17R",
+            "emote18L",
+            "emote18R",
+            "emote2L",
+            "emote2R",
+            "emote3L",
+            "emote3R",
+            "emote4L",
+            "emote4R",
+            "emote5L",
+            "emote5R",
+            "emote6L",
+            "emote6R",
+            "emote9L",
+            "emote9R",
+            "staticB",
+            "staticF",
+            "staticL",
+            "staticR",
+            "staticS"
+        ],
+        "208011": [
+            "_liaison_",
+            "anim0L",
+            "anim0R",
+            "anim10L",
+            "anim10R",
+            "anim111L",
+            "anim111R",
+            "anim112L",
+            "anim112R",
+            "anim114L",
+            "anim114R",
+            "anim115L",
+            "anim115R",
+            "anim116L",
+            "anim116R",
+            "anim117L",
+            "anim117R",
+            "anim11L",
+            "anim11R",
+            "anim12L",
+            "anim12R",
+            "anim13L",
+            "anim13R",
+            "anim14L",
+            "anim14R",
+            "anim15L",
+            "anim15R",
+            "anim16L",
+            "anim16R",
+            "anim17L",
+            "anim17R",
+            "anim18EndL",
+            "anim18EndR",
+            "anim18L",
+            "anim18R",
+            "anim1L",
+            "anim1R",
+            "anim2L",
+            "anim2R",
+            "anim3L",
+            "anim3R",
+            "anim4L",
+            "anim4R",
+            "anim5L",
+            "anim5R",
+            "anim6L",
+            "anim6R",
+            "anim7L",
+            "anim7R",
+            "anim8L",
+            "anim8R",
+            "emote10L",
+            "emote10R",
+            "emote11L",
+            "emote11R",
+            "emote12L",
+            "emote12R",
+            "emote13L",
+            "emote13R",
+            "emote14L",
+            "emote14R",
+            "emote15L",
+            "emote15R",
+            "emote16L",
+            "emote16R",
+            "emote17L",
+            "emote17R",
+            "emote18L",
+            "emote18R",
+            "emote2L",
+            "emote2R",
+            "emote3L",
+            "emote3R",
+            "emote4L",
+            "emote4R",
+            "emote5L",
+            "emote5R",
+            "emote6L",
+            "emote6R",
+            "emote9L",
+            "emote9R",
+            "staticB",
+            "staticF",
+            "staticL",
+            "staticR",
+            "staticS"
+        ],
+        "208026": [
+            "anim0L",
+            "anim0R",
+            "anim10L",
+            "anim10R",
+            "anim111L",
+            "anim111R",
+            "anim112L",
+            "anim112R",
+            "anim113L",
+            "anim113R",
+            "anim114L",
+            "anim114R",
+            "anim115L",
+            "anim115R",
+            "anim116L",
+            "anim116R",
+            "anim117L",
+            "anim117R",
+            "anim11L",
+            "anim11R",
+            "anim12L",
+            "anim12R",
+            "anim13L",
+            "anim13R",
+            "anim14L",
+            "anim14R",
+            "anim15L",
+            "anim15R",
+            "anim16L",
+            "anim16R",
+            "anim17L",
+            "anim17R",
+            "anim18EndL",
+            "anim18EndR",
+            "anim18L",
+            "anim18R",
+            "anim1L",
+            "anim1R",
+            "anim2L",
+            "anim2R",
+            "anim3L",
+            "anim3R",
+            "anim4L",
+            "anim4R",
+            "anim5L",
+            "anim5R",
+            "anim6L",
+            "anim6R",
+            "anim7L",
+            "anim7R",
+            "emote10L",
+            "emote10R",
+            "emote11L",
+            "emote11R",
+            "emote12L",
+            "emote12R",
+            "emote13L",
+            "emote13R",
+            "emote14L",
+            "emote14R",
+            "emote15L",
+            "emote15R",
+            "emote16L",
+            "emote16R",
+            "emote17L",
+            "emote17R",
+            "emote18L",
+            "emote18R",
+            "emote2L",
+            "emote2R",
+            "emote3L",
+            "emote3R",
+            "emote4L",
+            "emote4R",
+            "emote5L",
+            "emote5R",
+            "emote6L",
+            "emote6R",
+            "emote9L",
+            "emote9R",
+            "staticB",
+            "staticF",
+            "staticL",
+            "staticR",
+            "staticS"
+        ],
+        "1000010": [
+            "_liaison_"
+        ],
+        "1000011": [
+            "_liaison_"
+        ],
+        "1000020": [
+            "_liaison_"
+        ],
+        "1000021": [
+            "_liaison_"
+        ],
+        "1000030": [
+            "_liaison_"
+        ],
+        "1000031": [
+            "_liaison_"
+        ],
+        "1000040": [
+            "_liaison_"
+        ],
+        "1000041": [
+            "_liaison_"
+        ],
+        "1000050": [
+            "_liaison_"
+        ],
+        "1000051": [
+            "_liaison_"
+        ],
+        "1000060": [
+            "_liaison_"
+        ],
+        "1000061": [
+            "_liaison_"
+        ],
+        "1000070": [
+            "_liaison_"
+        ],
+        "1000071": [
+            "_liaison_"
+        ],
+        "1000080": [
+            "_liaison_"
+        ],
+        "1000081": [
+            "_liaison_"
+        ],
+        "1000090": [
+            "_liaison_"
+        ],
+        "1000091": [
+            "_liaison_"
+        ],
+        "1000100": [
+            "_liaison_"
+        ],
+        "1000101": [
+            "_liaison_"
+        ],
+        "1000110": [
+            "_liaison_"
+        ],
+        "1000111": [
+            "_liaison_"
+        ],
+        "1000120": [
+            "_liaison_"
+        ],
+        "1000121": [
+            "_liaison_"
+        ],
+        "1007030": [
+            "_liaison_"
+        ],
+        "1007031": [
+            "_liaison_"
+        ],
+        "1007032": [
+            "_liaison_"
+        ],
+        "1008000": [
+            "_liaison_"
+        ],
+        "1008001": [
+            "_liaison_"
+        ],
+        "1008002": [
+            "_liaison_"
+        ],
+        "1008006": [
+            "_liaison_"
+        ],
+        "1008007": [
+            "_liaison_"
+        ],
+        "1008009": [
+            "_liaison_"
+        ],
+        "1008010": [
+            "_liaison_"
+        ],
+        "1008011": [
+            "_liaison_"
+        ]
+    },
+    "missingSymbols": {
+        "Bandit_Kebab_anim1": 2,
+        "Bandit_Kebab_anim2": 1,
+        "Bandit_Kebab_anim3": 2,
+        "Bandit_Kebab_die": 1,
+        "Bandit_Kebab_hit": 3,
+        "Bandit_bicky_anim0": 2,
+        "Bandit_bicky_anim1": 4,
+        "Bandit_bicky_anim2": 2,
+        "Bandit_bicky_anim3": 2,
+        "Bandit_bicky_die": 2,
+        "Bandit_fricadelle_anim0": 2,
+        "Bandit_fricadelle_anim1": 4,
+        "Bandit_fricadelle_anim2": 2,
+        "Bandit_fricadelle_die": 2,
+        "Bandit_fricadelle_hit": 2,
+        "LapinCretin_Son_Anim0": 6,
+        "LapinCretin_voix_die": 2,
+        "Meupette_Hit": 2,
+        "death_normal_f": 8,
+        "die marguerite": 2,
+        "gros rat orange son atttack boulet tournant": 4,
+        "gros rat orange son atttack magik": 2,
+        "gros rat orange son die": 2,
+        "hit_default": 14,
+        "impact_lourd02": 4,
+        "save attack explosion boule de neige": 4,
+        "save attack rebond boule de neige": 2,
+        "save die boule de neige": 3,
+        "son carringend pespsikoala 2": 2,
+        "son splinter cell attack karaté": 2,
+        "tambour": 8,
+        "whouou": 26
+    },
+    "errors": []
+}

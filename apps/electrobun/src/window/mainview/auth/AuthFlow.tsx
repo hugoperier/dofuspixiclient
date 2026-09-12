@@ -6,6 +6,7 @@ import { loginActor } from "@/game/machines/actors";
 
 import { CharacterSelectScreen } from "./CharacterSelectScreen";
 import { LoginScreen } from "./LoginScreen";
+import { clearQuickConnect, pendingQuickConnect } from "./quick-connect";
 import { ServerSelectScreen } from "./ServerSelectScreen";
 
 interface Props {
@@ -37,6 +38,56 @@ export function AuthFlow({ client, onEnterGame }: Props) {
       client.requestCharacters();
     }
   }, [state, client]);
+
+  // A quick connect walks the rest of the flow on its own — that is the
+  // whole point of it. Both steps only fire when the choice is
+  // unambiguous; anything else falls through to the normal screen rather
+  // than picking for the player.
+  useEffect(() => {
+    if (state !== "serverSelect" || !pendingQuickConnect()) {
+      return;
+    }
+
+    const playable = context.servers.filter(
+      (server) => server.isSelectable && server.characterCount > 0
+    );
+    const only = playable.length === 1 ? playable[0] : undefined;
+
+    if (only) {
+      client.selectServer(only.serverId);
+    }
+  }, [state, context.servers, client]);
+
+  useEffect(() => {
+    const account = pendingQuickConnect();
+
+    if (state !== "characterSelect" || !account) {
+      return;
+    }
+
+    // The roster names the character it was generated from; fall back to
+    // the only one when it does not, so an account seeded since still
+    // works.
+    const named = context.characters.find(
+      (character) => character.name === account.character
+    );
+    const target =
+      named ??
+      (context.characters.length === 1 ? context.characters[0] : undefined);
+
+    if (target) {
+      client.selectCharacter(Number(target.id));
+    }
+  }, [state, context.characters, client]);
+
+  // Release the quick connect once it has arrived or given up, so a
+  // hand-typed sign-in afterwards is not walked through by the previous
+  // one's roster entry.
+  useEffect(() => {
+    if (state === "inGame" || state === "failed") {
+      clearQuickConnect();
+    }
+  }, [state]);
 
   // Hand off to in-game renderer when fully loaded.
   useEffect(() => {

@@ -102,6 +102,13 @@ function zoneOf(scope: Scope): Set<number> {
 export class TrapGlyphEffectHandler {
   @EffectHandler(400)
   handleTrap(scope: Scope): void {
+    if (
+      scope.fight.fightMap.objects
+        .atCell(scope.targetCell)
+        .some((object) => object.kind === FightObjectKind.Trap)
+    ) {
+      return;
+    }
     const trigger = resolveTrigger(scope);
     const zone = zoneOf(scope);
 
@@ -111,20 +118,47 @@ export class TrapGlyphEffectHandler {
       casterId: scope.caster.id,
       cell: scope.targetCell,
       size: scope.effect.areaSize,
+      areaKind: scope.effect.areaKind,
       element: trigger.element,
       spellId: scope.spell.spellId,
       spellLevel: scope.spell.level,
       color: TRAP_COLOR,
       remaining: -1,
+      visibleToTeams: new Set([scope.caster.team?.side ?? 0]),
       // A trap fires when someone steps anywhere in its zone, not only
       // on its centre. `FightMap.fireArrivalTriggers` consults this.
       cellEligible: (cell) => zone.has(cell),
       onArrival: (fight, victim) => {
-        if (victim.dead || trigger.effect === null) {
+        if (victim.dead || (trigger.effect === null && !scope.applySpell)) {
           return true;
         }
 
-        damage(scope, trigger, victim);
+        // Remove before resolving victims so a forced displacement cannot retrigger it.
+        fight.fightMap.objects.remove(trap.id);
+        if (scope.triggerSpell) {
+          scope.emitter.emitGlyphTrigger(
+            fight,
+            scope.caster.id,
+            trap.cell,
+            scope.triggerSpell.spellId,
+            scope.triggerSpell.visualGfxId,
+            scope.triggerSpell.level
+          );
+        }
+        const victims = fight
+          .fighters()
+          .filter((f) => !f.dead && f.carriedById === null && zone.has(f.cell));
+        if (scope.applySpell && scope.triggerSpell) {
+          scope.applySpell(
+            { ...scope, cause: "trap", critical: false },
+            scope.triggerSpell,
+            victims
+          );
+        } else {
+          for (const fighter of victims) {
+            damage(scope, trigger, fighter);
+          }
+        }
         scope.emitter.emitTrapRemove(fight, scope.targetCell);
         fight.checkFightEnd();
 
@@ -155,6 +189,7 @@ export class TrapGlyphEffectHandler {
       casterId: scope.caster.id,
       cell: scope.targetCell,
       size: scope.effect.areaSize,
+      areaKind: scope.effect.areaKind,
       element: trigger.element,
       spellId: scope.spell.spellId,
       spellLevel: scope.spell.level,
@@ -166,7 +201,7 @@ export class TrapGlyphEffectHandler {
       // single turn start, so one glyph hit every enemy standing on it
       // once per fighter per round.
       onTurnStart: (fight, owner) => {
-        if (trigger.effect === null || owner.dead) {
+        if ((trigger.effect === null && !scope.applySpell) || owner.dead) {
           return;
         }
 
@@ -174,18 +209,24 @@ export class TrapGlyphEffectHandler {
           return;
         }
 
-        if (owner.team?.side === scope.caster.team?.side) {
-          return;
-        }
-
         scope.emitter.emitGlyphTrigger(
           fight,
           scope.caster.id,
           scope.targetCell,
-          scope.spell.spellId
+          scope.triggerSpell?.spellId ?? scope.spell.spellId,
+          scope.triggerSpell?.visualGfxId ?? 0,
+          scope.triggerSpell?.level ?? scope.spell.level
         );
 
-        damage(scope, trigger, owner);
+        if (scope.applySpell && scope.triggerSpell) {
+          scope.applySpell(
+            { ...scope, cause: "glyph", critical: false },
+            scope.triggerSpell,
+            [owner]
+          );
+        } else {
+          damage(scope, trigger, owner);
+        }
         fight.checkFightEnd();
       },
     };
@@ -216,19 +257,23 @@ function damage(
   trigger: Trigger,
   victim: Parameters<NonNullable<FightObject["onTurnStart"]>>[1]
 ): void {
-  if (trigger.effect === null) {
+  if (trigger.effect === null && !scope.applySpell) {
     return;
   }
 
-  const damageScope: Scope = {
-    ...scope,
-    effect: trigger.effect,
-    target: victim,
-  };
-
-  applyDamageToTarget(
-    damageScope,
-    calculateDamage(damageScope, trigger.element),
-    trigger.element
-  );
+  for (const effect of scope.triggerSpell?.effects ?? [trigger.effect]) {
+    if (!effect) {
+      continue;
+    }
+    const element = effectIdToElement(effect.id);
+    if (element === null || victim.dead) {
+      continue;
+    }
+    const damageScope: Scope = { ...scope, effect, target: victim };
+    applyDamageToTarget(
+      damageScope,
+      calculateDamage(damageScope, element),
+      element
+    );
+  }
 }

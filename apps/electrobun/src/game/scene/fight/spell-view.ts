@@ -3,8 +3,8 @@ import type {
   SpellCallbacks,
   SpellContext,
 } from "@dofus/spell-runtime";
-import { SpellDisplayType } from "@dofus/spell-runtime";
 import type { Container } from "pixi.js";
+import { SpellDisplayType } from "@dofus/spell-runtime";
 
 import type { SpellVelloRenderer } from "@/game/render/spell-vello-renderer";
 import type { Scene } from "@/game/scene/scene";
@@ -12,6 +12,7 @@ import {
   type LoadedSpell,
   SpellAssetLoader,
 } from "@/game/assets/spell-asset-loader";
+import { playAnimationSound } from "@/game/audio/audio-events";
 import {
   DEFAULT_GROUND_LEVEL,
   DEFAULT_MAP_WIDTH,
@@ -26,7 +27,6 @@ import { createLogger } from "@/utils/logger";
 
 import { PreRenderedSpell } from "./pre-rendered-spell";
 import { SpellActor } from "./spell-actor";
-import { loadSpellClass } from "./spell-module-loader";
 
 const log = createLogger("SpellView");
 
@@ -43,6 +43,7 @@ export type SpellAnimationTypeValue =
   (typeof SpellAnimationType)[keyof typeof SpellAnimationType];
 
 export interface SpellAnimationConfig {
+  signal?: AbortSignal;
   spellId: number;
   casterCellId: number;
   targetCellId: number;
@@ -55,7 +56,7 @@ export interface SpellAnimationConfig {
   element?: number;
   /** Direction the caster is facing. True = right. Inferred from geometry if omitted. */
   casterFacingRight?: boolean;
-  /** Sound playback callback. If omitted, sound triggers are logged but not played. */
+  /** Optional per-cast sound sink; defaults to the active game audio session. */
   playSound?: (soundId: string) => void;
   /**
    * AS2 displayType (10/11/12/20/21/30/31/40/41/50/51) — controls
@@ -140,16 +141,24 @@ export class SpellRenderer {
 
   /** Resolves when the spell animation completes (onComplete fires). */
   async playSpell(config: SpellAnimationConfig): Promise<void> {
+    // The catalogue explicitly uses zero/negative for pose-only effects.
+    if (config.spellId < 0) {
+      return;
+    }
     const loaded = await this.assetLoader.loadSpell(config.spellId);
+    config.signal?.throwIfAborted();
 
     if (!loaded) {
-      log.warn(
-        `spell ${config.spellId}: dofasset/manifest missing — cast resolves silently`
+      throw new Error(
+        `Visuel de sort ${config.spellId} absent : dofasset ou manifeste introuvable.`
       );
-      return;
     }
 
     const spell = await this.createSpellInstance(config.spellId, loaded);
+    if (config.signal?.aborted) {
+      spell?.destroy();
+      config.signal.throwIfAborted();
+    }
     if (!spell) {
       log.warn(`spell ${config.spellId}: createSpellInstance returned null`);
       return;
@@ -166,8 +175,9 @@ export class SpellRenderer {
     const probeName = animNames.includes("anim1") ? "anim1" : animNames[0];
     const probeFrames = probeName ? loaded.textures.getFrames(probeName) : [];
     if (probeName && probeFrames.length === 0) {
-      log.warn(
-        `spell ${config.spellId}: ${probeName} has 0 frames — check dofasset compile`
+      spell.destroy();
+      throw new Error(
+        `Visuel ${config.spellId} vide après conversion (${probeName}).`
       );
     }
 
@@ -189,14 +199,23 @@ export class SpellRenderer {
       (spell as { displayType?: number }).displayType ?? config.displayType;
     const context = this.buildSpellContext(config, spellDisplayType);
 
-    return new Promise<void>((resolve) => {
-      const actor = new SpellActor(this.scene, spell, resolve, (a) =>
-        this.activeSpells.delete(a)
+    return new Promise<void>((resolve, reject) => {
+      const actor = new SpellActor(
+        this.scene,
+        spell,
+        resolve,
+        (a) => {
+          config.signal?.removeEventListener("abort", cancel);
+          this.activeSpells.delete(a);
+        },
+        reject
       );
+      const cancel = () => this.scene.remove(actor.id);
+      config.signal?.addEventListener("abort", cancel, { once: true });
 
       const callbacks: SpellCallbacks = {
         playSound: (soundId: string) => {
-          config.playSound?.(soundId);
+          (config.playSound ?? playAnimationSound)(soundId);
         },
         onComplete: () => {
           actor.markComplete();
@@ -217,10 +236,8 @@ export class SpellRenderer {
       try {
         spell.init(context, callbacks, loaded.textures);
       } catch (err) {
-        log.warn(
-          `spell ${config.spellId}: init threw — visual will be skipped. Error: ${String(err)}`
-        );
-        resolve();
+        reject(new Error(`Animation ${config.spellId} : ${String(err)}`));
+        actor.dispose();
         return;
       }
 
@@ -241,7 +258,24 @@ export class SpellRenderer {
 
   /** Preload spell manifests + textures up-front to avoid first-cast hitches. */
   async preload(spellIds: number[]): Promise<void> {
-    await this.assetLoader.preload(spellIds);
+    const pending = [...new Set(spellIds)];
+    await Promise.all(
+      Array.from({ length: Math.min(4, pending.length) }, async () => {
+        for (let id = pending.shift(); id !== undefined; id = pending.shift()) {
+          const loaded = await this.assetLoader.loadSpell(id);
+          if (!loaded) {
+            log.error(`Préchargement du visuel ${id} impossible`);
+            continue;
+          }
+          if (loaded.manifest.spell.requiresTypeScript) {
+            const { loadSpellClass } = await import("./spell-module-loader");
+            if (!(await loadSpellClass(id))) {
+              log.error(`Module du visuel ${id} absent`);
+            }
+          }
+        }
+      })
+    );
   }
 
   private async createSpellInstance(
@@ -249,23 +283,21 @@ export class SpellRenderer {
     loaded: LoadedSpell
   ): Promise<ISpellAnimation | null> {
     if (loaded.manifest.spell.requiresTypeScript) {
+      const { loadSpellClass } = await import("./spell-module-loader");
       const SpellClass = await loadSpellClass(spellId);
       if (SpellClass) {
         try {
           return new SpellClass();
         } catch (err) {
-          log.warn(
-            `spell ${spellId}: TS class instantiation threw — falling back to PreRenderedSpell. Error: ${String(err)}`
-          );
+          throw new Error(`Initialisation du visuel ${spellId} impossible.`, {
+            cause: err,
+          });
         }
       } else {
-        log.warn(
-          `spell ${spellId}: requiresTypeScript=true but no class loaded — falling back to PreRenderedSpell (frame stepper)`
+        throw new Error(
+          `Le visuel ${spellId} nécessite un module d’animation absent.`
         );
       }
-      // Spell says it needs bespoke code but no module shipped —
-      // fall back to the generic frame-stepper so the cast doesn't
-      // hang the state machine.
     }
     return new PreRenderedSpell(spellId, loaded);
   }
@@ -409,7 +441,6 @@ function resolveAnchor(
     case SpellDisplayType.WorldAbsolute:
     case SpellDisplayType.WorldAbsoluteAlt:
       return { x: 0, y: 0 };
-    case SpellDisplayType.TargetCell:
     default:
       return target;
   }

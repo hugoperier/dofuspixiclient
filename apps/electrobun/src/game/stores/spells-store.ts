@@ -9,6 +9,10 @@ import { ExternalStore } from "./game-store";
  * locally without a round-trip.
  */
 export interface SpellEntry {
+  effectIds?: number[];
+  requiredStates?: number[];
+  forbiddenStates?: number[];
+  combatUnavailableReason?: string;
   spellId: number;
   level: number;
   position: number;
@@ -73,6 +77,10 @@ export function applySpellList(list: readonly SpellData[]): void {
     // wipe mid-fight cooldowns if the server ever re-emits SL.
     const existingCooldown = prev.get(s.spellId)?.cooldownRemaining ?? 0;
     return {
+      effectIds: s.effectIds,
+      requiredStates: s.requiredStates,
+      forbiddenStates: s.forbiddenStates,
+      combatUnavailableReason: s.combatUnavailableReason,
       spellId: s.spellId,
       level: s.level,
       position: s.position,
@@ -102,7 +110,15 @@ export function applySpellList(list: readonly SpellData[]): void {
   for (const s of spells) {
     byId.set(s.spellId, s);
   }
-  spellsStore.replaceState({ spells, byId });
+  // The close-combat entry is reachable by id only. It is not a learned
+  // spell: it has no rank to raise, no book page, and no hotbar slot to
+  // be dragged into, so leaving it in `spells` would put a "Coup de
+  // poing" card in the grimoire and a phantom row in every list that
+  // iterates the player's spells.
+  spellsStore.replaceState({
+    spells: spells.filter((s) => s.spellId !== CLOSE_COMBAT_SPELL_ID),
+    byId,
+  });
 }
 
 /**
@@ -124,9 +140,7 @@ export function applySpellCooldown(
   };
   const byId = new Map(state.byId);
   byId.set(spellId, updated);
-  const spells = state.spells.map((s) =>
-    s.spellId === spellId ? updated : s
-  );
+  const spells = state.spells.map((s) => (s.spellId === spellId ? updated : s));
   spellsStore.replaceState({ spells, byId });
 }
 
@@ -136,6 +150,40 @@ export function applySpellCooldown(
  * default. Hotbar slots themselves are **1-based**.
  */
 export const UNSLOTTED_POSITION = -1;
+
+/**
+ * The weapon / close-combat pseudo-spell.
+ *
+ * `dofus.datacenter.CloseCombat.CLOSE_COMBAT_SPELL_ID` is 0, and 1.29
+ * builds it as a real `Spell(0, 1)` whose AP cost, range and effects
+ * come from the equipped weapon — which is why the server ships it as
+ * one more `SpellData` and the whole targeting chain works on it
+ * unchanged. It sits at `position` 0, outside the 1..42 hotbar range,
+ * so the grid never draws it: the banner has a dedicated cell.
+ */
+export const CLOSE_COMBAT_SPELL_ID = 0;
+
+/**
+ * The spell sitting in hotbar slot `slot` (1-based), if any.
+ *
+ * `position` is 1-based on the wire — the server's `ROW_NUMBER()` seed
+ * starts at 1 — so this is a lookup, never an array index. The banner
+ * cells and the keyboard shortcuts both go through here, which is the
+ * rule QA-007 set itself: a slot must not behave one way under the
+ * mouse and another under its key.
+ */
+export function spellAtSlot(
+  state: SpellsState,
+  slot: number
+): SpellEntry | undefined {
+  for (const spell of state.spells) {
+    if (spell.position === slot) {
+      return spell;
+    }
+  }
+
+  return undefined;
+}
 
 function withPositions(
   state: SpellsState,

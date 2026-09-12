@@ -11,7 +11,9 @@ import type {
   ZoneRemovePayload,
 } from "@modules/fight/engine/fight.runner.types";
 import { Turn } from "@modules/fight/core/fight.turn";
-import { FighterKind } from "@modules/fight/fight.types";
+import { FighterKind, FightObjectKind } from "@modules/fight/fight.types";
+
+import type { Emitter } from "../effects/fight.effect-registry.types";
 
 export type {
   FrameSink,
@@ -32,12 +34,19 @@ export class Runner {
   private turn: Turn | null = null;
   private turnTimer: ReturnType<typeof setTimeout> | null = null;
   private stopped = false;
+  private presentationWait: {
+    epoch: number;
+    participants: Set<number>;
+    timer: ReturnType<typeof setTimeout>;
+  } | null = null;
+  private readonly disconnected = new Set<string>();
 
   constructor(
     fight: Fight,
     active: ActiveState,
     sink: FrameSink,
-    turnDurationMs = 30_000
+    turnDurationMs = 30_000,
+    private readonly emitter?: Emitter
   ) {
     this.fight = fight;
     this.active = active;
@@ -59,21 +68,63 @@ export class Runner {
       return;
     }
     this.stopped = true;
+    this.fight.turnOpen = false;
+    if (this.presentationWait) {
+      clearTimeout(this.presentationWait.timer);
+    }
+    this.presentationWait = null;
+    this.fight.turnEpoch++;
     if (this.turnTimer !== null) {
       clearTimeout(this.turnTimer);
       this.turnTimer = null;
     }
   }
 
-  notifyReady(_fighterId: number): void {
-    // Ready ack recorded — currently a no-op; future: gate turn start on all acks
+  notifyReady(fighterId: number, epoch?: number): void {
+    const wait = this.presentationWait;
+    if (!wait || wait.epoch !== epoch || !wait.participants.delete(fighterId)) {
+      return;
+    }
+    if (!wait.participants.size) {
+      this.releasePresentation(wait.epoch);
+    }
+  }
+
+  notifyDisconnected(sessionId: string): void {
+    this.disconnected.add(sessionId);
+    const wait = this.presentationWait;
+    if (!wait) {
+      return;
+    }
+    for (const fighter of this.fight.fighters()) {
+      if (fighter.sessionId === sessionId) {
+        wait.participants.delete(fighter.id);
+      }
+    }
+    if (!wait.participants.size) {
+      this.releasePresentation(wait.epoch);
+    }
+  }
+
+  private releasePresentation(epoch: number): void {
+    if (this.presentationWait?.epoch !== epoch) {
+      return;
+    }
+    clearTimeout(this.presentationWait.timer);
+    this.presentationWait = null;
+    // Acknowledgements never acquire the action queue while waiting on it.
+    void this.fight.runAction(() => {
+      if (!this.stopped && this.fight.turnEpoch === epoch) {
+        this.advanceTurn();
+      }
+    });
   }
 
   requestEnd(fighterId: number): void {
     if (this.stopped) {
       return;
     }
-    if (!this.turn || this.turn.fighter.id !== fighterId) {
+    if (!this.turn || this.turn.ended || this.turn.fighter.id !== fighterId) {
       return;
     }
     this.endTurn(this.turn);
@@ -87,7 +138,7 @@ export class Runner {
   }
 
   private advanceTurn(): void {
-    if (this.stopped) {
+    if (this.stopped || this.fight.ending) {
       return;
     }
     const endCheck = this.fight.checkFightEnd();
@@ -96,22 +147,19 @@ export class Runner {
       this.stop();
       return;
     }
-    const { next: fighter, rounded } = this.active.turnList.advance();
+    const { next: fighter } = this.active.turnList.advance();
     if (!fighter) {
       this.sink.broadcast(this.fight, "GE", null);
       return;
     }
 
-    // Deployed objects age by the round, not by the turn. Ticking them
-    // at every turn end burned a 3-round glyph in well under one round
-    // of a four-fighter fight, which read in play as "glyphs vanish
-    // immediately".
-    if (rounded) {
-      this.expireObjects();
-    }
+    // Ground objects expire at their caster's turn, before triggering.
+    this.expireObjects(fighter.id);
 
-    this.refreshFighter(fighter);
-
+    this.fight.turnEpoch++;
+    fighter.turnCount++;
+    fighter.apUsedThisTurn = 0;
+    fighter.punishmentGains.clear();
     const turn = new Turn(
       fighter,
       this.active.turnList.round + 1,
@@ -126,18 +174,32 @@ export class Runner {
       if (this.stopped) {
         return;
       }
-      this.requestEnd(fighter.id);
+      void this.fight.runAction(() => {
+        if (this.turn === turn && !turn.ended) {
+          this.requestEnd(fighter.id);
+        }
+      });
     }, this.turnDurationMs);
-
-    this.fight.modules.fireTurnStart(this.fight, fighter);
-
-    this.fight.fightMap.fireTurnStartTriggers(this.fight, fighter);
 
     const expiredBuffs = fighter.buffs.tickDown();
     for (const b of expiredBuffs) {
       b.onRemove?.(this.fight, fighter);
     }
+    if (expiredBuffs.length) {
+      this.emitter?.emitDispel?.(this.fight, fighter.id);
+    }
+    for (const buff of fighter.buffs.all()) {
+      this.emitter?.emitBuff(this.fight, buff.casterId, fighter.id, buff);
+    }
     fighter.states.tickDown();
+    this.refreshFighter(fighter);
+    this.fight.modules.fireTurnStart(this.fight, fighter);
+    fighter.buffs.each((buff) => {
+      if (!fighter.dead) {
+        buff.onTurnStart?.(this.fight, fighter);
+      }
+    });
+    this.fight.fightMap.fireTurnStartTriggers(this.fight, fighter);
 
     // After expired buffs + states tickdown, check for fight end
     const postBuffEnd = this.fight.checkFightEnd();
@@ -146,7 +208,12 @@ export class Runner {
       this.stop();
       return;
     }
+    if (fighter.dead) {
+      this.endTurn(turn);
+      return;
+    }
 
+    this.fight.turnOpen = true;
     this.sink.broadcast(this.fight, "GTS", {
       spriteId: String(fighter.id),
       timeMs: this.turnDurationMs,
@@ -154,6 +221,12 @@ export class Runner {
     } satisfies TurnStartPayload);
 
     this.sink.broadcast(this.fight, "GTM", this.encodeTurnMiddle());
+
+    if (fighter.skipTurns > 0) {
+      fighter.skipTurns--;
+      this.endTurn(turn);
+      return;
+    }
 
     if (this.observer && fighter.kind !== FighterKind.Player) {
       try {
@@ -165,19 +238,53 @@ export class Runner {
   }
 
   private endTurn(turn: Turn): void {
+    if (turn.ended || this.stopped || this.fight.ending) {
+      return;
+    }
     turn.end();
+    this.fight.turnOpen = false;
     if (this.turnTimer !== null) {
       clearTimeout(this.turnTimer);
       this.turnTimer = null;
     }
 
+    turn.fighter.buffs.each((buff) => {
+      if (!turn.fighter.dead) {
+        buff.onTurnEnd?.(this.fight, turn.fighter);
+      }
+    });
     this.fight.modules.fireTurnEnd(this.fight, turn.fighter);
 
     this.sink.broadcast(this.fight, "GTF", {
       spriteId: String(turn.fighter.id),
     } satisfies TurnFinishPayload);
 
-    this.advanceTurn();
+    const participants = new Set(
+      this.fight
+        .fighters()
+        .filter(
+          (fighter) =>
+            fighter.sessionId &&
+            !fighter.hasLeftFight &&
+            !this.disconnected.has(fighter.sessionId)
+        )
+        .map((fighter) => fighter.id)
+    );
+    if (!participants.size) {
+      this.advanceTurn();
+      return;
+    }
+    const epoch = ++this.fight.turnEpoch;
+    this.presentationWait = {
+      epoch,
+      participants,
+      timer: setTimeout(() => this.releasePresentation(epoch), 15_000),
+    };
+    this.sink.broadcast(this.fight, "GTR", {
+      spriteId: String(turn.fighter.id),
+      fightId: this.fight.id,
+      turnEpoch: epoch,
+    });
   }
 
   /**
@@ -188,8 +295,12 @@ export class Runner {
    * drawn on the battlefield for the rest of the fight — a zone the
    * player could see and reason about that no longer did anything.
    */
-  private expireObjects(): void {
-    for (const expired of this.fight.fightMap.objects.tickDown()) {
+  private expireObjects(casterId: number): void {
+    for (const expired of this.fight.fightMap.objects.tickDown(casterId)) {
+      if (expired.kind === FightObjectKind.Trap) {
+        this.emitter?.emitTrapRemove(this.fight, expired.cell);
+        continue;
+      }
       this.sink.broadcast(this.fight, "GDZ", {
         cellId: expired.cell,
       } satisfies ZoneRemovePayload);
@@ -197,8 +308,7 @@ export class Runner {
   }
 
   private refreshFighter(f: Fighter): void {
-    f.resetAp(6);
-    f.resetMp(3);
+    f.refreshResources();
     this.fight.spellUsage.resetTurn(f.id);
   }
 

@@ -8,7 +8,6 @@ import type { Connection } from "@/game/network/connection";
 import type { MessageHandler } from "@/game/network/message-handler";
 import type { Battlefield } from "@/game/scene";
 import { harvestSoundsFor } from "@/game/audio/harvest-sounds";
-import { getMapTransitionDirection } from "@/game/input/map-coordinates";
 import {
   encodeClient,
   GameActionAckSchema,
@@ -19,7 +18,12 @@ import {
   type SpriteMovementEntry,
 } from "@/game/network/protocol";
 import { numericId } from "@/game/network/sprite-id";
+import {
+  CombatPresentation,
+  type PresentationScope,
+} from "@/game/scene/fight/combat-presentation";
 import { closeNpcDialog, hudStore } from "@/game/stores";
+import { fightStore } from "@/game/stores/fight-store";
 import {
   beginHarvest,
   endHarvest,
@@ -35,7 +39,9 @@ const log = createLogger("MapHandler");
 /**
  * How long a move request may go unanswered before the client stops
  * considering it in flight. Only a request the server refuses outright
- * ever reaches this — a validated one is echoed in the same round trip.
+ * ever reaches this — a validated one is echoed in the same round trip,
+ * and from that moment the walk itself, not this deadline, is what keeps
+ * the move in flight. See `isSelfMoveInFlight`.
  */
 const SELF_MOVE_TIMEOUT_MS = 2_000;
 
@@ -76,6 +82,7 @@ const HARVEST_SOUND_GRACE_MS = 2_000;
  * both are loaded directly from the client-side dofasset bundle.
  */
 export class MapHandler {
+  private mapGeneration = 0;
   private currentMapId: number | null = null;
   private currentCellId: number | null = null;
   private pathfinding: DofusPathfinding | null = null;
@@ -137,6 +144,14 @@ export class MapHandler {
 
   // Messages that arrive before the Battlefield is ready are buffered and
   // replayed by `flushPending()` once the renderer attaches.
+  private presentation = new CombatPresentation();
+
+  setCombatPresentation(presentation: CombatPresentation): void {
+    this.presentation = presentation;
+  }
+
+  private deferredWorld: Array<() => Promise<void>> = [];
+
   private pendingMapData: GameMapData | null = null;
   private pendingMovements: SpriteMovementEntry[] = [];
 
@@ -145,9 +160,25 @@ export class MapHandler {
     private readonly connection: Connection,
     private readonly audioManager: AudioManager,
     private readonly characterHandler: CharacterHandler,
-    private getBattlefield: () => Battlefield | null
+    private getBattlefield: () => Battlefield | null,
+    private readonly onMapAudio?: (map: GameMapData) => void
   ) {
     this.register();
+    fightStore.subscribe(() => {
+      if (
+        fightStore.getSnapshot().finishing ||
+        this.deferredWorld.length === 0
+      ) {
+        return;
+      }
+      const pending = this.deferredWorld.splice(0);
+      queueMicrotask(() => {
+        void pending.reduce(
+          (tail, action) => tail.then(action),
+          Promise.resolve()
+        );
+      });
+    });
   }
 
   /**
@@ -183,8 +214,12 @@ export class MapHandler {
     return this.pathfinding;
   }
 
+  whenMovementsComplete(): Promise<void> {
+    return this.presentation.whenIdle();
+  }
+
   isCharacterMoving(): boolean {
-    return this.isMoving;
+    return this.isMoving || this.presentation.busy;
   }
 
   setCharacterMoving(moving: boolean): void {
@@ -223,6 +258,21 @@ export class MapHandler {
   isSelfMoveInFlight(): boolean {
     if (this.selfMoveSentAt === null) {
       return false;
+    }
+
+    // The echo came back and the sprite is walking: in flight until the
+    // walk ends, however long the path is. The watchdog below covers the
+    // send → echo window only — it used to run from the send to the *end
+    // of the animation*, so any walk longer than two seconds (about five
+    // cells at walk speed) dropped out of the lock mid-stride. The click
+    // that landed in that gap was then routed as a brand-new move,
+    // computed from `currentCellId` — still the cell the walk started
+    // from — and the server, which had not committed the first move
+    // either, accepted it and overwrote its own pending action. The two
+    // acks that followed named actions nobody was waiting for and the
+    // character froze on the spot.
+    if (this.isMoving) {
+      return true;
     }
 
     if (Date.now() - this.selfMoveSentAt > SELF_MOVE_TIMEOUT_MS) {
@@ -284,11 +334,26 @@ export class MapHandler {
 
   private register(): void {
     this.messageHandler.on("gameMapData", (payload) => {
+      if (fightStore.getSnapshot().finishing) {
+        this.deferredWorld.push(() => this.handleMapData(payload));
+        return;
+      }
       void this.handleMapData(payload);
     });
 
     this.messageHandler.on("gameMovement", (payload) => {
-      void this.handleMovement(payload.entries);
+      const fight = fightStore.getSnapshot();
+      if (fight.finishing) {
+        this.deferredWorld.push(() => this.handleMovement(payload.entries));
+        return;
+      }
+      const entries =
+        fight.mode === "fighting" || fight.mode === "placement"
+          ? payload.entries.filter(
+              (entry) => entry.lpMax > 0 || fight.fighters.has(entry.spriteId)
+            )
+          : payload.entries;
+      void this.handleMovement(entries);
     });
 
     // `GDF` — interactive elements changing state. Nothing else on the wire
@@ -312,7 +377,23 @@ export class MapHandler {
       if (payload.actionType === 1 && payload.actionData.case === "movement") {
         const spriteId = payload.spriteId;
         const path = payload.actionData.value.pathCells;
-        void this.handleActorPath(spriteId, path, payload.sequenceId);
+        const fight = fightStore.getSnapshot();
+        if (fight.mode === "fighting" || fight.mode === "spectating") {
+          if (!fight.fighters.has(spriteId)) {
+            return;
+          }
+          this.presentation.move(spriteId, path, (cells, scope) =>
+            this.handleActorPath(
+              spriteId,
+              cells,
+              payload.sequenceId,
+              true,
+              scope
+            )
+          );
+        } else {
+          void this.handleActorPath(spriteId, path, payload.sequenceId);
+        }
       } else if (
         payload.actionType === ACTION_HARVEST &&
         payload.actionData.case === "harvest"
@@ -453,10 +534,15 @@ export class MapHandler {
       return;
     }
 
+    const generation = ++this.mapGeneration;
     const oldMapId = this.currentMapId;
     this.currentMapId = mapId;
-    void this.audioManager.playMusic(payload.musicId);
-    void this.audioManager.playEnvironment(payload.ambianceId);
+    if (this.onMapAudio) {
+      this.onMapAudio(payload);
+    } else {
+      void this.audioManager.playMusic(payload.musicId);
+      void this.audioManager.playEnvironment(payload.ambianceId);
+    }
     this.isMoving = false;
 
     try {
@@ -476,10 +562,6 @@ export class MapHandler {
       this.selfMoveInterrupted = false;
       this.truncateNextSelfPath = false;
 
-      const direction = oldMapId
-        ? (getMapTransitionDirection(oldMapId, mapId) ?? undefined)
-        : undefined;
-
       // Reset the world-actor container BEFORE the new map's actors
       // arrive — server sends GM REMOVE for self only to other players
       // on the origin map, never to self. Without a reset our own
@@ -487,14 +569,17 @@ export class MapHandler {
       // map hits a duplicate id, which the renderer drops silently.
       battlefield.prepareWorldActors();
 
-      this.mapLoadPromise = battlefield.loadMapFromData(mapData, direction);
+      this.mapLoadPromise = battlefield.loadMapFromData(mapData);
       hudStore.setState({
         minimapMapId: mapId,
         currentSubareaId: payload.subareaId > 0 ? payload.subareaId : null,
       });
 
       await this.mapLoadPromise;
-      battlefield.revealMap();
+      if (generation !== this.mapGeneration) {
+        return;
+      }
+      void battlefield.revealMap();
 
       // Tell the server we're ready to receive sprites on this map.
       this.connection.send(
@@ -519,7 +604,11 @@ export class MapHandler {
   }
 
   private async handleMovement(entries: SpriteMovementEntry[]): Promise<void> {
+    const generation = this.mapGeneration;
     await this.mapLoadPromise;
+    if (generation !== this.mapGeneration) {
+      return;
+    }
 
     const battlefield = this.getBattlefield();
     if (!battlefield) {
@@ -531,6 +620,9 @@ export class MapHandler {
     const current = this.characterHandler.getCurrentCharacter();
 
     for (const entry of entries) {
+      if (generation !== this.mapGeneration) {
+        return;
+      }
       const isSelf = entry.spriteId === current?.spriteId;
 
       if (entry.operation === 2 /* REMOVE */) {
@@ -586,6 +678,9 @@ export class MapHandler {
         // per-placement number.
         ...(isNpc ? { npcTemplateId: entry.npcId } : {}),
       });
+      if (generation !== this.mapGeneration) {
+        return;
+      }
 
       if (isSelf) {
         this.currentCellId = entry.cellId;
@@ -600,8 +695,11 @@ export class MapHandler {
   private async handleActorPath(
     spriteId: string,
     rawPath: number[],
-    sequenceId: number
+    sequenceId: number,
+    combat = false,
+    scope?: PresentationScope
   ): Promise<void> {
+    const generation = this.mapGeneration;
     const current = this.characterHandler.getCurrentCharacter();
     const numeric = numericId(spriteId);
     const isSelf = spriteId === current?.spriteId;
@@ -611,7 +709,7 @@ export class MapHandler {
     // sprite would have stopped had the interruption arrived mid-walk.
     let path = rawPath;
 
-    if (isSelf && this.truncateNextSelfPath) {
+    if (!combat && isSelf && this.truncateNextSelfPath) {
       this.truncateNextSelfPath = false;
       path = rawPath.slice(0, 2);
       log.debug(
@@ -652,13 +750,14 @@ export class MapHandler {
     }
 
     await battlefield?.moveWorldActor(numeric, path);
-
-    if (isSelf && path.length > 0 && this.currentMapId !== mapAtStart) {
+    if (generation !== this.mapGeneration || this.currentMapId !== mapAtStart) {
       log.warn(
-        `walk finished on a different map than it started: ` +
-          `seq=${sequenceId} start=${mapAtStart} now=${this.currentMapId} — ` +
-          `the landing cell and the ack below belong to the old map`
+        `walk finished on a different map or load: seq=${sequenceId} start=${mapAtStart} now=${this.currentMapId} — discarded stale position and acknowledgement`
       );
+      return;
+    }
+    if (scope && !scope.isCurrent()) {
+      return;
     }
 
     if (isSelf && path.length > 0) {
@@ -682,6 +781,10 @@ export class MapHandler {
             ? ""
             : ` (expected ${path[path.length - 1]})`)
       );
+      if (combat) {
+        this.onSelfMoveComplete?.();
+        return;
+      }
       this.characterHandler.setMapPosition(
         this.currentMapId ?? 0,
         this.currentCellId
@@ -773,7 +876,7 @@ function cellFromProto(c: MapCell): CellData {
  * Monster groups carry their colors on the leader member, not on
  * `entry.colors`, so we read from `monsters[0]` when present.
  */
-function encodeLook(entry: SpriteMovementEntry): string {
+export function encodeLook(entry: SpriteMovementEntry): string {
   const isMonsterGroup =
     entry.spriteType === 3 /* SPRITE_TYPE_MONSTER_GROUP */ &&
     entry.monsters.length > 0;

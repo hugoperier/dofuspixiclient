@@ -44,6 +44,7 @@ export function TypeSelect({
   return (
     <div ref={rootRef} style={{ position: "relative", height: "100%" }}>
       <button
+        data-audio="click3"
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -105,6 +106,7 @@ export function TypeSelect({
           }}
         >
           <button
+            data-audio="click3"
             type="button"
             role="option"
             aria-selected={value === null}
@@ -129,6 +131,7 @@ export function TypeSelect({
           </button>
           {options.map((option) => (
             <button
+              data-audio="click3"
               key={option}
               type="button"
               role="option"

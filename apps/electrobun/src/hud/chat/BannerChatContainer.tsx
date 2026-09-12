@@ -302,7 +302,21 @@ function ChatLine({ entry }: { entry: ChatEntry }) {
   return (
     <p style={{ color: entryColor(entry), margin: 0 }}>
       {prefix ? `${prefix} : ` : ""}
-      {entry.text}
+      {entry.segments
+        ? entry.segments.map((segment, index) => (
+            <span
+              // Segments are positional and the list never reorders —
+              // the index is the identity here.
+              key={index}
+              style={{
+                fontWeight: segment.bold ? 700 : undefined,
+                textDecoration: segment.underline ? "underline" : undefined,
+              }}
+            >
+              {segment.text}
+            </span>
+          ))
+        : entry.text}
     </p>
   );
 }

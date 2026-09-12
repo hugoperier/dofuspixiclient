@@ -1,25 +1,36 @@
 import type { Fight } from "@modules/fight/core/fight.entity";
 import type { Fighter } from "@modules/fight/core/fight.fighter";
 import type { TurnObserver } from "@modules/fight/engine/fight.runner.types";
-import { clampFightDirection, getDirection } from "@dofus/grid";
+import { ActiveState } from "@modules/fight/core/fight.active-state";
 import { FighterKind } from "@modules/fight/fight.types";
 import { fastDistance } from "@modules/fight/map/fight.area";
 
+import type { SpellLevel } from "../cast/fight.spell.types";
+import { aiCastCandidates } from "./fight.ai-policy";
+import { pathAway, pathToward } from "./fight.movement";
+import { canPerceive } from "./fight.visibility";
+
 export class MonsterAI implements TurnObserver {
   constructor(
-    private readonly requestEnd: (fighterId: number) => void,
+    private readonly requestEnd: (fighterId: number, epoch: number) => void,
     private readonly castSpell?: (
       fight: Fight,
       caster: Fighter,
       spellId: number,
       targetCell: number,
-      level: number
+      level: number,
+      epoch: number
     ) => Promise<void>,
     private readonly broadcastMovement?: (
       fight: Fight,
       fighter: Fighter,
-      pathCells: number[]
-    ) => void
+      pathCells: number[],
+      epoch: number
+    ) => Promise<void>,
+    private readonly spellData?: (
+      id: number,
+      rank: number
+    ) => Promise<SpellLevel | undefined>
   ) {}
 
   onTurnStart(fight: Fight, fighter: Fighter): void {
@@ -27,38 +38,115 @@ export class MonsterAI implements TurnObserver {
       return;
     }
 
-    this.runTurn(fight, fighter).catch(() => {
-      this.requestEnd(fighter.id);
+    const epoch = fight.turnEpoch;
+    this.runTurn(fight, fighter, epoch).catch(() => {
+      this.requestEnd(fighter.id, epoch);
     });
   }
 
-  private async runTurn(fight: Fight, fighter: Fighter): Promise<void> {
+  private async runTurn(
+    fight: Fight,
+    fighter: Fighter,
+    epoch: number
+  ): Promise<void> {
     await delay(300);
-
-    const target = this.findNearestEnemy(fight, fighter);
-    if (!target) {
-      this.requestEnd(fighter.id);
+    if (!this.isCurrent(fight, fighter, epoch)) {
       return;
     }
 
-    let cast = await this.tryCast(fight, fighter, target);
+    const target = this.findNearestEnemy(fight, fighter);
+    if (this.spellData) {
+      const loaded = await Promise.all(
+        fighter.monsterSpells.map((s) => this.spellData?.(s.spellId, s.level))
+      );
+      const spells = loaded.filter((s): s is SpellLevel => Boolean(s));
+      let acted = false;
+      for (
+        let attempt = 0;
+        attempt < 24 && this.isCurrent(fight, fighter, epoch);
+        attempt++
+      ) {
+        let cast = false;
+        for (const candidate of aiCastCandidates(fight, fighter, spells)) {
+          try {
+            await this.castSpell?.(
+              fight,
+              fighter,
+              candidate.spell.spellId,
+              candidate.cell,
+              candidate.spell.level,
+              epoch
+            );
+            cast = true;
+            break;
+          } catch {}
+        }
+        if (cast) {
+          acted = true;
+          continue;
+        }
+        if (acted && (fighter.aiProfile === 3 || fighter.aiProfile === 102)) {
+          const retreat = pathAway(fight, fighter);
+          if (retreat.length) {
+            try {
+              await this.broadcastMovement?.(fight, fighter, retreat, epoch);
+            } catch {}
+          }
+          break;
+        }
+        const owner = fight
+          .fighters()
+          .find((f) => f.id === fighter.invocatorId && !f.dead);
+        const approach = fighter.aiProfile === 102 ? (owner ?? target) : target;
+        if (!approach || fighter.mp <= 0 || fighter.carriedById !== null) {
+          break;
+        }
+        const path = pathToward(fight, fighter, approach);
+        if (!path.length) {
+          break;
+        }
+        const from = fighter.cell;
+        try {
+          await this.broadcastMovement?.(fight, fighter, path, epoch);
+        } catch {
+          break;
+        }
+        if (fighter.cell === from) {
+          break;
+        }
+      }
+      this.requestEnd(fighter.id, epoch);
+      return;
+    }
+    if (!target) {
+      this.requestEnd(fighter.id, epoch);
+      return;
+    }
+
+    let cast = await this.tryCast(fight, fighter, target, epoch);
 
     if (!cast && fighter.mp > 0) {
-      this.moveToward(fight, fighter, target);
+      if (!this.isCurrent(fight, fighter, epoch)) {
+        return;
+      }
+      const path = pathToward(fight, fighter, target);
+      if (path.length) {
+        await this.broadcastMovement?.(fight, fighter, path, epoch);
+      }
       await delay(200);
-      cast = await this.tryCast(fight, fighter, target);
+      cast = await this.tryCast(fight, fighter, target, epoch);
     }
 
     if (cast && fighter.ap > 0) {
       await delay(300);
       const newTarget = this.findNearestEnemy(fight, fighter);
       if (newTarget) {
-        await this.tryCast(fight, fighter, newTarget);
+        await this.tryCast(fight, fighter, newTarget, epoch);
       }
     }
 
     await delay(200);
-    this.requestEnd(fighter.id);
+    this.requestEnd(fighter.id, epoch);
   }
 
   private findNearestEnemy(fight: Fight, fighter: Fighter): Fighter | null {
@@ -67,7 +155,7 @@ export class MonsterAI implements TurnObserver {
     let nearestDist = Number.MAX_SAFE_INTEGER;
 
     for (const f of fight.fighters()) {
-      if (f.dead || f.team?.side === myTeam) {
+      if (f.dead || f.team?.side === myTeam || !canPerceive(f, fighter)) {
         continue;
       }
       const d = fastDistance(fight.fightMap, fighter.cell, f.cell);
@@ -82,9 +170,14 @@ export class MonsterAI implements TurnObserver {
   private async tryCast(
     fight: Fight,
     fighter: Fighter,
-    target: Fighter
+    target: Fighter,
+    epoch: number
   ): Promise<boolean> {
-    if (!this.castSpell || fighter.monsterSpells.length === 0) {
+    if (
+      !this.isCurrent(fight, fighter, epoch) ||
+      !this.castSpell ||
+      fighter.monsterSpells.length === 0
+    ) {
       return false;
     }
 
@@ -97,7 +190,8 @@ export class MonsterAI implements TurnObserver {
           fighter,
           spell.spellId,
           target.cell,
-          spell.level
+          spell.level,
+          epoch
         );
         return true;
       } catch {}
@@ -105,82 +199,14 @@ export class MonsterAI implements TurnObserver {
     return false;
   }
 
-  private moveToward(fight: Fight, fighter: Fighter, target: Fighter): void {
-    const fmap = fight.fightMap;
-    const total = fmap.width * fmap.height * 2;
-
-    // Combat only allows the four isometric-cardinal directions
-    // (1=SE, 3=SW, 5=NW, 7=NE) — the "full-cell" moves. The half-step
-    // directions (0=E / 2=S / 4=W / 6=N, offsets ±1 and ±stride) are
-    // roleplay-only; stepping into them produces cells that aren't
-    // valid fighter positions, and the client's path decoder then
-    // animates a bogus direction. Same constraint `findFightPath`
-    // enforces on the player side (packages/grid/src/pathfinding.ts
-    // line 116 `if (orthogonalOnly && (dir & 1) === 0) continue`).
-    const deltas = [
-      fmap.width, // SE
-      -fmap.width, // NW
-      fmap.width - 1, // SW
-      -(fmap.width - 1), // NE
-    ];
-
-    let remaining = fighter.mp;
-    let currentCell = fighter.cell;
-    const pathCells: number[] = [];
-
-    while (remaining > 0) {
-      const targetDist = fastDistance(fmap, currentCell, target.cell);
-      if (targetDist <= 1) {
-        break;
-      }
-
-      let bestCell = -1;
-      let bestDist = targetDist;
-
-      for (const d of deltas) {
-        const next = currentCell + d;
-        if (next < 0 || next >= total) {
-          continue;
-        }
-        if (!fmap.isFree(next) || !fmap.isWalkable(next)) {
-          continue;
-        }
-        const nd = fastDistance(fmap, next, target.cell);
-        if (nd < bestDist) {
-          bestDist = nd;
-          bestCell = next;
-        }
-      }
-
-      if (bestCell === -1) {
-        break;
-      }
-
-      fmap.free(currentCell, fighter.id);
-      currentCell = bestCell;
-      fmap.occupy(currentCell, fighter.id);
-      pathCells.push(currentCell);
-      remaining--;
-    }
-
-    if (currentCell !== fighter.cell) {
-      const startCell = fighter.cell;
-      fighter.cell = currentCell;
-      fighter.spendMp(fighter.mp - remaining);
-      // Update facing to match the last walk step (canonical Dofus 1.29
-      // behavior). Otherwise the next cast's `if (facing !== direction)`
-      // check on the player handler compares against a stale tracked
-      // value and silently suppresses the directionChange emit, leaving
-      // the monster's sprite punching/casting the wrong way.
-      const penultimate =
-        pathCells.length >= 2
-          ? (pathCells[pathCells.length - 2] ?? startCell)
-          : startCell;
-      fighter.direction = clampFightDirection(
-        getDirection(penultimate, currentCell, fmap.width)
-      );
-      this.broadcastMovement?.(fight, fighter, pathCells);
-    }
+  private isCurrent(fight: Fight, fighter: Fighter, epoch: number): boolean {
+    return (
+      !fight.ending &&
+      !fighter.dead &&
+      fight.turnEpoch === epoch &&
+      fight.state instanceof ActiveState &&
+      fight.state.turnList.current()?.id === fighter.id
+    );
   }
 }
 

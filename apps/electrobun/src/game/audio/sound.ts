@@ -1,82 +1,109 @@
-/**
- * The one place that touches `HTMLAudioElement`.
- *
- * `AudioManager` drives sounds through this interface only, so its scheduling
- * — fades, ambiance timers, save/restore across fights — can be unit-tested
- * with a fake factory and no DOM.
- */
+/** The only adapter that touches HTMLAudioElement. */
 export interface Sound {
-  /** Start playback. Safe to call once per instance. */
   play(): void;
-  /** Stop and release. The instance is dead afterwards. */
   stop(): void;
-  /** 0..1, already multiplied by the channel and per-sound base volume. */
   setVolume(volume: number): void;
-  /** Current 0..1 level — the starting point of a fade-out. */
   volume(): number;
   setMuted(muted: boolean): void;
-  /** Seconds into the track, for save/restore across a fight. */
   position(): number;
 }
-
 export type SoundFactory = (
   url: string,
-  options: { loop: boolean; startAt: number }
+  options: { loop: boolean; startAt: number; onEnded?: () => void }
 ) => Sound;
 
-export const createHtmlSound: SoundFactory = (url, { loop, startAt }) => {
+export const createHtmlSound: SoundFactory = (
+  url,
+  { loop, startAt, onEnded }
+) => {
   const audio = new Audio(url);
   audio.loop = loop;
   audio.volume = 0;
   audio.preload = "auto";
-
   let started = false;
-
+  let disposed = false;
+  const removeGestureListeners = () => {
+    document.removeEventListener("click", resume);
+    document.removeEventListener("keydown", resume);
+  };
+  const dispose = () => {
+    if (disposed) {
+      return;
+    }
+    disposed = true;
+    removeGestureListeners();
+    audio.removeEventListener("canplay", start);
+    audio.removeEventListener("ended", finish);
+    audio.removeEventListener("error", fail);
+    audio.pause();
+    audio.removeAttribute("src");
+    audio.load();
+  };
+  const finish = () => {
+    dispose();
+    onEnded?.();
+  };
+  const fail = () => {
+    console.warn(`[Audio] Could not load ${url}`);
+    finish();
+  };
+  const attempt = () => {
+    if (disposed) {
+      return;
+    }
+    void audio.play().catch((error: unknown) => {
+      if (disposed) {
+        return;
+      }
+      if (
+        loop &&
+        error instanceof DOMException &&
+        error.name === "NotAllowedError"
+      ) {
+        // Only ongoing beds/music are deferred. Old one-shots must not burst
+        // out together on the first gesture minutes after their event.
+        document.addEventListener("click", resume, { once: true });
+        document.addEventListener("keydown", resume, { once: true });
+      } else {
+        finish();
+      }
+    });
+  };
+  const resume = () => {
+    removeGestureListeners();
+    attempt();
+  };
   const start = () => {
+    if (disposed) {
+      return;
+    }
     if (startAt > 0) {
       audio.currentTime = startAt;
     }
-
-    audio.play().catch(() => {
-      // Browsers refuse autoplay until the page has been interacted with.
-      // Retry on the first click or key press, which is exactly what the
-      // player does to walk anywhere.
-      const resume = () => {
-        audio.play().catch(() => {});
-        document.removeEventListener("click", resume);
-        document.removeEventListener("keydown", resume);
-      };
-      document.addEventListener("click", resume, { once: true });
-      document.addEventListener("keydown", resume, { once: true });
-    });
+    attempt();
   };
-
+  audio.addEventListener("ended", finish);
+  audio.addEventListener("error", fail);
   return {
     play() {
-      if (started) return;
+      if (started || disposed) {
+        return;
+      }
       started = true;
-
       if (audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
         start();
       } else {
         audio.addEventListener("canplay", start, { once: true });
       }
     },
-    stop() {
-      audio.pause();
-      audio.src = "";
+    stop: dispose,
+    setVolume: (v) => {
+      audio.volume = Math.max(0, Math.min(1, v));
     },
-    setVolume(volume) {
-      audio.volume = Math.max(0, Math.min(1, volume));
-    },
-    volume() {
-      return audio.volume;
-    },
-    setMuted(muted) {
+    volume: () => audio.volume,
+    setMuted: (muted) => {
       audio.muted = muted;
     },
-    position() {
-      return audio.currentTime;
-    },
+    position: () => audio.currentTime,
   };
 };

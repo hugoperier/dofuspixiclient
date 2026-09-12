@@ -8,28 +8,21 @@ import {
   Ticker,
 } from "pixi.js";
 
-export interface TransitionDirection {
-  dx: number;
-  dy: number;
-}
+import { createLogger } from "@/utils/logger";
+
+const log = createLogger("MapTransition");
 
 /**
  * Smooth map-to-map transition using snapshot + crossfade blur.
  *
- * Supports two modes:
- *  - **Crossfade** (no direction): blur old → blur-in new (original behavior)
- *  - **Directional pan** (with direction): slide old map out + slide new map in
- *    along the movement axis with motion blur
- *
  * Flow:
- *  1. `startTransition(direction?)` — captures mapContainer into a snapshot.
- *     If direction given, stores it for pan animation.
+ *  1. `startTransition()` — captures mapContainer into a snapshot.
  *
  *  2. `reveal()` — called when new map + actors are ready.
- *     - Crossfade: snapshot fades out, new map unblurs.
- *     - Pan: snapshot slides out, new map slides in from direction, with blur.
+ *     The snapshot fades out while the new map unblurs. Both stay in place.
  */
 export class MapTransition {
+  private generation = 0;
   private app: Application;
   private mapContainer: Container;
 
@@ -40,11 +33,6 @@ export class MapTransition {
 
   private transitioning = false;
   private transitionStartTime = 0;
-  private direction: TransitionDirection | null = null;
-
-  /** Position of mapContainer before we start animating it */
-  private mapRestX = 0;
-  private mapRestY = 0;
 
   /** Persistent filters on mapContainer that must survive transitions */
   private baseFilters: Filter[] = [];
@@ -54,11 +42,9 @@ export class MapTransition {
 
   // Tuning
   private readonly MAX_BLUR = 8;
-  private readonly PAN_BLUR = 4;
   private readonly BLUR_UP_MS = 150;
   private readonly MIN_COVER_MS = 100;
   private readonly REVEAL_MS = 200;
-  private readonly PAN_MS = 250;
 
   constructor(
     app: Application,
@@ -72,12 +58,9 @@ export class MapTransition {
 
   /**
    * Capture snapshot and start loading animation. Non-blocking.
-   * @param direction If provided, enables directional pan instead of crossfade.
    */
-  startTransition(direction?: TransitionDirection): void {
+  startTransition(): void {
     this.cleanup();
-
-    this.direction = direction ?? null;
 
     // Nothing to snapshot on first load
     if (this.mapContainer.children.length === 0) {
@@ -95,21 +78,26 @@ export class MapTransition {
 
     const pad = Math.ceil(this.MAX_BLUR) + 4;
 
-    this.snapshotTexture = RenderTexture.create({
-      width: this.app.screen.width + pad * 2,
-      height: this.app.screen.height + pad * 2,
-    });
-
     const origX = this.mapContainer.x;
     const origY = this.mapContainer.y;
-    this.mapContainer.position.set(origX + pad, origY + pad);
-
-    this.app.renderer.render({
-      container: this.mapContainer,
-      target: this.snapshotTexture,
-    });
-
-    this.mapContainer.position.set(origX, origY);
+    try {
+      this.snapshotTexture = RenderTexture.create({
+        width: this.app.screen.width + pad * 2,
+        height: this.app.screen.height + pad * 2,
+      });
+      this.mapContainer.position.set(origX + pad, origY + pad);
+      this.app.renderer.render({
+        container: this.mapContainer,
+        target: this.snapshotTexture,
+      });
+    } catch (error) {
+      // The snapshot is cosmetic; a GPU failure must not abort the map load.
+      log.error("Map snapshot failed; continuing without transition", error);
+      this.cleanup();
+      return;
+    } finally {
+      this.mapContainer.position.set(origX, origY);
+    }
 
     this.snapshot = new Sprite(this.snapshotTexture);
     this.snapshot.label = "map-transition-snapshot";
@@ -121,25 +109,22 @@ export class MapTransition {
     this.snapshotBlur = new BlurFilter({ strength: 0, quality: 3 });
     this.snapshot.filters = [this.snapshotBlur];
 
-    // For directional pan, apply a gentler blur-up
-    const targetBlur = this.direction ? this.PAN_BLUR : this.MAX_BLUR;
-
     this.startAnimation(this.BLUR_UP_MS, (t) => {
       if (this.snapshotBlur) {
-        this.snapshotBlur.strength = t * targetBlur;
+        this.snapshotBlur.strength = t * this.MAX_BLUR;
       }
     });
   }
 
   /**
-   * Reveal the new map.
-   * Uses directional pan if a direction was set, otherwise crossfade.
+   * Reveal the new map with a stationary crossfade.
    */
   async reveal(): Promise<void> {
     if (!this.transitioning) {
       return;
     }
 
+    const generation = this.generation;
     const elapsed = performance.now() - this.transitionStartTime;
     const remaining = this.MIN_COVER_MS - elapsed;
 
@@ -147,22 +132,15 @@ export class MapTransition {
       await this.delay(remaining);
     }
 
+    if (generation !== this.generation) {
+      return;
+    }
     this.cancelAnimations();
 
-    // Capture rest position NOW — after loadMapFromData has reset mapContainer to (0,0)
-    this.mapRestX = this.mapContainer.x;
-    this.mapRestY = this.mapContainer.y;
-
-    if (
-      this.direction &&
-      (this.direction.dx !== 0 || this.direction.dy !== 0)
-    ) {
-      await this.revealWithPan();
-    } else {
-      await this.revealWithCrossfade();
+    await this.revealWithCrossfade();
+    if (generation === this.generation) {
+      this.finishTransition();
     }
-
-    this.finishTransition();
   }
 
   isTransitioning(): boolean {
@@ -170,94 +148,19 @@ export class MapTransition {
   }
 
   cleanup(): void {
+    this.generation++;
     this.cancelAnimations();
-    // Restore mapContainer position if we were mid-pan
-    if (this.direction && this.transitioning) {
-      this.mapContainer.position.set(0, 0);
-    }
-
     this.removeSnapshot();
     this.removeMapBlur();
     this.transitioning = false;
-    this.direction = null;
   }
 
   destroy(): void {
     this.cleanup();
   }
 
-  // ---------------------------------------------------------------------------
-  // Reveal strategies
-  // ---------------------------------------------------------------------------
-
   /**
-   * Pan: snapshot slides out in -direction, new map slides in from +direction.
-   * Both get a motion blur along the pan axis.
-   */
-  private async revealWithPan(): Promise<void> {
-    const dir = this.direction;
-
-    if (!dir) {
-      return;
-    }
-
-    const screenW = this.app.screen.width;
-    const screenH = this.app.screen.height;
-
-    // Total travel distance for the pan
-    const panX = dir.dx * screenW;
-    const panY = dir.dy * screenH;
-
-    // Snapshot starts at its captured position, slides out by -pan
-    const snapStartX = this.snapshot?.x ?? 0;
-    const snapStartY = this.snapshot?.y ?? 0;
-
-    // New map starts offset by +pan, slides to rest position
-    const mapStartX = this.mapRestX + panX;
-    const mapStartY = this.mapRestY + panY;
-    this.mapContainer.position.set(mapStartX, mapStartY);
-
-    // Apply motion blur to new map (along pan axis)
-    const blurStrengthX = Math.abs(dir.dx) * this.PAN_BLUR;
-    const blurStrengthY = Math.abs(dir.dy) * this.PAN_BLUR;
-    this.mapBlur = new BlurFilter({
-      strengthX: blurStrengthX,
-      strengthY: blurStrengthY,
-      quality: 3,
-    });
-    this.mapBlur.padding = this.PAN_BLUR + 4;
-    this.mapContainer.filters = [...this.baseFilters, this.mapBlur];
-
-    await this.animateAsync(this.PAN_MS, (t) => {
-      // Slide snapshot out
-      if (this.snapshot) {
-        this.snapshot.x = snapStartX - panX * t;
-        this.snapshot.y = snapStartY - panY * t;
-        this.snapshot.alpha = 1 - t * 0.5; // Gentle fade
-      }
-
-      // Slide new map in
-      this.mapContainer.x = mapStartX - panX * t;
-      this.mapContainer.y = mapStartY - panY * t;
-
-      // Reduce motion blur as pan completes
-      if (this.mapBlur) {
-        this.mapBlur.strengthX = blurStrengthX * (1 - t);
-        this.mapBlur.strengthY = blurStrengthY * (1 - t);
-      }
-
-      // Reduce snapshot blur as it slides out
-      if (this.snapshotBlur) {
-        this.snapshotBlur.strength = this.PAN_BLUR * (1 - t * 0.3);
-      }
-    });
-
-    // Ensure final position is exact
-    this.mapContainer.position.set(this.mapRestX, this.mapRestY);
-  }
-
-  /**
-   * Original crossfade: snapshot fades out + mapContainer unblurs.
+   * Snapshot fades out while mapContainer unblurs.
    */
   private async revealWithCrossfade(): Promise<void> {
     this.mapBlur = new BlurFilter({
@@ -286,7 +189,6 @@ export class MapTransition {
     this.removeSnapshot();
     this.removeMapBlur();
     this.transitioning = false;
-    this.direction = null;
   }
 
   private removeSnapshot(): void {
@@ -347,7 +249,7 @@ export class MapTransition {
     ticker.add(tick);
   }
 
-  /** Awaitable animation (for reveal crossfade / pan) */
+  /** Awaitable animation for the reveal crossfade */
   private animateAsync(
     durationMs: number,
     onTick: (t: number) => void

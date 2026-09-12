@@ -2,8 +2,20 @@ import { create } from "@bufbuild/protobuf";
 
 import type { Connection } from "@/game/network/connection";
 import type { MessageHandler } from "@/game/network/message-handler";
+import type { CombatPresentation } from "@/game/scene/fight/combat-presentation";
+import { combatant, emphasis, fightLog } from "@/game/chat/fight-log";
+import {
+  formatEffect,
+  loadEffectsLang,
+  needsMultipleValues,
+} from "@/game/lang/effects-lang";
+import { spellCastActor } from "@/game/machines/spell-cast.machine";
 import { encodeFightPath } from "@/game/network/path-codec";
 import {
+  FightBlockJoinExceptPartyRequestSchema,
+  FightBlockJoinRequestSchema,
+  FightBlockSpectatorsRequestSchema,
+  FightNeedHelpRequestSchema,
   type ActionAPChange,
   type ActionDamage,
   type ActionDeath,
@@ -23,16 +35,43 @@ import {
   type GameMovement,
   type GamePositionStart,
   type GameReady,
+  GameSetFlagSchema,
   GameSetPositionSchema,
   GameSetReadySchema,
   GameTurnEndSchema,
   type GameTurnFinish,
   type GameTurnList,
+  GameTurnOkSchema,
   type GameTurnStart,
   type GameZoneData,
   GameZoneData_Operation,
 } from "@/game/network/protocol";
+import { appendInfoMessage } from "@/game/stores/chat-store";
 import { fightActor } from "@/game/stores/fight-store";
+import { inventoryStore } from "@/game/stores/inventory-store";
+import {
+  applySpellCooldown,
+  CLOSE_COMBAT_SPELL_ID,
+  spellsStore,
+} from "@/game/stores/spells-store";
+import { setFightFlag } from "@/hud/fight/fight-flag-store";
+import {
+  type FightOptionCode,
+  FightOptionCode as FightOption,
+  applyFightOption,
+} from "@/hud/fight/fight-options-store";
+import { createLogger } from "@/utils/logger";
+
+const log = createLogger("FightHandler");
+
+/**
+ * How long the client waits for the `gameActionsFinish` that closes an
+ * action it sent. The server answers within a round-trip, so this only
+ * ever fires when a frame was lost; without it a dropped answer would
+ * leave the turn unplayable, since this is now the only barrier on
+ * input.
+ */
+const ACTION_TIMEOUT_MS = 3000;
 
 export interface SpellCastPayload {
   casterId: number;
@@ -75,12 +114,15 @@ export interface FightEventHandlers {
   onFightJoined?: (payload: GameJoin) => void;
   onPositionStart?: (payload: GamePositionStart) => void;
   onFightStart?: () => void;
-  onFightEnd?: (payload: GameEnd) => void;
+  onFightEnd?: (payload: GameEnd) => void | Promise<void>;
   onTurnStart?: (payload: GameTurnStart) => void;
   onTurnEnd?: (payload: GameTurnFinish) => void;
   onTurnList?: (payload: GameTurnList) => void;
   onReady?: (payload: GameReady) => void;
+  onCriticalHit?: () => void;
+  onCriticalMiss?: () => void;
   onSpellCast?: (payload: SpellCastPayload) => void;
+  onTriggeredSpell?: (payload: SpellCastPayload) => void;
   onAPChange?: (payload: ActionAPChange) => void;
   onMPChange?: (payload: ActionMPChange) => void;
   onDamage?: (payload: ActionDamage) => void;
@@ -89,6 +131,10 @@ export interface FightEventHandlers {
   onDirectionChange?: (payload: ActionDirectionChange) => void;
   onStateChange?: (payload: ActionStateChange) => void;
   onSummon?: (payload: ActionSummon) => void;
+  onVisibility?: (spriteId: string, visibility: number) => void;
+  onAppearance?: (spriteId: string, gfxId: number) => void;
+  onCarry?: (carrierId: string, carriedId: string) => void;
+  onUncarry?: (carriedId: string, cellId: number, thrown: boolean) => void;
   onMovement?: (payload: GameMovement) => void;
   onZoneAdd?: (payload: ZonePayload) => void;
   onZoneRemove?: (payload: ZonePayload) => void;
@@ -102,13 +148,35 @@ export interface FightEventHandlers {
  * (sprite lifecycle) and `gameAction` (one-shot combat events with a
  * typed `action_data` oneof). This handler fans out those events.
  */
+/**
+ * Effects that already reach the log through their own AP/MP frame.
+ *
+ * A timed AP or MP theft broadcasts the loss *and* the buff that holds
+ * it, so wording the buff too would print the same sentence twice. The
+ * loss line is the one that survives; the fighter panel is where the
+ * remaining turns are read. Ids come from the server's `ap-mp` and
+ * `stat-boost` effect handlers.
+ */
+const SELF_ANNOUNCING_EFFECTS = new Set([
+  77, 78, 84, 101, 111, 120, 127, 128, 168, 169,
+]);
+
 export class FightHandler {
+  private presentation: CombatPresentation | null = null;
+  private fightId = 0;
+  private generation = 0;
+  private readyEpoch = 0;
+  setCombatPresentation(presentation: CombatPresentation): void {
+    this.presentation = presentation;
+  }
   private handlers: FightEventHandlers = {};
+  private readonly criticalCasts = new Map<string, number>();
   private unsubscribers: (() => void)[] = [];
+  private actionTimeout: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     messageHandler: MessageHandler,
-    private readonly connection: Connection,
+    private readonly connection: Pick<Connection, "send">,
     /**
      * Resolves the local player's sprite id (= their character id, as a
      * string). The fight machine needs this to evaluate the `isMyTurn`
@@ -118,13 +186,115 @@ export class FightHandler {
     private readonly getMySpriteId: () => string | null = () => null
   ) {
     this.registerHandlers(messageHandler);
+    // The combat log words buffs from the effects bundle, and the first
+    // one lands within a turn of the first cast. Warming it here — the
+    // call is idempotent and shares its promise — costs one fetch per
+    // session and spares the log its cold-start silence.
+    void loadEffectsLang();
   }
 
   setHandlers(handlers: FightEventHandlers): void {
     this.handlers = handlers;
   }
 
+  private fighterName(id: string): string {
+    return fightActor.getSnapshot().context.fighters.get(id)?.name ?? id;
+  }
+
+  /**
+   * Raise the one barrier that still stands between the player and
+   * their next click: the round-trip of the action we just sent.
+   *
+   * It is short by design — the server resolves an action whole and
+   * answers with `gameActionsFinish` — and it is what guarantees the
+   * cell, the AP and the MP behind the next click are the ones the
+   * server will check. Should that answer never come the turn would be
+   * unplayable, hence the deadline.
+   */
+  private beginAction(): void {
+    fightActor.send({ type: "ACTION_PENDING", pending: true });
+    if (this.actionTimeout !== null) {
+      clearTimeout(this.actionTimeout);
+    }
+    this.actionTimeout = setTimeout(() => {
+      this.actionTimeout = null;
+      if (!fightActor.getSnapshot().context.actionPending) {
+        return;
+      }
+      log.warn(
+        `aucune fin d'action après ${ACTION_TIMEOUT_MS} ms — déverrouillage`
+      );
+      fightActor.send({ type: "ACTION_PENDING", pending: false });
+    }, ACTION_TIMEOUT_MS);
+  }
+
+  private endAction(): void {
+    if (this.actionTimeout !== null) {
+      clearTimeout(this.actionTimeout);
+      this.actionTimeout = null;
+    }
+    fightActor.send({ type: "ACTION_PENDING", pending: false });
+  }
+
   private registerHandlers(mh: MessageHandler): void {
+    this.unsubscribers.push(
+      mh.on("gameActionsStart", (payload) => {
+        if (payload.fightId !== this.fightId || !payload.fightId) {
+          return;
+        }
+        this.presentation?.begin(payload.actionId);
+      }),
+      mh.on("gameTurnReady", (payload) => {
+        if (
+          payload.fightId !== this.fightId ||
+          payload.turnEpoch <= this.readyEpoch ||
+          fightActor.getSnapshot().context.isSpectator
+        ) {
+          return;
+        }
+        this.readyEpoch = payload.turnEpoch;
+        const generation = this.generation;
+        void Promise.resolve(this.presentation?.whenIdle()).then(() => {
+          const spriteId = this.getMySpriteId();
+          if (
+            !spriteId ||
+            this.generation !== generation ||
+            this.readyEpoch !== payload.turnEpoch
+          ) {
+            return;
+          }
+          this.connection.send(
+            encodeClient(
+              "gameTurnOk",
+              create(GameTurnOkSchema, {
+                spriteId,
+                fightId: payload.fightId,
+                turnEpoch: payload.turnEpoch,
+              })
+            )
+          );
+        });
+      })
+    );
+    this.unsubscribers.push(
+      mh.on("gameActionsFinish", (payload) => {
+        if (payload.fightId !== this.fightId) {
+          return;
+        }
+        this.presentation?.finish(payload.actionId);
+        if (payload.spriteId !== this.getMySpriteId()) {
+          return;
+        }
+        this.endAction();
+        if (payload.rejectionCode) {
+          appendInfoMessage(payload.rejectionReason);
+          spellCastActor.send({
+            type: "SERVER_REJECTED",
+            reason: payload.rejectionReason,
+          });
+        }
+      })
+    );
     this.unsubscribers.push(
       mh.on("gameCreate", (payload) => {
         // GameCreate is reused for both exploration entry (state=1)
@@ -138,11 +308,32 @@ export class FightHandler {
 
     this.unsubscribers.push(
       mh.on("gameJoin", (payload) => {
+        this.generation++;
+        this.fightId = payload.fightId;
+        this.readyEpoch = 0;
+        this.presentation?.reset();
+        this.criticalCasts.clear();
+        for (const spell of spellsStore.getSnapshot().spells) {
+          applySpellCooldown(spell.spellId, 0);
+        }
+        spellCastActor.send({ type: "RESET" });
+        // A previous result may still be waiting for cosmetic/audio cleanup.
+        // The new join owns the machine and must replace that combat now.
+        fightActor.send({ type: "LEAVE" });
         const mySpriteId = this.getMySpriteId() ?? undefined;
         if (payload.isSpectator) {
-          fightActor.send({ type: "FIGHT_SPECTATE_INIT", payload });
+          fightActor.send({
+            type: "FIGHT_SPECTATE_INIT",
+            payload,
+            fightId: payload.fightId,
+          });
         } else {
-          fightActor.send({ type: "FIGHT_INIT", payload, mySpriteId });
+          fightActor.send({
+            type: "FIGHT_INIT",
+            payload,
+            mySpriteId,
+            fightId: payload.fightId,
+          });
         }
         this.handlers.onFightJoined?.(payload);
       })
@@ -163,13 +354,26 @@ export class FightHandler {
 
     this.unsubscribers.push(
       mh.on("gameEnd", (payload) => {
-        fightActor.send({ type: "FIGHT_END", payload });
-        this.handlers.onFightEnd?.(payload);
+        const generation = ++this.generation;
+        this.criticalCasts.clear();
+        fightActor.send({ type: "FINISHING" });
+        spellCastActor.send({ type: "TURN_ENDED" });
+        Promise.resolve(this.handlers.onFightEnd?.(payload)).finally(() => {
+          if (generation === this.generation) {
+            fightActor.send({ type: "FIGHT_END", payload });
+          }
+        });
       })
     );
 
     this.unsubscribers.push(
       mh.on("gameTurnStart", (payload) => {
+        // TURN_START clears `actionPending` inside the machine; drop
+        // the deadline with it so it cannot fire into the new turn.
+        if (this.actionTimeout !== null) {
+          clearTimeout(this.actionTimeout);
+          this.actionTimeout = null;
+        }
         fightActor.send({ type: "TURN_START", payload });
         this.handlers.onTurnStart?.(payload);
       })
@@ -177,6 +381,7 @@ export class FightHandler {
 
     this.unsubscribers.push(
       mh.on("gameTurnFinish", (payload) => {
+        this.criticalCasts.delete(payload.spriteId);
         fightActor.send({ type: "TURN_END", payload });
         this.handlers.onTurnEnd?.(payload);
       })
@@ -201,6 +406,28 @@ export class FightHandler {
         // the gauges + reachable-range calc.
         const mySpriteId = this.getMySpriteId();
         for (const entry of payload.entries) {
+          const previous = fightActor
+            .getSnapshot()
+            .context.fighters.get(entry.spriteId);
+          const visibility = entry.hidden ? 2 : entry.invisible ? 1 : 0;
+          if (
+            previous?.hidden !== entry.hidden ||
+            previous?.invisible !== entry.invisible
+          ) {
+            this.handlers.onVisibility?.(entry.spriteId, visibility);
+          }
+          if (previous?.appearanceGfx !== entry.appearanceGfx) {
+            this.handlers.onAppearance?.(entry.spriteId, entry.appearanceGfx);
+          }
+          if (
+            entry.carriedById &&
+            entry.carriedById !== previous?.carriedById
+          ) {
+            this.handlers.onCarry?.(entry.carriedById, entry.spriteId);
+          }
+          if (!entry.carriedById && previous?.carriedById) {
+            this.handlers.onUncarry?.(entry.spriteId, entry.cellNum, false);
+          }
           fightActor.send({
             type: "FIGHTER_UPDATE",
             spriteId: entry.spriteId,
@@ -209,16 +436,20 @@ export class FightHandler {
               maxHp: entry.lpMax,
               ap: entry.ap,
               mp: entry.mp,
-              cell: entry.cellNum,
-              // Only LATCH dead to true via gameTurnMiddle — never
-              // un-set it. The death `FIGHTER_UPDATE` from
-              // `routeAction("death")` is authoritative for the
-              // dead transition; gameTurnMiddle's `isDead` field is
-              // sometimes false on the wire even for corpses (the
-              // server tears them down asynchronously), and
-              // overwriting back to false would let dead-monster
-              // cells re-block pathfinding/LoS for the next hover.
-              ...(entry.isDead ? { dead: true } : {}),
+              cell: entry.hidden ? -1 : entry.cellNum,
+              invisible: entry.invisible,
+              hidden: entry.hidden,
+              carryingId: entry.carryingId,
+              carriedById: entry.carriedById,
+              appearanceGfx: entry.appearanceGfx,
+              maxSummons: entry.maxSummons,
+              staticFighter: entry.staticFighter,
+              resurrectable: entry.resurrectable,
+              maxAp: entry.apMax,
+              maxMp: entry.mpMax,
+              rangeBonus: entry.rangeBonus,
+              states: entry.states,
+              dead: entry.isDead,
             },
           });
         }
@@ -229,29 +460,48 @@ export class FightHandler {
         if (!mine) {
           return;
         }
-        // maxAp / maxMp aren't on the wire — the fighters map anchors
-        // them on first positive reading. Top-level ap/mp mirror only
-        // the player's current values for legacy consumers.
-        const snap = fightActor.getSnapshot();
-        const mine2 = snap.context.fighters.get(mySpriteId);
+        // Mirror current resources and maxima from the authoritative GTM.
         fightActor.send({
           type: "STATS_UPDATE",
           ap: mine.ap,
           mp: mine.mp,
-          maxAp: mine2?.maxAp && mine2.maxAp > 0 ? mine2.maxAp : mine.ap,
-          maxMp: mine2?.maxMp && mine2.maxMp > 0 ? mine2.maxMp : mine.mp,
+          maxAp: mine.apMax,
+          maxMp: mine.mpMax,
         });
       })
     );
 
     this.unsubscribers.push(
       mh.on("gameReady", (payload) => {
+        fightActor.send({
+          type: "FIGHTER_UPDATE",
+          spriteId: payload.spriteId,
+          patch: { ready: payload.isReady },
+        });
         this.handlers.onReady?.(payload);
+      })
+    );
+
+    // The four leader-only options (`Go`) and the team-only cell marker
+    // (`Gf`). Both are broadcast state: the server has already decided
+    // who receives them, so the client just records what it is told.
+    this.unsubscribers.push(
+      mh.on("gameFightOption", (payload) => {
+        applyFightOption(payload.option, payload.enabled, payload.leaderId);
+      })
+    );
+
+    this.unsubscribers.push(
+      mh.on("gameFlag", (payload) => {
+        setFightFlag(payload.spriteId, payload.cellId);
       })
     );
 
     this.unsubscribers.push(
       mh.on("gameMovement", (payload) => {
+        if (fightActor.getSnapshot().context.finishing) {
+          return;
+        }
         // During placement / combat, each sprite entry is a fighter —
         // the server fans out ADD on placement, UPDATE on summon, and
         // REMOVE on despawn. Keep the fighters map in sync so the HUD
@@ -305,7 +555,7 @@ export class FightHandler {
               color1: c1,
               color2: c2,
               color3: c3,
-              ...(entry.isSummoned ? { summonedBy: entry.spriteId } : {}),
+              ...(entry.isSummoned ? { summonedBy: entry.summonerId } : {}),
             },
           });
         }
@@ -338,22 +588,263 @@ export class FightHandler {
     const data = action.actionData;
 
     switch (data.case) {
-      case "spellLaunch":
-        this.handlers.onSpellCast?.(spellLaunchToPayload(action, data.value));
-        break;
-      case "criticalHit":
-        this.handlers.onSpellCast?.({
-          casterId: Number(action.spriteId) || 0,
-          spellId: data.value.spellId,
-          visualGfxId: data.value.spellId,
-          spellLevel: 0,
-          targetCellId: 0,
-          critical: true,
-          animation: "anim1",
+      case "glyph":
+        this.handlers.onTriggeredSpell?.({
+          casterId: Number(action.spriteId),
+          spellId: data.value.param1,
+          visualGfxId: data.value.param2,
+          spellLevel: data.value.param3 || 1,
+          targetCellId: data.value.cellId,
+          critical: false,
+          animation: "",
         });
+        break;
+      case "spellLaunch": {
+        // The frame carries the name the server resolved, which is the
+        // only one that works for a spell the viewer does not own — a
+        // monster's. The store is the fallback for a server that
+        // predates the field, the bare id the fallback for both.
+        const spellName =
+          data.value.name ||
+          spellsStore.getSnapshot().byId.get(data.value.spellId)?.name ||
+          `le sort ${data.value.spellId}`;
+        fightLog(
+          combatant(this.fighterName(action.spriteId)),
+          " lance ",
+          emphasis(spellName),
+          "."
+        );
+        const cast = spellLaunchToPayload(action, data.value);
+        cast.critical =
+          this.criticalCasts.get(action.spriteId) === data.value.spellId;
+        this.criticalCasts.delete(action.spriteId);
+        this.handlers.onSpellCast?.(cast);
+        break;
+      }
+      // A weapon swing. The wire verb differs from a spell cast
+      // (`GA;303`, per 1.29) but the presentation is the same one:
+      // `visualGfxId` 0 means "no spell visual", so the caster plays
+      // the weapon's pose and the damage still gates behind it.
+      case "closeCombat": {
+        // The weapon template is named only when the viewer happens to
+        // own one too — `inventoryStore.templates` holds what the
+        // server sent for *this* player's items, never another
+        // fighter's. Falling back to the bare verb is the honest
+        // reading rather than inventing a weapon name.
+        const weapon = inventoryStore
+          .getSnapshot()
+          .templates.get(data.value.weaponTemplateId)?.name;
+        if (weapon) {
+          fightLog(
+            combatant(this.fighterName(action.spriteId)),
+            " frappe avec ",
+            emphasis(weapon),
+            "."
+          );
+        } else {
+          fightLog(
+            combatant(this.fighterName(action.spriteId)),
+            " frappe au corps à corps."
+          );
+        }
+        const casterId = Number(action.spriteId) || 0;
+        this.handlers.onSpellCast?.({
+          casterId,
+          spellId: CLOSE_COMBAT_SPELL_ID,
+          visualGfxId: 0,
+          spellLevel: 1,
+          targetCellId: data.value.targetCell,
+          critical:
+            this.criticalCasts.get(action.spriteId) === CLOSE_COMBAT_SPELL_ID,
+          animation: data.value.animation || "anim1",
+        });
+        this.criticalCasts.delete(action.spriteId);
+        break;
+      }
+      case "criticalHit":
+        this.criticalCasts.set(action.spriteId, data.value.spellId);
+        this.handlers.onCriticalHit?.();
+        fightLog(
+          combatant(this.fighterName(action.spriteId)),
+          " : coup critique !"
+        );
+        break;
+      case "criticalMiss":
+        this.criticalCasts.delete(action.spriteId);
+        this.handlers.onCriticalMiss?.();
+        fightLog(
+          combatant(this.fighterName(action.spriteId)),
+          " : échec critique."
+        );
+        if (action.spriteId === this.getMySpriteId()) {
+          spellCastActor.send({ type: "RESET" });
+        }
+        break;
+      case "effectApply": {
+        const effect = data.value;
+        const fighter = fightActor
+          .getSnapshot()
+          .context.fighters.get(effect.targetSpriteId);
+        if (effect.effectId === 149 && effect.buffId === 0) {
+          fightActor.send({
+            type: "FIGHTER_UPDATE",
+            spriteId: effect.targetSpriteId,
+            patch: { appearanceGfx: effect.value },
+          });
+          this.handlers.onAppearance?.(effect.targetSpriteId, effect.value);
+          break;
+        }
+        if (fighter && effect.buffId > 0) {
+          const buffs = (fighter.buffs ?? []).filter(
+            (b) => b.id !== effect.buffId
+          );
+          buffs.push({
+            id: effect.buffId,
+            spellId: effect.spellId,
+            effectId: effect.effectId,
+            value: effect.value,
+            duration: effect.duration,
+          });
+          fightActor.send({
+            type: "FIGHTER_UPDATE",
+            spriteId: effect.targetSpriteId,
+            patch: { buffs },
+          });
+        }
+        if (
+          !fighter?.buffs?.some((buff) => buff.id === effect.buffId) &&
+          !SELF_ANNOUNCING_EFFECTS.has(effect.effectId) &&
+          !needsMultipleValues(effect.effectId)
+        ) {
+          // The lang bundle words the effect the same way the spell book
+          // does — "+20 en intelligence (3 tours)" — so `max: 0` is what
+          // collapses the range template down to the one value a live
+          // buff actually has. An effect the bundle does not know stays
+          // silent: "reçoit un effet" said nothing worth a line.
+          const formatted = formatEffect({
+            effectId: effect.effectId,
+            min: effect.value,
+            max: 0,
+            special: 0,
+            duration: effect.duration,
+          });
+          if (formatted) {
+            fightLog(
+              combatant(this.fighterName(effect.targetSpriteId)),
+              ` : ${formatted.text}`
+            );
+          }
+        }
+        break;
+      }
+      case "removeEffects":
+        fightActor.send({
+          type: "FIGHTER_UPDATE",
+          spriteId: data.value.targetId,
+          patch: { buffs: [] },
+        });
+        break;
+      case "invisibility": {
+        const { spriteId, visibility } = data.value;
+        fightActor.send({
+          type: "FIGHTER_UPDATE",
+          spriteId,
+          patch: {
+            invisible: visibility > 0,
+            hidden: visibility === 2,
+            ...(visibility === 2 ? { cell: -1 } : {}),
+          },
+        });
+        this.handlers.onVisibility?.(spriteId, visibility);
+        break;
+      }
+      case "carry": {
+        const carriedId = data.value.carriedSpriteId;
+        const carrier = fightActor
+          .getSnapshot()
+          .context.fighters.get(action.spriteId);
+        fightActor.send({
+          type: "FIGHTER_UPDATE",
+          spriteId: action.spriteId,
+          patch: { carryingId: carriedId },
+        });
+        fightActor.send({
+          type: "FIGHTER_UPDATE",
+          spriteId: carriedId,
+          patch: { carriedById: action.spriteId, cell: carrier?.cell ?? -1 },
+        });
+        this.handlers.onCarry?.(action.spriteId, carriedId);
+        break;
+      }
+      case "throwCarried":
+      case "uncarry": {
+        const fighters = fightActor.getSnapshot().context.fighters;
+        const carriedId =
+          data.case === "uncarry"
+            ? data.value.spriteId
+            : fighters.get(action.spriteId)?.carryingId;
+        if (!carriedId) {
+          break;
+        }
+        const carrierId =
+          fighters.get(carriedId)?.carriedById ?? action.spriteId;
+        fightActor.send({
+          type: "FIGHTER_UPDATE",
+          spriteId: carrierId,
+          patch: { carryingId: "" },
+        });
+        fightActor.send({
+          type: "FIGHTER_UPDATE",
+          spriteId: carriedId,
+          patch: { carriedById: "", cell: data.value.cellId },
+        });
+        this.handlers.onUncarry?.(
+          carriedId,
+          data.value.cellId,
+          data.case === "throwCarried"
+        );
+        break;
+      }
+      case "reduceDamage":
+        fightLog(
+          combatant(this.fighterName(data.value.spriteId)),
+          ` réduit les dommages de ${data.value.amount}.`
+        );
+        break;
+      case "returnDamage":
+        fightLog(
+          combatant(this.fighterName(data.value.spriteId)),
+          ` renvoie ${data.value.amount} dommages.`
+        );
+        break;
+      case "returnSpell":
+        fightLog(
+          combatant(this.fighterName(data.value.spriteId)),
+          " renvoie le sort."
+        );
         break;
       case "apChange": {
         this.handlers.onAPChange?.(data.value);
+        const fighter = fightActor
+          .getSnapshot()
+          .context.fighters.get(data.value.spriteId);
+        if (fighter) {
+          fightActor.send({
+            type: "FIGHTER_UPDATE",
+            spriteId: fighter.spriteId,
+            patch: { ap: Math.max(0, fighter.ap + data.value.delta) },
+          });
+        }
+        // `cost` is the AP the actor spent on its own turn — a cast, a
+        // tackle. Logging it put one line between every action and its
+        // result; what the player wants told is AP a spell took off
+        // somebody, which arrives with `cost` false.
+        if (!data.value.cost) {
+          fightLog(
+            combatant(this.fighterName(data.value.spriteId)),
+            ` : ${data.value.delta > 0 ? "+" : ""}${data.value.delta} PA.`
+          );
+        }
         // Delta is a signed change (negative = AP spent). Apply
         // relative to current AP, not overwrite, so consecutive casts
         // stack. Only mirror when the event targets the local player.
@@ -369,6 +860,24 @@ export class FightHandler {
       }
       case "mpChange": {
         this.handlers.onMPChange?.(data.value);
+        const fighter = fightActor
+          .getSnapshot()
+          .context.fighters.get(data.value.spriteId);
+        if (fighter) {
+          fightActor.send({
+            type: "FIGHTER_UPDATE",
+            spriteId: fighter.spriteId,
+            patch: { mp: Math.max(0, fighter.mp + data.value.delta) },
+          });
+        }
+        // See `apChange` — a walked step is not news, MP a spell stole
+        // is.
+        if (!data.value.cost) {
+          fightLog(
+            combatant(this.fighterName(data.value.spriteId)),
+            ` : ${data.value.delta > 0 ? "+" : ""}${data.value.delta} PM.`
+          );
+        }
         const my = this.getMySpriteId();
         if (my && data.value.spriteId === my) {
           const snap = fightActor.getSnapshot();
@@ -381,6 +890,10 @@ export class FightHandler {
       }
       case "damage": {
         this.handlers.onDamage?.(data.value);
+        fightLog(
+          combatant(this.fighterName(data.value.spriteId)),
+          ` ${data.value.amount < 0 ? "récupère" : "perd"} ${Math.abs(data.value.amount)} PV.`
+        );
         // Mirror HP into the fighters map so the timeline bar and
         // hover tooltips reflect every hit without waiting for the
         // next gameTurnMiddle snapshot. Amount > 0 = damage, < 0 = heal.
@@ -393,6 +906,10 @@ export class FightHandler {
       }
       case "death": {
         this.handlers.onDeath?.(data.value);
+        fightLog(
+          combatant(this.fighterName(data.value.spriteId)),
+          " est mort."
+        );
         fightActor.send({
           type: "FIGHTER_UPDATE",
           spriteId: data.value.spriteId,
@@ -416,14 +933,25 @@ export class FightHandler {
       case "directionChange":
         this.handlers.onDirectionChange?.(data.value);
         break;
-      case "stateChange":
-        // Buff/debuff state toggles. Propagated to the renderer for
-        // status-icon badging; fighter map doesn't track states yet
-        // (step 6 + will add `states: StateEntry[]`).
+      case "stateChange": {
+        const { spriteId, stateId, active } = data.value;
+        const states = new Set(
+          fightActor.getSnapshot().context.fighters.get(spriteId)?.states ?? []
+        );
+        if (active) {
+          states.add(stateId);
+        } else {
+          states.delete(stateId);
+        }
+        fightActor.send({
+          type: "FIGHTER_UPDATE",
+          spriteId,
+          patch: { states: [...states] },
+        });
         this.handlers.onStateChange?.(data.value);
         break;
+      }
       case "summon": {
-        this.handlers.onSummon?.(data.value);
         const sd = data.value.spriteData;
         if (sd) {
           fightActor.send({
@@ -442,16 +970,16 @@ export class FightHandler {
               maxMp: sd.mp,
               gfxId: sd.gfxId,
               dead: false,
-              // Summon spriteData doesn't carry colours on the wire
-              // (the server populates the gfx id; visual tint is left
-              // to the client). Default to -1 = "use gfx defaults".
-              color1: -1,
-              color2: -1,
-              color3: -1,
-              summonedBy: action.spriteId,
+              color1: sd.colors?.color1 ?? -1,
+              color2: sd.colors?.color2 ?? -1,
+              color3: sd.colors?.color3 ?? -1,
+              ...(sd.isSummoned
+                ? { summonedBy: sd.summonerId || action.spriteId }
+                : {}),
             },
           });
         }
+        this.handlers.onSummon?.(data.value);
         break;
       }
       case "movement": {
@@ -463,6 +991,16 @@ export class FightHandler {
           fightActor.send({
             type: "FIGHTER_UPDATE",
             spriteId: action.spriteId,
+            patch: { cell: endCell },
+          });
+        }
+        const carriedId = fightActor
+          .getSnapshot()
+          .context.fighters.get(action.spriteId)?.carryingId;
+        if (carriedId && endCell !== undefined) {
+          fightActor.send({
+            type: "FIGHTER_UPDATE",
+            spriteId: carriedId,
             patch: { cell: endCell },
           });
         }
@@ -513,6 +1051,49 @@ export class FightHandler {
     );
   }
 
+  /**
+   * Toggle one of the four leader-only fight options. The request
+   * bodies are empty — the server flips the flag and mirrors the new
+   * value back as `gameFightOption`, so nothing is applied optimistically.
+   */
+  toggleFightOption(option: FightOptionCode): void {
+    switch (option) {
+      case FightOption.NeedHelp:
+        this.connection.send(
+          encodeClient("fightNeedHelp", create(FightNeedHelpRequestSchema, {}))
+        );
+        break;
+      case FightOption.BlockJoin:
+        this.connection.send(
+          encodeClient("fightBlockJoin", create(FightBlockJoinRequestSchema, {}))
+        );
+        break;
+      case FightOption.PartyOnly:
+        this.connection.send(
+          encodeClient(
+            "fightBlockJoinExceptParty",
+            create(FightBlockJoinExceptPartyRequestSchema, {})
+          )
+        );
+        break;
+      case FightOption.BlockSpectators:
+        this.connection.send(
+          encodeClient(
+            "fightBlockSpectators",
+            create(FightBlockSpectatorsRequestSchema, {})
+          )
+        );
+        break;
+    }
+  }
+
+  /** Drop the red "look here" arrow on a cell, for our team only. */
+  setFlag(cellId: number): void {
+    this.connection.send(
+      encodeClient("gameSetFlag", create(GameSetFlagSchema, { cellId }))
+    );
+  }
+
   /** Pass the current turn. */
   passTurn(): void {
     this.connection.send(
@@ -547,6 +1128,7 @@ export class FightHandler {
     if (params === "") {
       return;
     }
+    this.beginAction();
     this.connection.send(
       encodeClient(
         "gameAction",
@@ -560,6 +1142,7 @@ export class FightHandler {
    * "<spellId>;<targetCell>;<level>". Action verb 300 = ACTION_SPELL_LAUNCH.
    */
   sendCast(spellId: number, targetCellId: number, level = 1): void {
+    this.beginAction();
     const params = `${spellId};${targetCellId};${level}`;
     this.connection.send(
       encodeClient(
@@ -569,8 +1152,24 @@ export class FightHandler {
     );
   }
 
+  cancelPresentation(): void {
+    if (this.actionTimeout !== null) {
+      clearTimeout(this.actionTimeout);
+      this.actionTimeout = null;
+    }
+    this.generation++;
+    this.fightId = 0;
+    this.readyEpoch = 0;
+    this.presentation?.reset();
+    spellCastActor.send({ type: "RESET" });
+  }
+
   destroy(): void {
-    for (const u of this.unsubscribers) u();
+    this.cancelPresentation();
+    this.criticalCasts.clear();
+    for (const u of this.unsubscribers) {
+      u();
+    }
     this.unsubscribers = [];
     this.handlers = {};
   }
@@ -592,7 +1191,7 @@ function spellLaunchToPayload(
     casterId: Number(action.spriteId) || 0,
     spellId: data.spellId,
     visualGfxId,
-    spellLevel: 1,
+    spellLevel: data.param4 || 1,
     targetCellId: data.cellId,
     critical: false,
     // Server-supplied cast pose; fall back to "anim1" so the caster

@@ -99,6 +99,51 @@ placeholder** so `enter-game` succeeds, and says so. It is a bare test room —
 prefer importing the real world, below. The seed never touches an existing
 map row.
 
+## `just dev-accounts` — connexion rapide from the login screen
+
+Typing `dev` / `dev` a hundred times a day is a tax, and the twelve
+level-200 validation characters
+(`scripts/seed-combat-validation.ts`, accounts `retro-validation-01`…`-12`)
+are worse: their password only exists in whoever ran the fixture's shell
+history.
+
+`just dev-accounts` reads every locally seeded account it recognises, and
+writes `dev-accounts.json` at the repository root:
+
+```bash
+COMBAT_VALIDATION_PASSWORD=… just dev-accounts
+#   Dev — dev
+#   Féca 200 — retro-validation-01
+#   …
+```
+
+The dev client's login screen then shows one button per account under the
+form, and a click walks the whole flow — sign in, pick the server, pick the
+character — straight into the game.
+
+Three things about it are deliberate:
+
+- **It stores the derived key, not the password.** That base64 key is what
+  `AccountSendIdentity` puts on the wire anyway, so it grants nothing
+  extra, it keeps a password you may have reused off disk, and it makes
+  the click instant: the 600 000 PBKDF2 rounds are paid once, at
+  generation.
+- **Every key is verified against `accounts.pwd_hash` before it is
+  written.** A wrong `COMBAT_VALIDATION_PASSWORD` fails at generation,
+  named account by named account, instead of producing thirteen buttons
+  that all answer "bad credentials".
+- **It cannot ship.** The file is gitignored, and it is served by a Vite
+  dev-server middleware (`/__dev-accounts`) that does not exist in a
+  build. A production bundle has no route, no file, and
+  `loadQuickConnectRoster` returns an empty list — the strip renders
+  nothing.
+
+Re-run it after re-seeding; the roster is a snapshot, not a subscription.
+Passwords come from the environment: `DEV_PASSWORD` (default `dev`) and
+`COMBAT_VALIDATION_PASSWORD` (no default, same variable the validation
+fixture itself requires). An account whose password is not in the
+environment is skipped and named on stdout.
+
 ## `POST /admin/accounts` — provisioning without a shell (QA-126)
 
 The seed script needs a checkout and a database handle. An external control

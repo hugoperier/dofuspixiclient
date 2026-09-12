@@ -21,12 +21,13 @@ import {
   type ConnectionStatus,
   connectionStore,
 } from "@/game/stores/connection-store";
+import { startHotbarFightSync } from "@/game/stores/hotbar-fight-sync";
 import { AdminDrawer } from "@/hud/admin/AdminDrawer";
 import { toggleAdmin } from "@/hud/admin/events";
-import { activateSlot } from "@/hud/banner/hotbar-actions";
+import { activateCloseCombat, activateSlot } from "@/hud/banner/hotbar-actions";
 import { GameClientContext } from "@/hud/contexts/GameClientContext";
 import { PixiAppContext } from "@/hud/contexts/PixiAppContext";
-import { HOTBAR_SHORTCUTS, Keybindings } from "@/hud/core/keybindings";
+import { HOTBAR_SHORTCUTS, keybindings } from "@/hud/core/keybindings";
 import {
   MIN_GUTTER_HEIGHT,
   MIN_GUTTER_WIDTH,
@@ -118,7 +119,7 @@ export function MapRenderer({ client, onReady, onProgress }: MapRendererProps) {
 
     const container: HTMLElement = rootEl;
 
-    let keybindings: Keybindings | null = null;
+    let stopHotbarSync: (() => void) | null = null;
     let battlefield: Battlefield | null = null;
     const gameClient: GameClient = client;
     let unsubProgress: (() => void) | null = null;
@@ -179,7 +180,7 @@ export function MapRenderer({ client, onReady, onProgress }: MapRendererProps) {
         onProgress?.(100, "Ready!");
         onReady?.();
 
-        keybindings = new Keybindings();
+        stopHotbarSync = startHotbarFightSync();
 
         keybindings.on("CHARAC", () => {
           togglePanel("stats");
@@ -217,19 +218,36 @@ export function MapRenderer({ client, onReady, onProgress }: MapRendererProps) {
           toggleWorldMap();
         });
 
+        keybindings.on("OPTIONS", () => {
+          togglePanel("options");
+        });
+
         // The hotbar: SWAP flips the Spells/Items tabs, SH1..SH14
-        // activate the cell at that index of the *visible* page. Both go
+        // activate the cell at that index of the *visible* page, and SH0
+        // is the weapon container left of the grid. All of them go
         // through `hotbar-actions` so the keyboard and the mouse can
-        // never drift apart. Casting from a spell cell stays inert
-        // outside a fight, which is the 1.29 rule.
+        // never drift apart. Selecting a spell stays inert outside a
+        // fight, which is the 1.29 rule.
         keybindings.on("SWAP", () => {
           toggleHotbarTab();
         });
 
+        keybindings.on("SH0", () => {
+          activateCloseCombat(gameClientRef.current);
+        });
+
         HOTBAR_SHORTCUTS.forEach((shortcut, index) => {
-          keybindings?.on(shortcut, () => {
+          keybindings.on(shortcut, () => {
             activateSlot(gameClientRef.current, index);
           });
+        });
+
+        // `Ctrl+Fin` ends the turn. `fightPassTurn` holds the guards —
+        // not our turn, an action in flight, the fight already closing —
+        // so the key is a no-op outside a live turn rather than a
+        // rejected frame.
+        keybindings.on("NEXTTURN", () => {
+          gameClientRef.current?.fightPassTurn();
         });
 
         keybindings.on("DEBUG_TOGGLE", () => {
@@ -252,6 +270,11 @@ export function MapRenderer({ client, onReady, onProgress }: MapRendererProps) {
 
         keybindings.on("ADMIN", toggleAdmin);
 
+        // Échap closes what is open, and opens the options when nothing
+        // is. 1.29 puts an Échap *menu* between the two, whose first
+        // entry is Options; there is no such menu here, and no options
+        // glyph in `BANNER_ICONS` to hang a banner button on, so this is
+        // the nearest honest route to the panel. `o` reaches it too.
         keybindings.on("ESCAPE", () => {
           const { activePanel, isWorldMapOpen } = hudStore.getSnapshot();
 
@@ -262,7 +285,10 @@ export function MapRenderer({ client, onReady, onProgress }: MapRendererProps) {
 
           if (activePanel) {
             closeAllPanels();
+            return;
           }
+
+          togglePanel("options");
         });
 
         keybindings.attach();
@@ -280,7 +306,8 @@ export function MapRenderer({ client, onReady, onProgress }: MapRendererProps) {
     return () => {
       destroyed = true;
       unsubProgress?.();
-      keybindings?.destroy();
+      stopHotbarSync?.();
+      keybindings.destroy();
       // gameClient is owned by App — do NOT destroy it here.
       battlefield?.destroy();
       battlefieldRef.current = null;

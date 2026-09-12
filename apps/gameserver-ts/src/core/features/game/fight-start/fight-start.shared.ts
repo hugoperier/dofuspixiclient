@@ -1,5 +1,6 @@
 import type { Fight } from "@modules/fight/core/fight.entity";
 import type { Fighter } from "@modules/fight/core/fight.fighter";
+import type { PlayerPresenceEntry } from "@modules/player-presence/player-presence.service";
 import type { ComputedStats } from "@modules/stats/stats.service";
 import type { GatewayFrameService } from "@shared/gateway-adapter/gateway-frame.service";
 import { create } from "@bufbuild/protobuf";
@@ -10,14 +11,18 @@ import {
 } from "@dofus/proto/common_pb";
 import {
   GameCreateSchema,
+  GameFightOptionSchema,
   GameJoinSchema,
   GameMovementSchema,
   GamePositionStartSchema,
+  SpriteMovementEntry_Operation,
   SpriteMovementEntrySchema,
 } from "@dofus/proto/game_pb";
 import { DofusMessageSchema } from "@dofus/proto/server_messages_pb";
+import { ALL_FIGHT_OPTIONS } from "@modules/fight/core/fight.entity.types";
 import { Characteristic, FighterKind } from "@modules/fight/fight.types";
 import { FightMap, parsePlacementCells } from "@modules/fight/map/fight.map";
+import { toSpriteEntry } from "@modules/player-presence/player-presence.sprite-entry";
 
 /**
  * Build the protobuf `CharacterColors` payload for a fighter's
@@ -49,7 +54,8 @@ export function createFightMap(
   mapHeight: number,
   places0: string,
   places1: string,
-  walkableCells?: number[]
+  walkableCells?: number[],
+  sightBlockedCells: number[] = []
 ): FightMap | null {
   const team0Cells = parsePlacementCells(places0);
   const team1Cells = parsePlacementCells(places1);
@@ -59,6 +65,17 @@ export function createFightMap(
   const fmap = new FightMap(mapWidth, mapHeight, team0Cells, team1Cells);
   if (walkableCells) {
     fmap.setWalkableCells(walkableCells);
+  }
+  fmap.setSightBlockedCells(sightBlockedCells);
+  for (const cells of fmap.teamCells) {
+    const valid = [...new Set(cells)].filter((cell) => fmap.isWalkable(cell));
+    cells.splice(0, cells.length, ...valid);
+  }
+  if (
+    fmap.teamCells.some((cells) => cells.length === 0) ||
+    fmap.teamCells[0].some((cell) => fmap.teamCells[1].includes(cell))
+  ) {
+    return null;
   }
   return fmap;
 }
@@ -136,7 +153,8 @@ export function emitJoinFrames(
   sessionId: string,
   fight: Fight,
   playerFighter: Fighter,
-  opponents: Fighter[]
+  opponents: Fighter[],
+  appearances: PlayerPresenceEntry[] = []
 ): void {
   frames.broadcast(
     [sessionId],
@@ -163,6 +181,7 @@ export function emitJoinFrames(
           isSpectator: false,
           timerMs: 45000,
           fightType: fight.type,
+          fightId: fight.id,
         }),
       },
     })
@@ -182,9 +201,36 @@ export function emitJoinFrames(
     })
   );
 
+  // `GameJoin` carries no leader id, so the option frames are also how a
+  // client learns whether it may toggle help / lock / spectators. Send
+  // the current state of all four on join, even when every one is off.
+  for (const code of ALL_FIGHT_OPTIONS) {
+    frames.broadcast(
+      [sessionId],
+      create(DofusMessageSchema, {
+        payload: {
+          case: "gameFightOption",
+          value: create(GameFightOptionSchema, {
+            enabled: fight.optionEnabled(code),
+            option: code,
+            leaderId: playerFighter.team?.leaderId ?? 0,
+          }),
+        },
+      })
+    );
+  }
+
   const allFighters = [playerFighter, ...opponents];
-  const entries = allFighters.map((m) =>
-    create(SpriteMovementEntrySchema, {
+  const entries = allFighters.map((m) => {
+    const appearance = appearances.find(
+      (player) => player.characterId === String(m.id)
+    );
+    return create(SpriteMovementEntrySchema, {
+      accessories: appearance
+        ? toSpriteEntry(appearance, SpriteMovementEntry_Operation.ADD)
+            .accessories
+        : [],
+      sex: appearance?.sex ?? 0,
       operation: 0,
       spriteType:
         m.kind === FighterKind.Monster
@@ -205,8 +251,8 @@ export function emitJoinFrames(
       mp: m.mp,
       level: m.level,
       colors: fighterColors(m),
-    })
-  );
+    });
+  });
 
   frames.broadcast(
     [sessionId],

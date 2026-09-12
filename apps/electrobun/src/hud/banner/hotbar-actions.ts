@@ -1,12 +1,18 @@
 import type { GameClient } from "@/game/game-client";
 import type { HotbarDragPayload } from "@/hud/banner/hotbar-dnd";
+import { fightStore } from "@/game/stores/fight-store";
 import { inventoryStore } from "@/game/stores/inventory-store";
 import {
   resolveShortcut,
   shortcutsStore,
   slotAt,
 } from "@/game/stores/shortcuts-store";
-import { UNSLOTTED_POSITION } from "@/game/stores/spells-store";
+import {
+  CLOSE_COMBAT_SPELL_ID,
+  spellAtSlot,
+  spellsStore,
+  UNSLOTTED_POSITION,
+} from "@/game/stores/spells-store";
 
 /**
  * What a hotbar cell *does* — the one implementation the cells, the
@@ -19,26 +25,50 @@ import { UNSLOTTED_POSITION } from "@/game/stores/spells-store";
 /**
  * Activate the slot at `index` (0..13) of the current page.
  *
- * In "spells" mode this is deliberately inert outside a fight: 1.29
- * refuses to cast from the map, and `checkCanLaunchSpellReturnObject`
- * returns `NOT_IN_FIGHT`. In-fight casting is driven by the banner's
- * own cell handler, which has the fight state; routing it through here
- * as well would give one action two owners.
+ * In "items" mode the slot is used or equipped. In "spells" mode it
+ * *selects* the spell rather than casting it — 1.29 arms the cursor and
+ * waits for a target cell, and so does `fightSelectSpell`. Selecting is
+ * inert outside a fight: `checkCanLaunchSpellReturnObject` returns
+ * `NOT_IN_FIGHT` and the retail client refuses to cast from the map.
  */
 export function activateSlot(client: GameClient | null, index: number): void {
   const { tab, page, items } = shortcutsStore.getSnapshot();
+  const slot = slotAt(page, index);
 
-  if (tab !== "items") {
+  if (tab === "spells") {
+    if (fightStore.getSnapshot().mode !== "fighting") {
+      return;
+    }
+
+    const spell = spellAtSlot(spellsStore.getSnapshot(), slot);
+
+    if (spell) {
+      client?.fightSelectSpell(spell.spellId);
+    }
+
     return;
   }
-
-  const slot = slotAt(page, index);
 
   if (!items.has(slot)) {
     return;
   }
 
   triggerSlot(client, slot);
+}
+
+/**
+ * `SH0` — the weapon container left of the grid.
+ *
+ * It is not a cell of the bar and it ignores the current tab: 1.29's
+ * `onShortcut("SH0")` clicks `_ctrCC` directly, which only ever holds
+ * the close-combat spell.
+ */
+export function activateCloseCombat(client: GameClient | null): void {
+  if (fightStore.getSnapshot().mode !== "fighting") {
+    return;
+  }
+
+  client?.fightSelectSpell(CLOSE_COMBAT_SPELL_ID);
 }
 
 /**

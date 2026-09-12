@@ -13,9 +13,36 @@ import {
   SpellEffectDataSchema,
   SpellLevelDetailSchema,
 } from "@dofus/proto/spells_pb";
+import {
+  buildCloseCombatSpell,
+  CLOSE_COMBAT_SPELL_ID,
+} from "@modules/fight/cast/fight.close-combat";
+import { parseItemEffects } from "@modules/inventory/item-effects";
+import { readWeaponInfo } from "@modules/inventory/weapon-info";
 import { LangsService } from "@modules/langs/langs.service";
 import { SpellsRepository } from "@modules/spells/spells.repository";
 import { Injectable, Logger } from "@nestjs/common";
+
+import type { SummonTemplate } from "./combat-catalog.types";
+
+/**
+ * The close-combat attack plus the presentation the wire needs for it.
+ *
+ * `weaponTemplateId` is what the `GA;303` broadcast carries alongside
+ * the cell: the client holds no equipment but its own, so it cannot
+ * work out which weapon swung. The pose does not travel from here —
+ * a swing is always `anim0`.
+ */
+export interface CloseCombatAttack {
+  spell: SpellLevel;
+  /** 0 for bare hands. */
+  weaponTemplateId: number;
+  name: string;
+  description: string;
+}
+
+import { prepareCombatData } from "./combat-dependencies";
+import { combatUnavailableReason, stateIds } from "./spells.combat-data";
 
 @Injectable()
 export class SpellsService implements SpellPort {
@@ -26,7 +53,81 @@ export class SpellsService implements SpellPort {
     private readonly langs: LangsService
   ) {}
 
+  /**
+   * The player's close-combat attack — spell 0, rebuilt from whatever
+   * they are currently holding.
+   *
+   * Not a learned spell: `player_spells` never has a row for it, and
+   * asking `playerSpellRank` would rightly answer "not learned". 1.29
+   * treats it the same way — `CloseCombat` is constructed on the fly
+   * from `Player.weaponItem` every time the bar redraws.
+   *
+   * Returns undefined only if `spell_levels(0, 1)` is missing, which
+   * means the world was never imported.
+   */
+  async closeCombatSpell(
+    playerId: string
+  ): Promise<CloseCombatAttack | undefined> {
+    const punch = await this.spellLevel(CLOSE_COMBAT_SPELL_ID, 1);
+
+    if (!punch) {
+      return undefined;
+    }
+
+    const lang = this.langs.getSpellSync(CLOSE_COMBAT_SPELL_ID);
+    const bareHanded: CloseCombatAttack = {
+      spell: punch,
+      weaponTemplateId: 0,
+      // `CloseCombat.name` falls back to `getSpellText(0).n` when there
+      // is no weapon — "Coup de poing".
+      name: lang?.name ?? "Coup de poing",
+      description: lang?.description ?? "",
+    };
+
+    const weapon = await this.repo.findEquippedWeapon(playerId);
+    const info = readWeaponInfo(weapon?.weaponInfo);
+
+    // Something in the weapon slot with no stat block is not a weapon
+    // the player can swing — a captured soul stone, say. Bare hands is
+    // the honest answer.
+    if (!weapon || !info) {
+      return bareHanded;
+    }
+
+    return {
+      spell: buildCloseCombatSpell(punch, {
+        info,
+        effects: parseItemEffects(weapon.effects),
+      }),
+      weaponTemplateId: weapon.id,
+      name: weapon.name,
+      description: weapon.description,
+    };
+  }
+
   async spellLevel(
+    spellId: number,
+    level: number
+  ): Promise<SpellLevel | undefined> {
+    const spell = await this.loadSpellLevel(spellId, level);
+    if (!spell) {
+      return;
+    }
+    const prepared = await prepareCombatData(spell, {
+      spellLevel: (id, rank) => this.loadSpellLevel(id, rank),
+      summonTemplate: (id, grade) => this.summonTemplate(id, grade),
+    });
+    return { ...spell, combatUnavailableReason: prepared.reason };
+  }
+
+  async summonTemplate(
+    templateId: number,
+    grade: number
+  ): Promise<SummonTemplate | undefined> {
+    return (await this.repo.findSummonGrade(templateId, grade))?.data;
+  }
+
+  private async loadSpellLevel(
     spellId: number,
     level: number
   ): Promise<SpellLevel | undefined> {
@@ -34,20 +135,47 @@ export class SpellsService implements SpellPort {
     if (!row) {
       return undefined;
     }
+    const effects = parseEffects(row.effects);
+    const criticalEffects = parseEffects(row.criticalEffects);
     return {
       ...row,
-      effects: parseEffects(row.effects),
-      criticalEffects: parseEffects(row.criticalEffects),
-      // Coalesce NULL → spellId so downstream code (cast handler,
-      // FrameEmitter, client) never has to branch. Pre-StarLoco-import
-      // every spell uses spellId as its gfx; once the canonical sorts
-      // dump is imported the column carries the real value.
-      visualGfxId: row.visualGfxId ?? row.spellId,
+      requiredStates: stateIds(row.requiredStates),
+      forbiddenStates: stateIds(row.forbiddenStates),
+      effects,
+      criticalEffects,
+      // NULL means "no spell-specific visual" (canonical sorts.sprite
+      // = -1): the caster plays its own pose and no spell clip is
+      // loaded. Coalesce to 0, which the client already treats as
+      // "skip the visual" (game-client.ts, launchSpellVisual).
+      //
+      // Do NOT fall back to spellId. That was the old behaviour and it
+      // is what made 1158 spells ask the client for a dofasset named
+      // after their spell id, which does not exist — see migration
+      // 0064.
+      visualGfxId: row.visualGfxId ?? 0,
     };
   }
 
-  async playerHasSpell(playerId: string, spellId: number): Promise<boolean> {
-    return this.repo.playerHasSpell(playerId, spellId);
+  async playerSpellRank(
+    playerId: string,
+    spellId: number
+  ): Promise<number | undefined> {
+    return (await this.repo.findPlayerSpell(playerId, spellId))?.level;
+  }
+
+  private async availability(
+    effects: SpellEffect[],
+    rank: number,
+    visited = new Set<number>()
+  ): Promise<string> {
+    const id = [...visited][0];
+    if (id === undefined) {
+      return combatUnavailableReason(effects);
+    }
+    return (
+      (await this.spellLevel(id, rank))?.combatUnavailableReason ??
+      "Rang absent du catalogue."
+    );
   }
 
   /**
@@ -100,49 +228,77 @@ export class SpellsService implements SpellPort {
     // the cache latched, re-allocating a 2091-entry Map each time for a
     // total of ~23 s. Now it's one Map.get per row, ~O(1) each.
     const tLang = performance.now();
-    const out = rows.map((row) => {
-      const effects = parseEffects(row.effects);
-      const primary = effects[0];
-      const lang = this.langs.getSpellSync(row.spellId);
-      return create(SpellDataSchema, {
-        spellId: row.spellId,
-        level: row.level,
-        position: row.position,
-        apCost: row.apCost,
-        rangeMin: row.rangeMin,
-        rangeMax: row.rangeMax,
-        lineOfSight: row.lineOfSight,
-        modifiableRange: row.modifiableRange,
-        emptyCell: row.emptyCell,
-        lineOnly: row.lineOnly,
-        castPerTurn: row.castPerTurn,
-        castPerTarget: row.castPerTarget,
-        cooldown: row.cooldown,
-        criticalRate: row.criticalRate,
-        failureRate: row.failureRate,
-        // Primary-effect shape. When there is no effect (rare), the
-        // proto default (AREA_KIND_NONE = 0, size 0) is correct.
-        areaKind: (primary?.areaKind ?? 0) as AreaKind,
-        areaSize: primary?.areaSize ?? 0,
-        targetMask: primary?.targetMask ?? 0,
-        // Glyph (401) / Trap (400) / Summon (185) primary effects
-        // describe their spawned entity's trigger zone, NOT a
-        // cast-time AOE — the client uses this flag to render only
-        // the placement cell on hover instead of expanding the area.
-        singleTargetSpawn:
-          primary !== undefined &&
-          (primary.id === 400 || primary.id === 401 || primary.id === 185),
-        // Falls back to 1 when the level-1 row is missing: an unknown
-        // learn level sorts with the starters rather than off the end.
-        learnLevel: row.learnLevel ?? 1,
-        name: lang?.name ?? row.templateName,
-        description: lang?.description ?? "",
-        // The hotbar icon is now a per-spell_id dofasset composed at build
-        // time (`/assets/dofassets/spells/icons/<spellId>.dofasset`) with
-        // the 3-layer tinted icon already baked in. Nothing icon-related
-        // needs to travel on the wire anymore.
-      });
-    });
+    const out = await Promise.all(
+      rows.map(async (row) => {
+        const effects = parseEffects(row.effects);
+        const primary = effects[0];
+        const lang = this.langs.getSpellSync(row.spellId);
+        return create(SpellDataSchema, {
+          effectIds: [
+            ...new Set(
+              [...effects, ...parseEffects(row.criticalEffects)].map(
+                (e) => e.id
+              )
+            ),
+          ],
+          requiredStates: stateIds(row.requiredStates),
+          forbiddenStates: stateIds(row.forbiddenStates),
+          combatUnavailableReason: await this.availability(
+            [...effects, ...parseEffects(row.criticalEffects)],
+            row.level,
+            new Set([row.spellId])
+          ),
+          spellId: row.spellId,
+          level: row.level,
+          position: row.position,
+          apCost: row.apCost,
+          rangeMin: row.rangeMin,
+          rangeMax: row.rangeMax,
+          lineOfSight: row.lineOfSight,
+          modifiableRange: row.modifiableRange,
+          emptyCell: row.emptyCell,
+          lineOnly: row.lineOnly,
+          castPerTurn: row.castPerTurn,
+          castPerTarget: row.castPerTarget,
+          cooldown: row.cooldown,
+          criticalRate: row.criticalRate,
+          failureRate: row.failureRate,
+          // Primary-effect shape. When there is no effect (rare), the
+          // proto default (AREA_KIND_NONE = 0, size 0) is correct.
+          areaKind: (primary?.areaKind ?? 0) as AreaKind,
+          areaSize: primary?.areaSize ?? 0,
+          targetMask: primary?.targetMask ?? 0,
+          // Glyph (401) / Trap (400) / Summon (185) primary effects
+          // describe their spawned entity's trigger zone, NOT a
+          // cast-time AOE — the client uses this flag to render only
+          // the placement cell on hover instead of expanding the area.
+          singleTargetSpawn:
+            primary !== undefined &&
+            [180, 181, 185, 400, 401, 780].includes(primary.id),
+          // Falls back to 1 when the level-1 row is missing: an unknown
+          // learn level sorts with the starters rather than off the end.
+          learnLevel: row.learnLevel ?? 1,
+          name: lang?.name ?? row.templateName,
+          description: lang?.description ?? "",
+          // The hotbar icon is now a per-spell_id dofasset composed at build
+          // time (`/assets/dofassets/spells/icons/<spellId>.dofasset`) with
+          // the 3-layer tinted icon already baked in. Nothing icon-related
+          // needs to travel on the wire anymore.
+        });
+      })
+    );
+    // The close-combat attack rides along as one more entry, at
+    // `position` 0. That position is outside the 1..42 the hotbar grid
+    // addresses, so no cell can ever draw it — the banner has its own
+    // container for it, exactly like `MouseShortcuts._ctrCC`. Shipping
+    // it as a SpellData is what lets the client's targeting, range ring
+    // and cast machine treat a weapon swing as the spell 1.29 says it is.
+    const closeCombat = await this.closeCombatSpell(playerId);
+
+    if (closeCombat) {
+      out.push(this.toCloseCombatData(closeCombat));
+    }
+
     const tEnd = performance.now();
     this.logger.log(
       `buildSpellList player=${playerId} spells=${rows.length} ` +
@@ -150,6 +306,52 @@ export class SpellsService implements SpellPort {
         `build=${(tEnd - tLang).toFixed(0)}ms total=${(tEnd - t0).toFixed(0)}ms`
     );
     return out;
+  }
+
+  /**
+   * The close-combat entry of the spell list.
+   *
+   * Everything the client needs to draw the container and arm a target:
+   * cost, range, line rules and the primary effect's shape. `position`
+   * is 0 — 1.29's `CloseCombat.position` — which is what keeps it out
+   * of the 14 addressable cells.
+   */
+  private toCloseCombatData(attack: CloseCombatAttack): SpellData {
+    const { spell } = attack;
+    const primary = spell.effects[0];
+
+    return create(SpellDataSchema, {
+      spellId: CLOSE_COMBAT_SPELL_ID,
+      level: 1,
+      position: 0,
+      apCost: spell.apCost,
+      rangeMin: spell.rangeMin,
+      rangeMax: spell.rangeMax,
+      lineOfSight: spell.lineOfSight,
+      modifiableRange: spell.modifiableRange,
+      emptyCell: spell.emptyCell,
+      lineOnly: spell.lineOnly,
+      castPerTurn: spell.castPerTurn,
+      castPerTarget: spell.castPerTarget,
+      cooldown: spell.cooldown,
+      criticalRate: spell.criticalRate,
+      failureRate: spell.failureRate,
+      areaKind: (primary?.areaKind ?? 0) as AreaKind,
+      areaSize: primary?.areaSize ?? 0,
+      targetMask: primary?.targetMask ?? 0,
+      singleTargetSpawn: false,
+      learnLevel: 1,
+      effectIds: [
+        ...new Set(
+          [...spell.effects, ...spell.criticalEffects].map((e) => e.id)
+        ),
+      ],
+      requiredStates: spell.requiredStates ?? [],
+      forbiddenStates: spell.forbiddenStates ?? [],
+      combatUnavailableReason: spell.combatUnavailableReason ?? "",
+      name: attack.name,
+      description: attack.description,
+    });
   }
 
   /**
@@ -181,26 +383,38 @@ export class SpellsService implements SpellPort {
       name: lang?.name ?? template?.name ?? `Spell ${spellId}`,
       description: lang?.description ?? "",
       playerLevel: owned?.level ?? 0,
-      levels: rows.map((row) =>
-        create(SpellLevelDetailSchema, {
-          level: row.level,
-          apCost: row.apCost,
-          rangeMin: row.rangeMin,
-          rangeMax: row.rangeMax,
-          criticalRate: row.criticalRate,
-          failureRate: row.failureRate,
-          lineOfSight: row.lineOfSight,
-          emptyCell: row.emptyCell,
-          modifiableRange: row.modifiableRange,
-          lineOnly: row.lineOnly,
-          castPerTurn: row.castPerTurn,
-          castPerTarget: row.castPerTarget,
-          cooldown: row.cooldown,
-          minPlayerLevel: row.minPlayerLevel,
-          critFailureEndsTurn: row.critFailureEndsTurn,
-          effects: toEffectData(parseEffects(row.effects)),
-          criticalEffects: toEffectData(parseEffects(row.criticalEffects)),
-        })
+      levels: await Promise.all(
+        rows.map(async (row) =>
+          create(SpellLevelDetailSchema, {
+            requiredStates: stateIds(row.requiredStates),
+            forbiddenStates: stateIds(row.forbiddenStates),
+            combatUnavailableReason: await this.availability(
+              [
+                ...parseEffects(row.effects),
+                ...parseEffects(row.criticalEffects),
+              ],
+              row.level,
+              new Set([row.spellId])
+            ),
+            level: row.level,
+            apCost: row.apCost,
+            rangeMin: row.rangeMin,
+            rangeMax: row.rangeMax,
+            criticalRate: row.criticalRate,
+            failureRate: row.failureRate,
+            lineOfSight: row.lineOfSight,
+            emptyCell: row.emptyCell,
+            modifiableRange: row.modifiableRange,
+            lineOnly: row.lineOnly,
+            castPerTurn: row.castPerTurn,
+            castPerTarget: row.castPerTarget,
+            cooldown: row.cooldown,
+            minPlayerLevel: row.minPlayerLevel,
+            critFailureEndsTurn: row.critFailureEndsTurn,
+            effects: toEffectData(parseEffects(row.effects)),
+            criticalEffects: toEffectData(parseEffects(row.criticalEffects)),
+          })
+        )
       ),
     });
   }
@@ -218,6 +432,7 @@ function toEffectData(effects: readonly SpellEffect[]): SpellEffectData[] {
       areaKind: e.areaKind,
       areaSize: e.areaSize,
       param: e.param ?? "",
+      targetFilter: e.targetFilter ?? 0,
     })
   );
 }
@@ -226,28 +441,18 @@ function parseEffects(raw: unknown): SpellEffect[] {
   if (!Array.isArray(raw)) {
     return [];
   }
-  // Migration 0039's `normalizeEffect` swapped `duration` and
-  // `probability` when seeding from the canonical lang JSON: position
-  // [offset+2] in the Ankama format is the random-gate percentage and
-  // position [offset+3] is the per-effect duration in turns, but the
-  // parser stored them in the opposite columns. The data evidence is
-  // unambiguous — random `duration` values like 25/50/75/100 only make
-  // sense as percentages, and `probability` values like 2/3/4 only
-  // make sense as turn counts (4-turn buffs, 2-turn glyphs, etc.).
-  // Swap on read so handlers see the field names with their canonical
-  // 1.29 semantics (effect.duration = turns, effect.probability =
-  // random gate 0-100). Re-running the migration will eventually do
-  // this at the source.
   return raw.map((e) => ({
+    dice: typeof e?.dice === "string" ? e.dice : "",
     param: typeof e?.param === "string" ? e.param : "",
     id: Number(e?.id ?? 0),
     min: Number(e?.min ?? 0),
     max: Number(e?.max ?? 0),
     special: Number(e?.special ?? 0),
-    duration: Number(e?.probability ?? 0),
-    probability: Number(e?.duration ?? 0),
+    duration: Number(e?.duration ?? 0),
+    probability: Number(e?.probability ?? 0),
     areaKind: Number(e?.areaKind ?? 0) as AreaKind,
     areaSize: Number(e?.areaSize ?? 0),
     targetMask: Number(e?.targetMask ?? 0),
+    targetFilter: Number(e?.targetFilter ?? 0),
   }));
 }

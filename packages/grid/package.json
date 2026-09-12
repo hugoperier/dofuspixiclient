@@ -1,6 +1,6 @@
 {
   "name": "@dofus/grid",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "description": "Published Dofus 1.29 grid geometry and pathfinding primitives",
   "repository": {

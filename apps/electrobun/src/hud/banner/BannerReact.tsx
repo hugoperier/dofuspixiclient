@@ -1,5 +1,12 @@
 import { Tooltip } from "@base-ui/react/tooltip";
-import { useMemo, useSyncExternalStore } from "react";
+import { EquipmentPosition } from "@dofus/protocol";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useSyncExternalStore,
+} from "react";
 
 import {
   MainBanner,
@@ -11,12 +18,15 @@ import {
   MainBannerIconButton,
   MainBannerMorePanel,
   MainBannerRightPanel,
+  MainBannerForfeitButton,
+  MainBannerTurnButton,
 } from "@/components/ui/main-banner";
+import { playAudioEvent } from "@/game/audio/audio-events";
 import { useSpellCast } from "@/game/machines/spell-cast-selectors";
 import { togglePanel, toggleWorldMap } from "@/game/stores";
 import { characterStore } from "@/game/stores/character-store";
 import { showContextMenu } from "@/game/stores/context-menu-store";
-import { inventoryStore } from "@/game/stores/inventory-store";
+import { getEquippedAt, inventoryStore } from "@/game/stores/inventory-store";
 import {
   HOTBAR_PAGES,
   HOTBAR_SLOTS_PER_PAGE,
@@ -28,7 +38,12 @@ import {
   slotAt,
   stepHotbarPage,
 } from "@/game/stores/shortcuts-store";
-import { type SpellEntry, spellsStore } from "@/game/stores/spells-store";
+import {
+  CLOSE_COMBAT_SPELL_ID,
+  type SpellEntry,
+  spellAtSlot,
+  spellsStore,
+} from "@/game/stores/spells-store";
 import {
   dropOnSlot,
   removeFromSlot,
@@ -42,11 +57,56 @@ import {
 } from "@/hud/banner/hotbar-dnd";
 import { BannerChatContainer } from "@/hud/chat/BannerChatContainer";
 import { useGameClient } from "@/hud/contexts/GameClientContext";
+import { useFightClock } from "@/hud/fight/useFightClock";
 import { useFightMode } from "@/hud/fight/useFightMode";
 import { ItemIcon } from "@/hud/inventory/ItemIcon";
 import { SpellIconMount } from "@/hud/spells/SpellIconMount";
 
 import { Minimap } from "../minimap/Minimap";
+import { BannerFightPoints } from "./BannerFightPoints";
+import { BannerFightPortrait } from "./BannerFightPortrait";
+
+/** Keep clock ticks local to the dial so they do not rerender every spell. */
+function BannerCircle() {
+  const fight = useFightMode();
+  const character = useSyncExternalStore(
+    characterStore.subscribe,
+    characterStore.getSnapshot
+  );
+  const { seconds, remainingFraction } = useFightClock(
+    fight.turnDurationMs > 0 ? fight.deadline : 0,
+    fight.turnDurationMs
+  );
+  const countdown =
+    fight.isMyTurn && !fight.finishing && seconds >= 1 && seconds <= 5
+      ? seconds
+      : undefined;
+  const lastTick = useRef("");
+  useEffect(() => {
+    const key = `${fight.deadline}:${countdown}`;
+    if (countdown !== undefined && lastTick.current !== key) {
+      lastTick.current = key;
+      playAudioEvent("timer");
+    }
+  }, [fight.deadline, countdown]);
+  // Retro fills the ring with elapsed time; an inactive clock stays empty.
+  return (
+    <MainBannerCircle
+      fill={remainingFraction === undefined ? 0 : 1 - remainingFraction}
+    >
+      {fight.isFighting ? (
+        <BannerFightPortrait
+          gfxId={character.gfxId}
+          name={character.name}
+          colors={[character.color1, character.color2, character.color3]}
+          countdown={countdown}
+        />
+      ) : (
+        <Minimap />
+      )}
+    </MainBannerCircle>
+  );
+}
 
 /**
  * In-fight cast state for a single hotbar slot. Used to drive the
@@ -92,7 +152,13 @@ const FIGHT_SLOT_OVERLAY: Record<FightSlotState, string> = {
   disabled: "opacity-40 cursor-not-allowed",
 };
 
-/** Corner label shared by the AP badge and the item quantity badge. */
+/**
+ * Corner label for the item quantity / `Eq` badge.
+ *
+ * Spell cells carry no corner label: 1.29 never draws the AP cost on a
+ * shortcut container — `MouseShortcuts` only ever paints the cooldown
+ * number over the icon — and the cost is in the tooltip instead.
+ */
 const CORNER_BADGE =
   "absolute bottom-0 right-0 z-10 px-[calc(2px*var(--resolution-factor))] " +
   "font-[Verdana,sans-serif] text-[calc(9px*var(--resolution-factor))] " +
@@ -132,10 +198,7 @@ function SpellHotbarCell({
   };
   const overlay = FIGHT_SLOT_OVERLAY[fight];
   const clickable =
-    fight !== "idle" &&
-    fight !== "disabled" &&
-    fight !== "cooldown" &&
-    fight !== "pending";
+    fight !== "idle" && fight !== "disabled" && fight !== "cooldown";
   const handleClick =
     clickable && onCast ? () => onCast(spell.spellId) : undefined;
   const cooldownBadge =
@@ -144,15 +207,12 @@ function SpellHotbarCell({
         {spell.cooldownRemaining}
       </span>
     ) : null;
-  const apBadge =
-    fight !== "idle" && spell.apCost > 0 ? (
-      <span className={`${CORNER_BADGE} text-[#ffd27a]`}>{spell.apCost}</span>
-    ) : null;
   return (
     <Tooltip.Root>
       <Tooltip.Trigger
         render={
           <MainBannerGridSlot
+            data-audio="click2"
             className={overlay}
             {...(handleClick ? { onClick: handleClick } : {})}
             {...dropProps}
@@ -164,7 +224,6 @@ function SpellHotbarCell({
             }}
           >
             <SpellIconMount spellId={spell.spellId} label={spell.name} />
-            {apBadge}
             {cooldownBadge}
           </MainBannerGridSlot>
         }
@@ -212,6 +271,11 @@ function SpellHotbarCell({
                 )}
               </div>
             )}
+            {spell.combatUnavailableReason && (
+              <div className="mt-1 font-bold text-[#a33723]">
+                {spell.combatUnavailableReason}
+              </div>
+            )}
             {spell.description && (
               <div className="mt-[3px] font-normal text-[#3a3528]">
                 {spell.description}
@@ -230,6 +294,88 @@ const TOOLTIP_POPUP =
   "text-[11px] leading-snug text-[#514a3c] " +
   "shadow-[0_2px_6px_rgba(0,0,0,0.45)] " +
   "font-[Verdana,sans-serif] whitespace-pre-wrap";
+
+interface CloseCombatCellProps {
+  /** The `SpellData` the server built from the equipped weapon, if any. */
+  spell: SpellEntry | undefined;
+  /** Icon of the worn weapon; absent means bare hands. */
+  weapon: { typeId: number; gfxId: number; name: string } | undefined;
+  fight: FightSlotState;
+  onCast?: ((spellId: number) => void) | undefined;
+}
+
+/**
+ * The close-combat container — 1.29's `_ctrCC`, the cell left of the
+ * grid.
+ *
+ * It is not one of the 14 slots: it holds a fixed pseudo-spell whose
+ * cost, range and effects come from the equipped weapon
+ * (`dofus.datacenter.CloseCombat`), so it takes no drop, is never
+ * dragged, and ignores the Sorts / Obj. tab. Unarmed, it falls back to
+ * the punch icon, which is spell 0's own dofasset.
+ */
+function CloseCombatCell({
+  spell,
+  weapon,
+  fight,
+  onCast,
+}: CloseCombatCellProps) {
+  const name = spell?.name ?? weapon?.name ?? "Coup de poing";
+  const clickable =
+    Boolean(spell) &&
+    fight !== "idle" &&
+    fight !== "disabled" &&
+    fight !== "cooldown";
+
+  return (
+    <Tooltip.Root>
+      <Tooltip.Trigger
+        render={
+          <MainBannerGridSlot
+            data-audio="click2"
+            className={FIGHT_SLOT_OVERLAY[fight]}
+            aria-label={name}
+            {...(clickable && onCast
+              ? { onClick: () => onCast(CLOSE_COMBAT_SPELL_ID) }
+              : {})}
+          >
+            {weapon ? (
+              <ItemIcon
+                typeId={weapon.typeId}
+                gfxId={weapon.gfxId}
+                size="100%"
+                alt={name}
+              />
+            ) : (
+              <SpellIconMount spellId={CLOSE_COMBAT_SPELL_ID} label={name} />
+            )}
+          </MainBannerGridSlot>
+        }
+      />
+      <Tooltip.Portal>
+        <Tooltip.Positioner sideOffset={6} style={{ zIndex: 999999 }}>
+          <Tooltip.Popup className={TOOLTIP_POPUP}>
+            <div className="text-[13px] font-bold leading-tight">{name}</div>
+            {spell && fight !== "idle" && (
+              <div className="mt-[2px] font-bold">
+                <span className="text-[#e87a0d]">{spell.apCost} PA</span>
+                <span className="text-[#7a7060]"> · portée </span>
+                {spell.rangeMin === spell.rangeMax
+                  ? spell.rangeMin
+                  : `${spell.rangeMin}–${spell.rangeMax}`}
+              </div>
+            )}
+            {spell?.description && (
+              <div className="mt-[3px] font-normal text-[#3a3528]">
+                {spell.description}
+              </div>
+            )}
+          </Tooltip.Popup>
+        </Tooltip.Positioner>
+      </Tooltip.Portal>
+    </Tooltip.Root>
+  );
+}
 
 interface ItemHotbarCellProps extends HotbarCellDnd {
   shortcut: ResolvedShortcut | undefined;
@@ -270,6 +416,7 @@ function ItemHotbarCell({
       <Tooltip.Trigger
         render={
           <MainBannerGridSlot
+            data-audio="click2"
             className={active ? "" : "grayscale opacity-50"}
             onDoubleClick={onUse}
             onContextMenu={(e) => {
@@ -340,15 +487,21 @@ const ICON_BUTTONS = [
 interface BannerReactProps {
   /** Callback when a spell slot is clicked during a fight (cast/select). */
   onSelectSpell?: (spellId: number) => void;
+  onForfeit?: () => void;
+  onPassTurn?: () => void;
 }
 
-export function BannerReact({ onSelectSpell }: BannerReactProps = {}) {
+export function BannerReact({
+  onSelectSpell,
+  onForfeit,
+  onPassTurn,
+}: BannerReactProps = {}) {
   const gameClient = useGameClient();
   const { stats } = useSyncExternalStore(
     characterStore.subscribe,
     characterStore.getSnapshot
   );
-  const { spells } = useSyncExternalStore(
+  const { spells, byId } = useSyncExternalStore(
     spellsStore.subscribe,
     spellsStore.getSnapshot
   );
@@ -390,19 +543,14 @@ export function BannerReact({ onSelectSpell }: BannerReactProps = {}) {
   /**
    * Project the SpellEntry list onto this page's slots.
    *
-   * `position` is 1-based on the wire (the server's `ROW_NUMBER()` seed
-   * starts at 1 and `UNSLOTTED_POSITION` is -1); reading it as a 0-based
-   * array index — which this did until the hotbar was wired up — shifted
-   * the whole bar one cell left and dropped the spell in slot 14.
-   * Duplicate positions collide, last one wins.
+   * `spellAtSlot` is the shared lookup the keyboard shortcuts use too
+   * (`hotbar-actions.ts`), so a cell cannot resolve one spell under the
+   * mouse and another under its key.
    */
-  const hotbar = useMemo<(SpellEntry | null)[]>(() => {
-    const byPosition = new Map<number, SpellEntry>();
-    for (const s of spells) {
-      byPosition.set(s.position, s);
-    }
-    return pageSlots.map((slot) => byPosition.get(slot) ?? null);
-  }, [spells, pageSlots]);
+  const hotbar = useMemo<(SpellEntry | null)[]>(
+    () => pageSlots.map((slot) => spellAtSlot({ spells, byId }, slot) ?? null),
+    [spells, byId, pageSlots]
+  );
 
   /**
    * Resolve fight-slot state per spell. Outside combat every slot is
@@ -410,15 +558,12 @@ export function BannerReact({ onSelectSpell }: BannerReactProps = {}) {
    * FightSpellBar treatment: disabled when not our turn, then cooldown,
    * then pending/selected, then unaffordable, else ready.
    */
-  const fightStates = useMemo<FightSlotState[]>(() => {
-    if (!fight.isCombat) {
-      return hotbar.map(() => "idle");
-    }
-    return hotbar.map((spell): FightSlotState => {
-      if (!spell) {
+  const slotState = useCallback(
+    (spell: SpellEntry | null | undefined): FightSlotState => {
+      if (!fight.isCombat || !spell) {
         return "idle";
       }
-      if (!fight.isMyTurn) {
+      if (!fight.isMyTurn || fight.finishing || spell.combatUnavailableReason) {
         return "disabled";
       }
       if (spell.cooldownRemaining > 0) {
@@ -435,15 +580,36 @@ export function BannerReact({ onSelectSpell }: BannerReactProps = {}) {
         return "unaffordable";
       }
       return "ready";
-    });
-  }, [
-    hotbar,
-    fight.isCombat,
-    fight.isMyTurn,
-    fight.ap,
-    cast.selectedSpellId,
-    cast.isPending,
-  ]);
+    },
+    [
+      fight.isCombat,
+      fight.isMyTurn,
+      fight.finishing,
+      fight.ap,
+      cast.selectedSpellId,
+      cast.isPending,
+    ]
+  );
+
+  const fightStates = useMemo<FightSlotState[]>(() => {
+    return hotbar.map(slotState);
+  }, [hotbar, slotState]);
+
+  // The close-combat container. `byId` holds it under id 0 — the server
+  // rebuilds that entry whenever the weapon changes — while `spells`
+  // deliberately does not, so it never lands in a hotbar cell.
+  const closeCombat = byId.get(CLOSE_COMBAT_SPELL_ID);
+  const weaponItem = getEquippedAt(inventory, EquipmentPosition.WEAPON);
+  const weaponTemplate = weaponItem
+    ? inventory.templates.get(weaponItem.itemId)
+    : undefined;
+  const weapon = weaponTemplate
+    ? {
+        typeId: weaponTemplate.typeId,
+        gfxId: weaponTemplate.gfxId,
+        name: weaponTemplate.name,
+      }
+    : undefined;
 
   const handleIconClick = (panel: string) => {
     if (panel === "map") {
@@ -490,17 +656,43 @@ export function BannerReact({ onSelectSpell }: BannerReactProps = {}) {
     <div className="absolute bottom-0 left-1/2 -translate-x-1/2 pointer-events-auto z-10">
       <MainBanner mode={isFighting ? "fight" : "normal"}>
         <BannerChatContainer />
-
-        <MainBannerCircle>
-          <Minimap />
-        </MainBannerCircle>
+        <BannerCircle />
 
         <MainBannerHeart hp={hp} max={maxHp} />
+        {isFighting && !fight.isSpectator && (
+          <BannerFightPoints ap={fight.ap} mp={fight.mp} />
+        )}
+        {isFighting && !fight.isSpectator && (
+          <MainBannerForfeitButton
+            data-audio="click2"
+            onClick={onForfeit}
+            disabled={!onForfeit || fight.finishing}
+            aria-label="Abandonner le combat"
+            title="Abandonner le combat"
+          />
+        )}
+        {fight.isCombat && (
+          <MainBannerTurnButton
+            data-audio="click2"
+            onClick={onPassTurn}
+            disabled={
+              !onPassTurn ||
+              !fight.isMyTurn ||
+              fight.actionPending ||
+              fight.finishing ||
+              !myFighter ||
+              myFighter.dead
+            }
+            aria-label="Passer le tour"
+            title="Passer le tour"
+          />
+        )}
 
         <MainBannerButtons>
           {ICON_BUTTONS.map(({ icon, panel }) => (
             <MainBannerIconButton
               key={icon}
+              data-audio="click2"
               icon={icon}
               onClick={() => handleIconClick(panel)}
             />
@@ -523,6 +715,14 @@ export function BannerReact({ onSelectSpell }: BannerReactProps = {}) {
         <MainBannerRightPanel />
 
         <MainBannerGrid
+          leading={
+            <CloseCombatCell
+              spell={closeCombat}
+              weapon={weapon}
+              fight={slotState(closeCombat)}
+              onCast={onSelectSpell}
+            />
+          }
           tabs={[
             { value: "spells", label: "Sorts" },
             { value: "items", label: "Obj." },

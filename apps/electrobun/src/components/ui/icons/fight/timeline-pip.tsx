@@ -3,6 +3,7 @@
 type TimelinePipProps = {
   className?: string;
   team?: "ally" | "enemy";
+  color?: "red" | "blue";
   active?: boolean;
   dead?: boolean;
 };
@@ -10,11 +11,12 @@ type TimelinePipProps = {
 export function TimelinePip({
   className,
   team = "ally",
+  color,
   active = false,
   dead = false,
 }: TimelinePipProps) {
   const fill =
-    team === "ally"
+    (color ?? (team === "ally" ? "blue" : "red")) === "blue"
       ? "var(--color-dofus-team-blue, #0000ff)"
       : "var(--color-dofus-team-red, #ff0000)";
   const opacity = dead ? 0.3 : 1;

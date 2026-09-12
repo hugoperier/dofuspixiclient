@@ -1,0 +1,92 @@
+#!/usr/bin/env php
+<?php
+require_once __DIR__ . '/../vendor/autoload.php';
+use App\SpriteSounds;
+use App\PublishedSpriteAnimations;
+use Arakne\Swf\SwfFile;
+use Arakne\Swf\Error\Errors;
+use Arakne\Swf\Extractor\SwfExtractor;
+use Arakne\Swf\Extractor\Sprite\SpriteDefinition;
+
+$options = getopt('', ['id:', 'output:', 'input:', 'fallback-input:']);
+$root = dirname(__DIR__, 3);
+$input = $options['input'] ?? "$root/assets/sources/clips/sprites";
+$fallback = $options['fallback-input'] ?? null;
+$output = $options['output'] ?? "$root/apps/electrobun/public/assets/sound/sprite-sounds.json";
+$all = []; $errors = []; $mismatches = [];
+foreach (['' => 0, '/chevauchor' => 1000000] as $subdir => $offset) {
+    $publishedDir = $offset ? 'chevauchors' : 'sprites';
+    $files = glob("$root/apps/electrobun/public/assets/spritesheets/$publishedDir/*.dofasset");
+    sort($files, SORT_NATURAL);
+    foreach ($files as $asset) {
+        $id = basename($asset, '.dofasset');
+        if (!ctype_digit($id) || (isset($options['id']) && $id !== $options['id'])) continue;
+        $published = PublishedSpriteAnimations::read($asset);
+        $animations = []; $matched = [];
+        foreach (array_filter([$input, $fallback]) as $source) {
+            $path = "$source$subdir/$id.swf";
+            if (!is_file($path)) continue;
+            $extractor = null;
+            try {
+                // A few retail tags have harmless trailing bytes, but keep
+                // out-of-bounds / invalid bytecode errors enabled.
+                $swf = new SwfFile($path, errors: Errors::ALL & ~Errors::EXTRA_DATA);
+                $extractor = new SwfExtractor($swf);
+                $reader = new SpriteSounds();
+                foreach ($extractor->exported() as $name => $characterId) {
+                    if (!isset($published[$name]) || isset($matched[$name])) continue;
+                    $target = $published[$name];
+                    $sprite = $extractor->character($characterId);
+                    if (!$sprite instanceof SpriteDefinition) continue;
+                    // Exported animation wrappers usually contain one inner
+                    // clip. Match its length, not recursive decorative clips.
+                    $probe = $sprite;
+                    $lengths = [$reader->recursiveFrameCount($probe)];
+                    for ($depth = 0; $depth < 4; ++$depth) {
+                        $lengths[] = $probe->framesCount();
+                        $objects = $probe->timeline()->frames[0]->objects;
+                        $first = reset($objects);
+                        if (!$first || !$first->object instanceof SpriteDefinition) break;
+                        $probe = $first->object;
+                    }
+                    // Some published strips were resampled from 20 to 60 fps
+                    // by the retired atlas stage. Others preserve the newer
+                    // source's frames but override its declared frame rate.
+                    $scale = PublishedSpriteAnimations::frameScale($lengths, $target['frames'], $swf->frameRate(), $target['fps']);
+                    if ($scale === null) continue;
+                    $matched[$name] = true;
+                    $sounds = $reader->extract($sprite, (int)($target['frames'] / $scale));
+                    foreach ($sounds as &$sound) $sound['frame'] *= $scale;
+                    unset($sound);
+                    if ($sounds) $animations[$name] = $sounds;
+                }
+            } catch (Throwable $e) { $errors[] = "$id$subdir: {$e->getMessage()}"; }
+            finally { $extractor?->release(); }
+        }
+        if ($animations) { ksort($animations); $all[(int)$id + $offset] = $animations; }
+        $missing = array_keys(array_diff_key($published, $matched));
+        if ($missing) $mismatches[(int)$id + $offset] = $missing;
+        if ((int)$id % 100 === 0) fwrite(STDERR, "Processed sprite $id$subdir\n");
+    }
+}
+ksort($all, SORT_NUMERIC);
+$audio = json_decode(file_get_contents("$root/apps/electrobun/public/assets/langs/fr/audio.json"), true, flags: JSON_THROW_ON_ERROR)['data'];
+$audioKey = static fn (string $name): string => strtoupper(str_replace(
+    [' ', '-', 'é', 'à'], ['_', '_', 'e', 'a'], preg_replace('/\.mp3$/i', '', $name)
+));
+$known = array_fill_keys(array_keys($audio['AUEC']), true);
+foreach (glob("$root/apps/electrobun/public/assets/sound/effects/*.mp3") as $file) {
+    $known[$audioKey(basename($file))] = true;
+}
+$missingSymbols = [];
+foreach ($all as $animations) foreach ($animations as $cues) foreach ($cues as $cue) {
+    if (!isset($known[$audioKey($cue['soundId'])])) {
+        $missingSymbols[$cue['soundId']] = ($missingSymbols[$cue['soundId']] ?? 0) + 1;
+    }
+}
+ksort($missingSymbols);
+file_put_contents($output, json_encode((object)$all, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n");
+file_put_contents($output . '.report.json', json_encode(['unmatchedAnimations' => (object)$mismatches, 'missingSymbols' => (object)$missingSymbols, 'errors' => $errors], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+fwrite(STDOUT, 'Published sound cues for ' . count($all) . ' sprites; ' . count($mismatches) . " sprites have unmatched timelines (see report)\n");
+foreach ($errors as $error) fwrite(STDERR, "$error\n");
+if ($errors) exit(1);

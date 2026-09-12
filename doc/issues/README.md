@@ -91,15 +91,15 @@ causes racines et les notes de méthode, mais plus le détail par entrée.
 
 _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 
-**167 entrées**, dont **163 encore ouvertes**.
+**177 entrées**, dont **173 encore ouvertes**.
 
 ## Par gravité
 
 | Gravité | Restantes | Total |
 |---|---|---|
-| P0 — bloque la session (crash, impossible d'avancer) | 4 | 4 |
-| P1 — fonctionnalité cassée ou absente sur un flux principal | 69 | 69 |
-| P2 — comportement divergent du 1.29 canonique, contournable | 62 | 62 |
+| P0 — bloque la session (crash, impossible d'avancer) | 5 | 5 |
+| P1 — fonctionnalité cassée ou absente sur un flux principal | 75 | 75 |
+| P2 — comportement divergent du 1.29 canonique, contournable | 65 | 65 |
 | P3 — finition, confort, cosmétique | 28 | 29 |
 | Sans gravité — vérifications sans défaut | 0 | 3 |
 
@@ -107,10 +107,10 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 
 | Statut | Entrées |
 |---|---|
-| `open` — observé, non reproduit méthodiquement | 38 |
+| `open` — observé, non reproduit méthodiquement | 40 |
 | `confirmed` — reproduit, preuve au dossier | 17 |
 | `in-progress` — correctif engagé | 13 |
-| `fixed` — correctif livré, reste à revérifier manette en main | 95 |
+| `fixed` — correctif livré, reste à revérifier manette en main | 103 |
 | `closed` — vérifié, clos | 3 |
 | `wontfix` — écarté, avec la raison en fiche | 1 |
 
@@ -123,10 +123,10 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [`camera-zoom/`](camera-zoom/) | 3 | 3 |
 | [`chat/`](chat/) | 5 | 5 |
 | [`exchange/`](exchange/) | 23 | 23 |
-| [`fight/`](fight/) | 14 | 14 |
+| [`fight/`](fight/) | 22 | 22 |
 | [`hud-banner/`](hud-banner/) | 9 | 9 |
 | [`hud-panels/`](hud-panels/) | 19 | 20 |
-| [`input/`](input/) | 5 | 6 |
+| [`input/`](input/) | 7 | 8 |
 | [`inventory/`](inventory/) | 4 | 4 |
 | [`network/`](network/) | 9 | 9 |
 | [`progression/`](progression/) | 18 | 18 |
@@ -144,6 +144,7 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [QA-035](world-content/QA-035-aucun-pnj-aucun-objet-en-base.md) | P0 | world-content | data | in-progress | Aucun PNJ, aucun objet en base |
 | [QA-037](hud-panels/QA-037-panneaux-hud-sont-des-maquettes.md) | P0 | hud-panels | gap | confirmed | Sept des huit panneaux HUD sont des maquettes statiques |
 | [QA-048](session/QA-048-gateway-bloque-en-buffering.md) | P0 | session | bug | fixed | Le gateway ne sort jamais du mode buffering après une reconnexion au core |
+| [QA-169](input/QA-169-personnage-fige-apres-un-clic-pendant-une-longue-marche.md) | P0 | input | bug | fixed | Un clic pendant une longue marche fige le personnage jusqu'au changement de carte |
 
 ## P1 — fonctionnalité cassée ou absente sur un flux principal
 
@@ -218,6 +219,12 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [QA-156](server-runtime/QA-156-redemarrage-de-gamed-deconnecte-les-clients.md) | P1 | server-runtime | bug | fixed | Un redémarrage de gamed déconnecte les clients, alors que le handoff existe pour l'éviter |
 | [QA-166](worldmap/QA-166-carte-du-monde-morte-et-lente-a-ouvrir.md) | P1 | worldmap | bug | fixed | Carte du monde : aucune entrée ne l'atteint, et 1 à 2 s pour l'ouvrir |
 | [QA-167](input/QA-167-clics-de-la-carte-et-de-la-minimap-atteignent-le-jeu.md) | P1 | input | bug | fixed | Clics et molette de la carte du monde et de la minimap atteignent le jeu dessous |
+| [QA-168](fight/QA-168-animations-de-sorts-absentes-en-combat.md) | P1 | fight | bug | fixed | L'animation de beaucoup de sorts n'est pas affichée en combat |
+| [QA-170](fight/QA-170-les-sorts-de-teleportation-ne-deplacent-pas-le-sprite.md) | P1 | fight | bug | fixed | Les sorts de téléportation ne déplacent pas le sprite du personnage |
+| [QA-171](fight/QA-171-la-suite-de-tests-du-client-ne-s-executait-plus.md) | P1 | fight | test-gap | fixed | La suite de tests du client ne s'exécutait plus, laissant passer un test périmé sur les visuels de sorts |
+| [QA-173](fight/QA-173-barre-de-sorts-inerte-au-clavier.md) | P1 | fight | gap | fixed | La barre de raccourcis ne bascule pas en combat et n'a aucune touche de combat |
+| [QA-174](fight/QA-174-corps-a-corps-absent.md) | P1 | fight | gap | fixed | Le corps-à-corps n'existe nulle part — ni slot, ni chemin serveur, ni stats d'arme |
+| [QA-175](input/QA-175-clic-sur-un-membre-de-groupe-sans-effet.md) | P1 | input | bug | fixed | Un clic sur un monstre autre que le leader marche jusqu'à lui sans lancer le combat |
 
 ## P2 — comportement divergent du 1.29 canonique, contournable
 
@@ -285,6 +292,9 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [QA-158](world-content/QA-158-contremaitre-ikul-n-enseigne-rien.md) | P2 | world-content | data | fixed | Contremaître Ikul grise ses quatre offres de métier — un effet non implémenté les accompagne |
 | [QA-159](exchange/QA-159-refus-de-fabrication-silencieux.md) | P2 | exchange | gap | fixed | Tout refus de fabrication est silencieux — « Combiner » ne produit rien du tout |
 | [QA-160](progression/QA-160-pods-non-rafraichis-a-l-apprentissage.md) | P2 | progression | bug | fixed | Apprendre un métier ne renvoie pas la trame de poids — les pods maximum restent en arrière |
+| [QA-172](fight/QA-172-impossible-d-enchainer-les-actions-pendant-une-animation.md) | P2 | fight | feature | fixed | Impossible d'enchaîner les actions en combat tant qu'une animation joue |
+| [QA-176](fight/QA-176-rejoindre-un-combat-en-spectateur-n-existe-pas.md) | P2 | fight | gap | open | Rejoindre un combat en spectateur n'existe pas, donc l'option « interdire les spectateurs » ne garde rien |
+| [QA-177](fight/QA-177-option-equipe-seulement-diffusee-sans-etre-appliquee.md) | P2 | fight | gap | open | L'option « équipe seulement » est diffusée sans être appliquée — il n'y a pas de module groupe |
 
 ## P3 — finition, confort, cosmétique
 

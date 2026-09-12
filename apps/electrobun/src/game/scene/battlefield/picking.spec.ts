@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 
+import type { MonsterGroupMember } from "@dofus/proto";
 import { AnimatedSprite, type Sprite, Texture } from "pixi.js";
 
 import type { PickingSystem } from "@/game/render/picking-system";
@@ -224,5 +225,102 @@ describe("BattlefieldPicking — resource frames", () => {
 
     expect(resource.currentFrame).toBe(0);
     expect(resource.alpha).toBeLessThan(1);
+  });
+});
+
+describe("BattlefieldPicking — monster groups", () => {
+  // What the server sends is ONE sprite on ONE cell; the other members are
+  // decorative linked children the client puts on the ring around it
+  // (QA-094). Their ids come from the renderer's private counter and their
+  // cells are computed here, so neither means anything to the server.
+  const LEADER_ID = -5;
+  const SIBLING_ID = -1_000_000_001;
+  const GROUP_CELL = 300;
+  const SIBLING_CELL = 301;
+  const GROUP_SPRITE_IDS = [LEADER_ID, SIBLING_ID];
+
+  // Only the length is read by the picking layer; the roster itself is for
+  // the React hover panel.
+  const roster = [
+    { name: "Piou Violet", level: 4 },
+    { name: "Piou Bleu", level: 1 },
+  ] as unknown as MonsterGroupMember[];
+
+  function makeGroupRenderer(): PlayerRenderer {
+    return {
+      getPlayerPickingData: () => ({ sprite: makeSprite() }),
+      getPlayerName: () => undefined,
+      getPlayerCell: (id: number) =>
+        id === LEADER_ID ? GROUP_CELL : SIBLING_CELL,
+      isFightMode: () => false,
+      setHoverHighlight: () => {},
+      setHpBarVisible: () => {},
+      showName: () => {},
+      hideName: () => {},
+    } as unknown as PlayerRenderer;
+  }
+
+  /**
+   * Register the leader then the sibling. `nextPickableId` starts at 1 on a
+   * fresh instance, so the pickables come out as 1 and 2 in that order.
+   */
+  function makeGroup(): { picking: BattlefieldPicking; cells: number[] } {
+    const cells: number[] = [];
+    const renderer = makeGroupRenderer();
+    const pickingSystem = makePickingSystem();
+    const picking = new BattlefieldPicking({
+      pickingSystem: () => pickingSystem,
+      interactiveObjects: () => new Map(),
+      npcLang: () => new Map(),
+      worldActorRenderer: () => renderer,
+      app: () => null,
+      onCellPickThrough: (cell) => cells.push(cell),
+    });
+
+    picking.registerPlayer(
+      LEADER_ID,
+      renderer,
+      roster,
+      false,
+      0,
+      GROUP_SPRITE_IDS
+    );
+    picking.registerPlayer(
+      SIBLING_ID,
+      renderer,
+      roster,
+      false,
+      0,
+      GROUP_SPRITE_IDS
+    );
+
+    return { picking, cells };
+  }
+
+  function click(picking: BattlefieldPicking, pickableId: number): void {
+    picking.onObjectClick({
+      object: { id: pickableId, sprite: makeSprite() },
+      x: 0,
+      y: 0,
+    });
+  }
+
+  test("clicking a sibling walks to the group's cell, not the sibling's", () => {
+    // The whole point: the fight only starts when the move-ack lands on the
+    // group's own cell (`findGroupAtCell`, strict equality), so a click that
+    // routes to the ring cell walks the player over and does nothing.
+    const { picking, cells } = makeGroup();
+
+    click(picking, 2);
+
+    expect(cells).toEqual([GROUP_CELL]);
+  });
+
+  test("clicking the leader still walks to the group's cell", () => {
+    const { picking, cells } = makeGroup();
+
+    click(picking, 1);
+
+    expect(cells).toEqual([GROUP_CELL]);
   });
 });

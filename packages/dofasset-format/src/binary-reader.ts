@@ -47,6 +47,67 @@ export function readHeader(bytes: Uint8Array): DofassetHeader {
   };
 }
 
+export interface ReadAnimation {
+  name: string;
+  fps: number;
+  frameIds: number[];
+}
+
+/** Read executable animation tables, independently of declared Extras metadata. */
+export function readAnimations(bytes: Uint8Array): ReadAnimation[] {
+  const sections = directory(bytes);
+  const section = (type: SectionType): DataView => {
+    const entry = sections.find((value) => value.type === type);
+    if (!entry || entry.offset + entry.length > bytes.length) {
+      throw new Error(`Invalid DASF section ${type}`);
+    }
+    return new DataView(
+      bytes.buffer,
+      bytes.byteOffset + entry.offset,
+      entry.length
+    );
+  };
+  const strings = section(SectionType.StringTable);
+  const names: string[] = [];
+  const stringCount = strings.getUint16(0, true);
+  const stringBase = 2 + stringCount * 6;
+  for (let i = 0; i < stringCount; i++) {
+    const offset = stringBase + strings.getUint32(2 + i * 6, true);
+    const length = strings.getUint16(6 + i * 6, true);
+    if (offset + length > strings.byteLength) {
+      throw new Error("Invalid DASF string");
+    }
+    names.push(
+      new TextDecoder().decode(
+        new Uint8Array(strings.buffer, strings.byteOffset + offset, length)
+      )
+    );
+  }
+  const frames = section(SectionType.FrameTable).getUint32(0, true);
+  const animations = section(SectionType.AnimationTable);
+  const result: ReadAnimation[] = [];
+  let offset = 2;
+  for (let i = 0; i < animations.getUint16(0, true); i++) {
+    const name = names[animations.getUint16(offset, true)];
+    if (name === undefined) {
+      throw new Error("Unknown DASF animation name");
+    }
+    const fps = animations.getUint16(offset + 2, true);
+    const count = animations.getUint16(offset + 12, true);
+    offset += 19;
+    const frameIds: number[] = [];
+    for (let j = 0; j < count; j++, offset += 4) {
+      const id = animations.getUint32(offset, true);
+      if (id >= frames) {
+        throw new Error(`Invalid frame ${id} in ${name}`);
+      }
+      frameIds.push(id);
+    }
+    result.push({ name, fps, frameIds });
+  }
+  return result;
+}
+
 interface SectionRange {
   type: number;
   offset: number;
@@ -80,7 +141,9 @@ export interface ReadExtrasResult {
  */
 export function readExtras(bytes: Uint8Array): ReadExtrasResult | null {
   const section = directory(bytes).find((s) => s.type === SectionType.Extras);
-  if (!section) return null;
+  if (!section) {
+    return null;
+  }
 
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const kind = view.getUint16(section.offset, true) as ExtrasKind;
@@ -111,6 +174,8 @@ export interface SpellExtras {
     string,
     {
       stopFrame?: number;
+      hitFrame?: number;
+      removeFrame?: number;
       fadingFrame?: number;
       isComposite?: boolean;
       hasMorphShapes?: boolean;
@@ -182,12 +247,16 @@ export interface TileExtras {
 
 export function readSpellExtras(bytes: Uint8Array): SpellExtras | null {
   const extras = readExtras(bytes);
-  if (!extras || extras.kind !== ExtrasKind.Spell) return null;
+  if (!extras || extras.kind !== ExtrasKind.Spell) {
+    return null;
+  }
   return extras.data as SpellExtras;
 }
 
 export function readTileExtras(bytes: Uint8Array): TileExtras | null {
   const extras = readExtras(bytes);
-  if (!extras || extras.kind !== ExtrasKind.Tile) return null;
+  if (!extras || extras.kind !== ExtrasKind.Tile) {
+    return null;
+  }
   return extras.data as TileExtras;
 }

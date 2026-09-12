@@ -1,15 +1,16 @@
 #!/usr/bin/env bun
+
 import { Command } from "commander";
 import { match } from "ts-pattern";
 
+import type { CategoryDef, CategoryTraits } from "./category.ts";
 import {
   loadCatalog,
+  type SpriteEntry,
   updateCategorySection,
   updateLangsSection,
-  type SpriteEntry,
 } from "./catalog.ts";
 import { CATEGORIES, categoryByName } from "./categories.ts";
-import type { CategoryDef, CategoryTraits } from "./category.ts";
 import { logger } from "./logger.ts";
 import { compileAccessories } from "./stages/compile/accessories.ts";
 import { compileItems } from "./stages/compile/items.ts";
@@ -21,9 +22,9 @@ import { compileStaticCategory } from "./stages/compile/static.ts";
 import { compileStaticTileCategory } from "./stages/compile/static-tile.ts";
 import { compileTiles, type TileKind } from "./stages/compile/tiles.ts";
 import { extractAccessories } from "./stages/extract/accessories.ts";
-import { extractPoints } from "./stages/extract/points.ts";
 import { extractBundleSymbols } from "./stages/extract/bundle.ts";
 import { extractItems } from "./stages/extract/items.ts";
+import { extractPoints } from "./stages/extract/points.ts";
 import { extractSprites } from "./stages/extract/sprites.ts";
 import { extractStatic } from "./stages/extract/static.ts";
 import { extractTiles } from "./stages/extract/tiles.ts";
@@ -53,15 +54,33 @@ type ExtractMode =
   | "unsupported";
 
 function extractModeFor(c: CategoryDef): ExtractMode {
-  if (c.name === "items") return "items";
-  if (c.name === "sprites") return "sprites";
-  if (c.name === "sprites.chevauchors") return "spritesChevauchor";
-  if (c.name === "sprites.accessories") return "spritesAccessories";
-  if (c.name === "spells") return "spells";
-  if (c.name === "spells.icons") return "spellIcons";
-  if (c.name === "spells.icons.back") return "spellIconsBack";
-  if (c.name === "tiles.ground" || c.name === "tiles.objects") return "tiles";
-  if (c.shape === "static" && c.source.endsWith("/*.swf")) return "staticFlat";
+  if (c.name === "items") {
+    return "items";
+  }
+  if (c.name === "sprites") {
+    return "sprites";
+  }
+  if (c.name === "sprites.chevauchors") {
+    return "spritesChevauchor";
+  }
+  if (c.name === "sprites.accessories") {
+    return "spritesAccessories";
+  }
+  if (c.name === "spells") {
+    return "spells";
+  }
+  if (c.name === "spells.icons") {
+    return "spellIcons";
+  }
+  if (c.name === "spells.icons.back") {
+    return "spellIconsBack";
+  }
+  if (c.name === "tiles.ground" || c.name === "tiles.objects") {
+    return "tiles";
+  }
+  if (c.shape === "static" && c.source.endsWith("/*.swf")) {
+    return "staticFlat";
+  }
   // Single-SWF bundles — may export many symbols (effectsicons, statesicons,
   // smileys.bundle) or just a root timeline (demonangel, fallenDemonAngel,
   // gfx.cell, ui.*). The PHP bin handles both. `staticTile` (gfx.tactic,
@@ -110,14 +129,24 @@ function formatTraits(traits: CategoryTraits): string {
       `colorZones(${traits.colorZones.zoneCount}, ${traits.colorZones.tintMode})`
     );
   }
-  if (traits.accessorySlots) parts.push(`accessorySlots(${traits.accessorySlots.count})`);
+  if (traits.accessorySlots) {
+    parts.push(`accessorySlots(${traits.accessorySlots.count})`);
+  }
   if (traits.directionLabels) {
     parts.push(`directionLabels(${traits.directionLabels.names.length})`);
   }
-  if (traits.multiSymbol) parts.push(`multiSymbol(${traits.multiSymbol.symbolRegex})`);
-  if (traits.tileBehavior) parts.push(`tileBehavior`);
-  if (traits.sound) parts.push(`sound`);
-  if (traits.lifecycle) parts.push(`lifecycle(${traits.lifecycle.markers.join(",")})`);
+  if (traits.multiSymbol) {
+    parts.push(`multiSymbol(${traits.multiSymbol.symbolRegex})`);
+  }
+  if (traits.tileBehavior) {
+    parts.push(`tileBehavior`);
+  }
+  if (traits.sound) {
+    parts.push(`sound`);
+  }
+  if (traits.lifecycle) {
+    parts.push(`lifecycle(${traits.lifecycle.markers.join(",")})`);
+  }
   return parts.length > 0 ? parts.join(" ") : "—";
 }
 
@@ -290,8 +319,7 @@ program
           const sectionKey = category.name;
           const catalog = await loadCatalog();
           const existing = catalog.byCategory[sectionKey];
-          const prior =
-            existing?.kind === "tiles" ? existing.entries : [];
+          const prior = existing?.kind === "tiles" ? existing.entries : [];
           const byId = new Map(prior.map((e) => [e.tileId, e]));
           for (const e of result.entries) {
             byId.set(e.tileId, {
@@ -352,7 +380,9 @@ program
           const catalog = await loadCatalog();
           const section = catalog.byCategory["items"];
           if (!section || section.kind !== "items") {
-            logger.error("items extract section missing — cannot merge compile results");
+            logger.error(
+              "items extract section missing — cannot merge compile results"
+            );
             process.exit(3);
           }
           const compiledByKey = new Map(
@@ -361,7 +391,11 @@ program
           const mergedEntries = section.entries.map((e) => {
             const compiled = compiledByKey.get(`${e.type}/${e.id}`);
             return compiled
-              ? { ...e, dofassetPath: compiled.dofassetPath, outputBytes: compiled.outputBytes }
+              ? {
+                  ...e,
+                  dofassetPath: compiled.dofassetPath,
+                  outputBytes: compiled.outputBytes,
+                }
               : e;
           });
           await updateCategorySection("items", {
@@ -410,17 +444,30 @@ program
         })
         .with("spells", async () => {
           const result = await compileSpells({ filterId: opts.id });
+          const previous = (await loadCatalog()).byCategory.spells;
+          const retained =
+            opts.id !== undefined && previous?.kind === "spells"
+              ? previous.entries.filter(
+                  (entry) =>
+                    !result.entries.some(
+                      (next) => next.spellId === entry.spellId
+                    )
+                )
+              : [];
           await updateCategorySection("spells", {
             kind: "spells",
-            entries: result.entries.map((e) => ({
-              spellId: e.spellId,
-              atlasDir: e.atlasDir,
-              dofassetPath: e.dofassetPath,
-              animations: e.animations,
-              outputBytes: e.outputBytes,
-              soundCount: e.soundCount,
-              requiresTypeScript: e.requiresTypeScript,
-            })),
+            entries: [
+              ...retained,
+              ...result.entries.map((e) => ({
+                spellId: e.spellId,
+                atlasDir: e.atlasDir,
+                dofassetPath: e.dofassetPath,
+                animations: e.animations,
+                outputBytes: e.outputBytes,
+                soundCount: e.soundCount,
+                requiresTypeScript: e.requiresTypeScript,
+              })),
+            ],
             updatedAt: new Date().toISOString(),
           });
           logCompression(category.name, result);
@@ -435,8 +482,7 @@ program
           const catalog = await loadCatalog();
           const sectionKey = category.name;
           const existing = catalog.byCategory[sectionKey];
-          const prior =
-            existing?.kind === "tiles" ? existing.entries : [];
+          const prior = existing?.kind === "tiles" ? existing.entries : [];
           const byId = new Map(prior.map((e) => [e.tileId, e]));
           for (const e of result.entries) {
             byId.set(e.tileId, {
@@ -495,7 +541,9 @@ program
           );
         })
         .with("spritesAccessories", async () => {
-          const result = await compileAccessories({ filterSymbol: opts.symbol });
+          const result = await compileAccessories({
+            filterSymbol: opts.symbol,
+          });
           await updateCategorySection("sprites.accessories", {
             kind: "accessories",
             entries: result.entries.map((e) => ({
@@ -577,7 +625,11 @@ async function compileStaticAndMergeFor(category: CategoryDef, id?: number) {
   const mergedEntries = section.entries.map((e) => {
     const compiled = compiledById.get(e.id);
     return compiled
-      ? { ...e, dofassetPath: compiled.dofassetPath, outputBytes: compiled.outputBytes }
+      ? {
+          ...e,
+          dofassetPath: compiled.dofassetPath,
+          outputBytes: compiled.outputBytes,
+        }
       : e;
   });
   await updateCategorySection(category.name, {
@@ -608,7 +660,8 @@ function logCompression(
 ): void {
   const totalIn = result.entries.reduce((a, e) => a + e.sourceBytes, 0);
   const totalOut = result.entries.reduce((a, e) => a + e.outputBytes, 0);
-  const compression = totalIn > 0 ? Math.round((1 - totalOut / totalIn) * 100) : 0;
+  const compression =
+    totalIn > 0 ? Math.round((1 - totalOut / totalIn) * 100) : 0;
 
   // Dedup counts — present on compileSprite/compileSpells results; show them
   // so the "was dedup preserved" question is always answered by the build log.
@@ -641,7 +694,9 @@ function logCompression(
 
 function sum<T>(arr: T[], pick: (x: T) => number): number {
   let s = 0;
-  for (const x of arr) s += pick(x);
+  for (const x of arr) {
+    s += pick(x);
+  }
   return s;
 }
 
@@ -689,26 +744,24 @@ program
   .description("Extract i18n bundles from lang SWFs via AS2 bytecode walker")
   .option("--namespace <name>", "Only extract a single namespace (e.g. lang)")
   .option("--locale <code>", "Only extract a single locale (e.g. fr)")
-  .action(
-    async (opts: { namespace?: string; locale?: string }) => {
-      const result = await extractLangs({
-        filterNamespace: opts.namespace,
-        filterLocale: opts.locale,
-      });
-      await updateLangsSection(result.bundles);
-      const totalEntries = result.bundles.reduce((a, b) => a + b.entryCount, 0);
-      logger.info(
-        {
-          bundles: result.bundles.length,
-          skipped: result.skipped,
-          failed: result.failed,
-          totalEntries,
-          durationMs: result.durationMs,
-        },
-        "langs done"
-      );
-    }
-  );
+  .action(async (opts: { namespace?: string; locale?: string }) => {
+    const result = await extractLangs({
+      filterNamespace: opts.namespace,
+      filterLocale: opts.locale,
+    });
+    await updateLangsSection(result.bundles);
+    const totalEntries = result.bundles.reduce((a, b) => a + b.entryCount, 0);
+    logger.info(
+      {
+        bundles: result.bundles.length,
+        skipped: result.skipped,
+        failed: result.failed,
+        totalEntries,
+        durationMs: result.durationMs,
+      },
+      "langs done"
+    );
+  });
 
 program
   .command("langs:server-sync")

@@ -49,17 +49,20 @@ export class ObjectRegistry {
     });
   }
 
-  tickDown(): FightObject[] {
+  tickDown(casterId?: number): FightObject[] {
     const expired: FightObject[] = [];
     this.items = this.items.filter((o) => {
+      if (casterId !== undefined && o.casterId !== casterId) {
+        return true;
+      }
       if (o.remaining < 0) {
         return true;
       }
-      if (o.remaining === 0) {
+      o.remaining--;
+      if (o.remaining <= 0) {
         expired.push(o);
         return false;
       }
-      o.remaining--;
       return true;
     });
     return expired;
@@ -67,5 +70,9 @@ export class ObjectRegistry {
 
   snapshot(): FightObject[] {
     return [...this.items];
+  }
+
+  clear(): void {
+    this.items = [];
   }
 }

@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
 import { ExtrasKind, type ExtrasPayload } from "@dofus/dofasset-format";
@@ -54,6 +54,8 @@ interface LegacySpellManifest {
       string,
       {
         stopFrame?: number;
+        hitFrame?: number;
+        removeFrame?: number;
         fadingFrame?: number;
         isComposite?: boolean;
         hasMorphShapes?: boolean;
@@ -97,7 +99,9 @@ export async function compileSpells(
 
   for (const name of ids) {
     const spellId = Number(name);
-    if (!Number.isFinite(spellId)) continue;
+    if (!Number.isFinite(spellId)) {
+      continue;
+    }
     if (opts.filterId !== undefined && spellId !== opts.filterId) {
       skipped++;
       continue;
@@ -107,7 +111,9 @@ export async function compileSpells(
     const manifestPath = resolve(atlasDir, "manifest.json");
     let manifest: LegacySpellManifest | null = null;
     try {
-      manifest = JSON.parse(await readFile(manifestPath, "utf-8")) as LegacySpellManifest;
+      manifest = JSON.parse(
+        await readFile(manifestPath, "utf-8")
+      ) as LegacySpellManifest;
     } catch {
       logger.warn({ spellId }, "spell manifest missing/unreadable — skipping");
       failed++;
@@ -121,6 +127,9 @@ export async function compileSpells(
         assetId: spellId,
         extras,
       });
+      if (result.animations === 0 || result.stats.frames === 0) {
+        throw new Error(`Spell ${spellId}: no compiled animation frames`);
+      }
       const dofassetPath = resolve(outputDir, `${spellId}.dofasset`);
       await mkdir(dirname(dofassetPath), { recursive: true });
       await writeFile(dofassetPath, result.bytes);
@@ -137,7 +146,10 @@ export async function compileSpells(
       });
     } catch (err) {
       failed++;
-      logger.warn({ spellId, err: (err as Error).message }, "compile:spells failed");
+      logger.warn(
+        { spellId, err: (err as Error).message },
+        "compile:spells failed"
+      );
     }
   }
 
@@ -154,7 +166,13 @@ function buildSpellExtras(manifest: LegacySpellManifest): ExtrasPayload {
   const spell = manifest.spell;
   const animations: Record<
     string,
-    { width: number; height: number; offsetX: number; offsetY: number; fps: number }
+    {
+      width: number;
+      height: number;
+      offsetX: number;
+      offsetY: number;
+      fps: number;
+    }
   > = {};
   for (const [name, entry] of Object.entries(manifest.animations ?? {})) {
     animations[name] = {

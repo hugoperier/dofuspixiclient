@@ -46,7 +46,9 @@ class Clock implements Timers {
         }
       }
 
-      if (!next) break;
+      if (!next) {
+        break;
+      }
 
       const [handle, timer] = next;
       this.now = timer.at;
@@ -81,6 +83,7 @@ interface FakeSound extends Sound {
   playing: boolean;
   stopped: boolean;
   level: number;
+  muted: boolean;
 }
 
 function fakeSounds() {
@@ -94,6 +97,7 @@ function fakeSounds() {
       playing: false,
       stopped: false,
       level: 0,
+      muted: false,
       play() {
         sound.playing = true;
       },
@@ -104,7 +108,9 @@ function fakeSounds() {
       setVolume(volume) {
         sound.level = volume;
       },
-      setMuted() {},
+      setMuted(muted) {
+        sound.muted = muted;
+      },
       volume() {
         return sound.level;
       },
@@ -176,10 +182,10 @@ describe("AudioManager", () => {
       audio.setVolume("music", 0.5);
       await audio.playMusic(115);
 
-      expect(sounds.created[0]!.level).toBe(0);
+      expect(sounds.created[0]?.level).toBe(0);
       clock.advance(FADE_MS);
       // base volume 100/100 × channel 0.5
-      expect(sounds.created[0]!.level).toBeCloseTo(0.5, 5);
+      expect(sounds.created[0]?.level).toBeCloseTo(0.5, 5);
     });
 
     // `DofusBattlefield.as:134` only calls playMusic when musicID > 0 — maps
@@ -206,12 +212,12 @@ describe("AudioManager", () => {
       await audio.playMusic(32);
 
       const [previous, next] = sounds.created;
-      expect(previous!.stopped).toBe(false);
+      expect(previous?.stopped).toBe(false);
 
       clock.advance(FADE_MS);
-      expect(previous!.stopped).toBe(true);
-      expect(next!.stopped).toBe(false);
-      expect(next!.url).toBe("/assets/sound/musics/fig_amakna.mp3");
+      expect(previous?.stopped).toBe(true);
+      expect(next?.stopped).toBe(false);
+      expect(next?.url).toBe("/assets/sound/musics/fig_amakna.mp3");
     });
 
     it("ignores an id the lang bundle does not know", async () => {
@@ -252,7 +258,7 @@ describe("AudioManager", () => {
         loop: true,
         playing: true,
       });
-      expect(bed!.level).toBeCloseTo((0.3 * 40) / 100, 5);
+      expect(bed?.level).toBeCloseTo((0.3 * 40) / 100, 5);
       expect(audio.getAmbianceId()).toBe(1);
     });
 
@@ -329,7 +335,7 @@ describe("AudioManager", () => {
         loop: false,
         playing: true,
       });
-      expect(effect!.level).toBeCloseTo((0.5 * 20) / 100, 5);
+      expect(effect?.level).toBeCloseTo((0.5 * 20) / 100, 5);
     });
 
     it("drops a name the bundle does not know", () => {
@@ -383,4 +389,121 @@ describe("AudioManager", () => {
       expect(clock.count).toBe(0);
     });
   });
+});
+
+// Exercise live voices, including those detached by a music transition.
+describe("audio lifecycle regressions", () => {
+  it("discards background action sounds while allowing explicit alerts", async () => {
+    const sounds = fakeSounds();
+    const audio = new AudioManager({
+      createSound: sounds.factory,
+      loadLang: async () => LANG,
+      isFocused: () => false,
+    });
+    await audio.init();
+    audio.playEffect(510);
+    audio.playSound("fx_611.mp3");
+    expect(sounds.created).toHaveLength(0);
+    audio.playEffect(510, "effects", true);
+    audio.playSound("fx_611.mp3", "effects", true);
+    expect(sounds.created).toHaveLength(2);
+    audio.stop();
+  });
+  it("mutes, adjusts and stops effects that have already started", async () => {
+    const sounds = fakeSounds();
+    const audio = new AudioManager({
+      createSound: sounds.factory,
+      loadLang: async () => LANG,
+    });
+    await audio.init();
+    audio.playEffect(510);
+    audio.setVolume("effects", 0.8);
+    audio.setMuted("effects", true);
+    expect(sounds.created[0]?.level).toBeCloseTo(0.16);
+    expect(sounds.created[0]?.muted).toBe(true);
+    audio.stop();
+    expect(sounds.created[0]?.stopped).toBe(true);
+  });
+
+  it("stops outgoing music during a crossfade", async () => {
+    const sounds = fakeSounds();
+    const clock = new Clock();
+    const audio = new AudioManager({
+      createSound: sounds.factory,
+      timers: clock,
+      loadLang: async () => LANG,
+    });
+    await audio.init();
+    await audio.playMusic(115);
+    await audio.playMusic(32);
+    audio.stop();
+    expect(sounds.created.every((s) => s.stopped)).toBe(true);
+    expect(clock.count).toBe(0);
+  });
+
+  it("does not resurrect music after stop while loading", async () => {
+    const sounds = fakeSounds();
+    let resolve!: (value: typeof LANG) => void;
+    const audio = new AudioManager({
+      createSound: sounds.factory,
+      loadLang: () =>
+        new Promise((r) => {
+          resolve = r;
+        }),
+    });
+    void audio.init();
+    const pending = audio.playMusic(115);
+    audio.stop();
+    resolve(LANG);
+    await pending;
+    expect(sounds.created).toHaveLength(0);
+  });
+
+  it("resolves published filenames and packed linkage names", async () => {
+    const sounds = fakeSounds();
+    const audio = new AudioManager({
+      createSound: sounds.factory,
+      loadLang: async () => LANG,
+    });
+    await audio.init();
+    audio.playSound("fx_611.mp3");
+    audio.playSound("Abrakleur_Sombre_Hit");
+    expect(sounds.created.map((s) => s.url)).toEqual([
+      "/assets/sound/effects/fx_611.mp3",
+      "/assets/sound/effects/Abrakleur_Sombre_Hit.mp3",
+    ]);
+    audio.stop();
+  });
+});
+
+it("normalizes every shipped effect URL and Otomai's empty noise lists", async () => {
+  const bundle = await Bun.file(
+    new URL("../../../public/assets/langs/fr/audio.json", import.meta.url)
+  ).json();
+  const sounds = fakeSounds();
+  const clock = new Clock();
+  const audio = new AudioManager({
+    createSound: sounds.factory,
+    timers: clock,
+    loadLang: async () => bundle.data,
+  });
+  await audio.init();
+  for (const id of Object.keys(bundle.data.AUE)) {
+    audio.playEffect(Number(id));
+  }
+  expect(sounds.created).toHaveLength(Object.keys(bundle.data.AUE).length);
+  for (const sound of sounds.created) {
+    expect(
+      await Bun.file(
+        new URL(`../../../public${sound.url}`, import.meta.url)
+      ).exists()
+    ).toBe(true);
+  }
+  for (const id of [18, 19, 20]) {
+    audio.stop();
+    await audio.playEnvironment(id);
+    expect(clock.count).toBe(0);
+    expect(sounds.created[sounds.created.length - 1]?.url).toEndWith(".mp3");
+  }
+  audio.stop();
 });

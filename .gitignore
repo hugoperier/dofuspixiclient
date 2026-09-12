@@ -47,6 +47,9 @@ apps/gameserver-ts/game.sql
 # `doc/getting-started.md` downloads it into the repo root, which is where
 # `just import-world game.sql` looks for it.
 /game.sql
+# Quick-connect roster for the dev login screen — holds derived password
+# keys for locally seeded accounts. Regenerate with `just dev-accounts`.
+/dev-accounts.json
 # Local env
 .env
 .env.*

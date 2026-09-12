@@ -36,6 +36,7 @@ beforeEach(async () => {
   const repo = {
     findByUsername: async () => account,
     markLoggedIn: async () => undefined,
+    recordLogin: async () => undefined,
   } as unknown as LoginRepository;
 
   const frames = {

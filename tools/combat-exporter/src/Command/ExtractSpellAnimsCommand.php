@@ -52,6 +52,14 @@ final class ExtractSpellAnimsCommand extends Command
     private bool $dynamicSymbolsEnabled = false;
 
     /**
+     * Spell ids from dynamic-spells.json: these run the dynamic-symbol
+     * pipeline unconditionally, including when the SWF uses attachMovie.
+     *
+     * @var array<int, true>
+     */
+    private array $forcedDynamicIds = [];
+
+    /**
      * Per-spell analysis of which placed sprites carry CLIPACTIONRECORDs.
      * Reset for every SWF processed; used by the timeline rewriter to
      * strip those placements from parent SVGs (so they can be re-attached
@@ -89,6 +97,7 @@ final class ExtractSpellAnimsCommand extends Command
         $specificSpell = $input->getOption('spell');
         $scale = (float) $input->getOption('scale');
         $this->dynamicSymbolsEnabled = (bool) $input->getOption('dynamic-symbols');
+        $this->forcedDynamicIds = $this->loadForcedDynamicIds($io);
 
         if (!$inputDir) {
             $io->error('Please provide an input directory with --input');
@@ -246,16 +255,20 @@ final class ExtractSpellAnimsCommand extends Command
                 }
             }
 
-            if (!$this->dynamicSymbolsEnabled) {
+            $forced = isset($this->forcedDynamicIds[(int) $animId]);
+            if (!$this->dynamicSymbolsEnabled && !$forced) {
                 // Default path: pipeline is off, render anim1 with full
                 // baked content. This preserves existing spell-{id}.ts
                 // classes that were written against the original layout
                 // (Bouclier Féca / Armures / etc.).
                 $this->dynamicAnalyzer = null;
-            } elseif ($hasAttachMovieSymbols) {
-                $io->text('  Spell exports attachMovie library symbols — skipping dynamic-symbol pipeline (hand-perfected runtime class likely depends on baked inner content)');
+            } elseif ($hasAttachMovieSymbols && !$forced) {
+                $io->text('  Spell exports attachMovie library symbols — skipping dynamic-symbol pipeline (hand-perfected runtime class likely depends on baked inner content). Add this id to dynamic-spells.json to override.');
                 $this->dynamicAnalyzer = null;
             } else {
+                if ($forced) {
+                    $io->text('  Forced dynamic-symbol pipeline (listed in dynamic-spells.json)');
+                }
                 $this->dynamicAnalyzer = new DynamicSpriteAnalyzer();
                 $this->dynamicAnalyzer->analyze($swf);
                 $dynamicCount = count($this->dynamicAnalyzer->getDynamicCharacterIds());
@@ -1092,20 +1105,74 @@ final class ExtractSpellAnimsCommand extends Command
     }
 
     /**
+     * Reads dynamic-spells.json — the opt-in list of spells whose
+     * extraction must run the dynamic-symbol pipeline regardless of the
+     * attachMovie guard. Missing or malformed file = empty list, which
+     * is the historical behaviour.
+     *
+     * @return array<int, true>
+     */
+    private function loadForcedDynamicIds(SymfonyStyle $io): array
+    {
+        $path = dirname(__DIR__, 2) . '/dynamic-spells.json';
+        if (!is_file($path)) {
+            return [];
+        }
+
+        $decoded = json_decode((string) file_get_contents($path), true);
+        if (!is_array($decoded) || !isset($decoded['ids']) || !is_array($decoded['ids'])) {
+            $io->warning(sprintf('dynamic-spells.json at %s is malformed — ignoring', $path));
+            return [];
+        }
+
+        $ids = [];
+        foreach ($decoded['ids'] as $id) {
+            if (is_int($id)) {
+                $ids[$id] = true;
+            }
+        }
+
+        return $ids;
+    }
+
+    /**
      * Export ActionScript using FFDec (decompiled and deobfuscated).
      * Returns list of exported file names.
      */
     private function exportActionScript(string $swfPath, string $outputDir, SymfonyStyle $io): array
     {
         $files = [];
-        $ffdec = '/Applications/FFDec.app/Contents/Resources/ffdec.sh';
+        $ffdec = getenv('FFDEC_PATH')
+            ?: '/Applications/FFDec.app/Contents/Resources/ffdec.sh';
+        $scriptDir = "$outputDir/scripts";
 
         if (!file_exists($ffdec)) {
-            $io->text('  FFDec not found, skipping ActionScript export');
-            return $files;
-        }
+            // Not fatal: the decompiled ActionScript for every shipped
+            // spell is committed under output/spell-anims/<id>/scripts,
+            // so re-extracting IN PLACE over that tree keeps working
+            // without FFDec. It is fatal only when the scripts are also
+            // absent — detectLibrarySymbols() reads them, and silently
+            // losing them produces a manifest missing every attachMovie
+            // symbol, i.e. a spell that compiles but renders wrong.
+            if (is_dir($scriptDir)) {
+                $io->text(sprintf(
+                    '  FFDec not found at %s — reusing the ActionScript already in %s',
+                    $ffdec,
+                    $scriptDir,
+                ));
+                return $files;
+            }
 
-        $scriptDir = "$outputDir/scripts";
+            throw new \RuntimeException(sprintf(
+                'FFDec not found at %s and no decompiled ActionScript at %s. '
+                . 'Extracting here would silently drop every attachMovie library symbol. '
+                . 'Install JPEXS FFDec (or set FFDEC_PATH), or point --output at the '
+                . 'committed tree (tools/combat-exporter/output/spell-anims) so the '
+                . 'existing scripts/ are reused.',
+                $ffdec,
+                $scriptDir,
+            ));
+        }
 
         try {
             // Export scripts with FFDec (decompiled AS2)

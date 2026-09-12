@@ -1,0 +1,11 @@
+{
+  "810": {
+    "source": "https://gitlab.com/bouh2pmg/Client-Dofus-1-29/-/raw/43305756/Client/clips/spells/810.swf",
+    "fps": 20,
+    "frameCount": 54,
+    "animation": "anim1",
+    "hitFrame": 25,
+    "removeFrame": 53,
+    "sounds": [{ "frame": 24, "soundId": "explosion" }]
+  }
+}

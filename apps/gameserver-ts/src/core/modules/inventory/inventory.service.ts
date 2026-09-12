@@ -27,6 +27,7 @@ import { LifeRegenService } from "@modules/life-regen/life-regen.service";
 import { PlayersRepository } from "@modules/players/players.repository";
 import { maxLifePoints } from "@modules/stats/stats.constants";
 import { Injectable, Logger } from "@nestjs/common";
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import { TransactionHost } from "@nestjs-cls/transactional";
 
 const WEAPON_POSITION = 1;
@@ -95,7 +96,8 @@ export class InventoryService {
     private readonly jobs: JobsRepository,
     private readonly jobsCatalog: JobsCatalogService,
     private readonly jobsFrames: JobsFramesService,
-    private readonly jobsService: JobsService
+    private readonly jobsService: JobsService,
+    private readonly events: EventEmitter2
   ) {}
 
   /**
@@ -205,6 +207,7 @@ export class InventoryService {
       this.frames.sendMovement(sessionId, item.id, position);
 
       await this.pushToolState(sessionId, playerId);
+      this.announceWeaponChange(sessionId, playerId, position);
 
       return { ok: true };
     });
@@ -222,13 +225,37 @@ export class InventoryService {
         return { ok: false, reason: "not-found" as const };
       }
 
+      const wasAt = item.position;
+
       await this.inventory.moveItem(item.id, INVENTORY_POSITION);
       this.frames.sendMovement(sessionId, item.id, INVENTORY_POSITION);
 
       await this.pushToolState(sessionId, playerId);
+      this.announceWeaponChange(sessionId, playerId, wasAt);
 
       return { ok: true };
     });
+  }
+
+  /**
+   * Tell the rest of the server the weapon slot moved.
+   *
+   * The close-combat attack is built from whatever is in that slot —
+   * its AP cost, range and damage are the weapon's — so the client's
+   * spell list goes stale the moment it changes. An event rather than a
+   * direct call: the spells module already depends on this one, and
+   * calling back into it would close the loop.
+   */
+  private announceWeaponChange(
+    sessionId: string,
+    playerId: string,
+    position: number
+  ): void {
+    if (position !== WEAPON_POSITION) {
+      return;
+    }
+
+    this.events.emit("player.weapon-changed", { sessionId, playerId });
   }
 
   /**

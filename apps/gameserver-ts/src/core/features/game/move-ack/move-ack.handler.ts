@@ -8,6 +8,7 @@ import {
 import { DofusMessageSchema } from "@dofus/proto/server_messages_pb";
 import { FightStartService } from "@features/game/fight-start/fight-start.service";
 import { resolveMoveLanding } from "@features/game/move-ack/move-ack.landing";
+import { FightRegistryService } from "@modules/fight/registry/fight.registry";
 import { MapCacheService } from "@modules/maps/maps.cache.service";
 import {
   detectExitDirection,
@@ -38,15 +39,21 @@ export class MoveAckHandler {
     private readonly transition: MapTransitionService,
     private readonly frames: GatewayFrameService,
     private readonly mapMonsters: MapMonsterService,
-    private readonly fightStart: FightStartService
+    private readonly fightStart: FightStartService,
+    private readonly fights: FightRegistryService
   ) {}
 
   @MessageHandler(GameActionAckSchema)
   async handle(ctx: HandlerContext, msg: GameActionAck): Promise<void> {
-    // `take` is get-and-delete, and it runs before the id check below: an
-    // ack that names the wrong action destroys the pending move on its way
-    // out. That is worth knowing when a character ends up frozen.
-    const move = this.pending.take(ctx.sessionId);
+    if (this.fights.isInFight(ctx.sessionId)) {
+      return;
+    }
+    // Looked at, not consumed: an ack naming another action must leave the
+    // pending move where it is. It used to be a `take` — get-and-delete —
+    // running before the id check, so a walk whose animation finished after
+    // the player had already asked for a different one destroyed the live
+    // move on its way out, and the character froze until the next map load.
+    const move = this.pending.peek(ctx.sessionId);
 
     if (!move) {
       this.logger.debug(
@@ -57,10 +64,14 @@ export class MoveAckHandler {
 
     if (move.actionId !== msg.actionId) {
       this.logger.warn(
-        `ack: id mismatch session=${ctx.sessionId} expected=${move.actionId} got=${msg.actionId}`
+        `ack: id mismatch session=${ctx.sessionId} ` +
+          `expected=${move.actionId} got=${msg.actionId} — ` +
+          `stale ack ignored, action ${move.actionId} still pending`
       );
       return;
     }
+
+    this.pending.drop(ctx.sessionId);
 
     // `GKK` says the walk played out; `GKE` says the player cut it short
     // and names the cell they stopped on. Everything after this is the
@@ -150,6 +161,14 @@ export class MoveAckHandler {
     const group = this.mapMonsters.findGroupAtCell(mapId, cellId);
 
     if (!group) {
+      // The overwhelmingly common case — every ordinary step lands here —
+      // so it stays at debug. It is worth a line all the same: a click on
+      // a monster that walks the player somewhere and does nothing else
+      // is indistinguishable from a dropped frame without it, and this
+      // was exactly the reading that was missing for QA-175.
+      this.logger.debug(
+        `PvM trigger: no group at landing cell mapId=${mapId} cell=${cellId}`
+      );
       return false;
     }
 
@@ -173,7 +192,9 @@ export class MoveAckHandler {
       return false;
     }
 
-    const walkable = this.mapMonsters.walkableCells(mapId);
+    const walkable = mapData.cells
+      .filter((cell) => cell.active && cell.movement > 1)
+      .map((cell) => cell.id);
 
     const fight = await this.fightStart.startPvM(
       sessionId,
@@ -188,7 +209,10 @@ export class MoveAckHandler {
         cellId: group.cellId,
         members: group.members,
       },
-      walkable
+      walkable,
+      mapData.cells
+        .filter((cell) => !cell.active || !cell.lineOfSight)
+        .map((cell) => cell.id)
     );
 
     if (fight !== null) {

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, jest, test } from "bun:test";
 
 import { ActiveState } from "@modules/fight/core/fight.active-state";
 import { Fight } from "@modules/fight/core/fight.entity";
@@ -42,6 +42,120 @@ function stubSink() {
 }
 
 describe("Runner", () => {
+  test("the next turn waits for a participant ack; stale and spectator acks do not release it", async () => {
+    const { fight, playerFighter } = makeFight();
+    playerFighter.sessionId = "player-session";
+    const active = new ActiveState();
+    fight.transition(active);
+    const { sink, broadcasts } = stubSink();
+    const runner = new Runner(fight, active, sink);
+    try {
+      runner.start();
+      expect(fight.turnOpen).toBe(true);
+      const current = active.turnList.current()!;
+      runner.requestEnd(current.id);
+      expect(fight.turnOpen).toBe(false);
+      const epoch = fight.turnEpoch;
+      expect(
+        broadcasts.filter((frame) => frame.messageId === "GTS")
+      ).toHaveLength(1);
+      expect(broadcasts.at(-1)).toMatchObject({
+        messageId: "GTR",
+        payload: { fightId: fight.id, turnEpoch: epoch },
+      });
+      runner.notifyReady(playerFighter.id, epoch - 1);
+      runner.notifyReady(999, epoch);
+      await fight.runAction(() => {});
+      expect(
+        broadcasts.filter((frame) => frame.messageId === "GTS")
+      ).toHaveLength(1);
+      runner.notifyReady(playerFighter.id, epoch);
+      await fight.runAction(() => {});
+      expect(
+        broadcasts.filter((frame) => frame.messageId === "GTS")
+      ).toHaveLength(2);
+      expect(fight.turnOpen).toBe(true);
+    } finally {
+      runner.stop();
+    }
+  });
+
+  test("the barrier expires at 15 seconds and the new turn receives a full timer", async () => {
+    jest.useFakeTimers();
+    const { fight, playerFighter } = makeFight();
+    playerFighter.sessionId = "player-session";
+    const active = new ActiveState();
+    fight.transition(active);
+    const { sink, broadcasts } = stubSink();
+    const runner = new Runner(fight, active, sink, 30_000);
+    const turns = () =>
+      broadcasts.filter((frame) => frame.messageId === "GTS").length;
+    try {
+      runner.start();
+      runner.requestEnd(active.turnList.current()!.id);
+      jest.advanceTimersByTime(14_999);
+      await fight.runAction(() => {});
+      expect(turns()).toBe(1);
+      jest.advanceTimersByTime(1);
+      await fight.runAction(() => {});
+      expect(turns()).toBe(2);
+      jest.advanceTimersByTime(29_999);
+      await fight.runAction(() => {});
+      expect(fight.turnOpen).toBe(true);
+      jest.advanceTimersByTime(1);
+      await fight.runAction(() => {});
+      expect(fight.turnOpen).toBe(false);
+    } finally {
+      runner.stop();
+      jest.useRealTimers();
+    }
+  });
+
+  test("ending a fight releases its timer and ignores late acknowledgements", async () => {
+    jest.useFakeTimers();
+    const { fight, playerFighter } = makeFight();
+    playerFighter.sessionId = "player-session";
+    const active = new ActiveState();
+    fight.transition(active);
+    const { sink, broadcasts } = stubSink();
+    const runner = new Runner(fight, active, sink);
+    try {
+      runner.start();
+      runner.requestEnd(active.turnList.current()!.id);
+      const epoch = fight.turnEpoch;
+      runner.stop();
+      runner.notifyReady(playerFighter.id, epoch);
+      jest.advanceTimersByTime(60_000);
+      await fight.runAction(() => {});
+      expect(
+        broadcasts.filter((frame) => frame.messageId === "GTS")
+      ).toHaveLength(1);
+      expect(fight.turnOpen).toBe(false);
+    } finally {
+      runner.stop();
+      jest.useRealTimers();
+    }
+  });
+
+  test("a disconnected participant releases the turn barrier", async () => {
+    const { fight, playerFighter } = makeFight();
+    playerFighter.sessionId = "player-session";
+    const active = new ActiveState();
+    fight.transition(active);
+    const { sink, broadcasts } = stubSink();
+    const runner = new Runner(fight, active, sink);
+    try {
+      runner.start();
+      runner.requestEnd(active.turnList.current()!.id);
+      runner.notifyDisconnected("player-session");
+      await fight.runAction(() => {});
+      expect(
+        broadcasts.filter((frame) => frame.messageId === "GTS")
+      ).toHaveLength(2);
+    } finally {
+      runner.stop();
+    }
+  });
   test("constructor creates runner instance", () => {
     const { fight } = makeFight();
     const active = new ActiveState();

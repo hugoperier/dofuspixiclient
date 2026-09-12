@@ -59,6 +59,7 @@ const EXCHANGE_TYPE_BY_NPC_ACTION = new Map<number, number>([
 ]);
 
 export interface BattlefieldPickingDeps {
+  isCombatFighter?: (id: number) => boolean;
   pickingSystem(): PickingSystem | null;
   interactiveObjects(): Map<number, InteractiveObjectData>;
   npcLang(): Map<number, NpcLangData>;
@@ -110,6 +111,23 @@ interface InteractiveCallbacks {
  *   - hover routing to nameplate show/hide
  */
 export class BattlefieldPicking {
+  private combatMode = false;
+
+  setCombatMode(enabled: boolean): void {
+    this.combatMode = enabled;
+    hideContextMenu();
+    clearMonsterGroupHover();
+    this.pixelHoverPickableId = undefined;
+    this.cellHoverPickableId = undefined;
+    this.recomputeEffectiveHover();
+    this.deps.pickingSystem()?.setEligibilityFilter((id) => this.canPick(id));
+  }
+
+  private canPick(id: number): boolean {
+    if (!this.combatMode) return true;
+    const playerId = this.pickableIdToPlayerId.get(id);
+    return playerId !== undefined && Boolean(this.deps.isCombatFighter?.(playerId));
+  }
   /**
    * Monotonic, and deliberately never reset. Ids identify entries in the
    * player tables as much as in the tile ones; restarting the count on a
@@ -138,11 +156,13 @@ export class BattlefieldPicking {
   // 1.29 (`TextWithTitleOverHead.STARS_COLORS`).
   private readonly pickableIdToMonsterGroupBonus = new Map<number, number>();
   // pickableId → list of player IDs that visually belong to the same
-  // monster group (leader + decorative siblings). On hover/un-hover
-  // the picking handler iterates the list and highlights every member
-  // so the whole stack reads as ONE unit. Without this, hovering one
+  // monster group, **leader first**, then the decorative siblings —
+  // the order `world-actors.ts` builds it in. On hover/un-hover the
+  // picking handler iterates the list and highlights every member so
+  // the whole stack reads as ONE unit. Without this, hovering one
   // sibling would only tint that one sprite while the rest stayed
-  // dark — exactly the bug the user reported.
+  // dark — exactly the bug the user reported. `onObjectClick` reads
+  // element 0 to route a click on any member to the group's cell.
   private readonly pickableIdToGroupSpriteIds = new Map<number, number[]>();
   /** cellId → the layer-2 sprite standing on it, for `GDF`. */
   private readonly cellIdToTileSprite = new Map<number, Sprite>();
@@ -222,7 +242,11 @@ export class BattlefieldPicking {
         // maintaining a parallel cell→playerId index that would have
         // to track teleports / death / removal.
         for (const [playerId, pickableId] of this.playerIdToPickableId) {
-          if (renderer.getPlayerCell(playerId) === cellId) {
+          if (
+            this.canPick(pickableId) &&
+            renderer.getPlayerCell(playerId) === cellId &&
+            renderer.getPlayerPickingData(playerId)?.container.renderable
+          ) {
             nextPickableId = pickableId;
             break;
           }
@@ -697,6 +721,13 @@ export class BattlefieldPicking {
 
   onObjectClick(result: PickResult): void {
     hideContextMenu();
+    if (!this.canPick(result.object.id)) return;
+    if (this.combatMode) {
+      const playerId = this.pickableIdToPlayerId.get(result.object.id);
+      const cell = playerId === undefined ? undefined : this.deps.worldActorRenderer()?.getPlayerCell(playerId);
+      if (cell !== undefined) this.deps.onCellPickThrough?.(cell);
+      return;
+    }
 
     const cb = this.callbacks.get(result.object.id);
 
@@ -726,7 +757,18 @@ export class BattlefieldPicking {
       const isMonsterGroup =
         this.pickableIdToMonsterGroup.has(result.object.id) || playerId < 0;
       if (isMonsterGroup) {
-        const cellId = this.deps.worldActorRenderer()?.getPlayerCell(playerId);
+        // The sprite under the cursor is often NOT the one the server
+        // knows about: every non-leader member is a decorative linked
+        // child standing on a ring cell the client picked itself
+        // (QA-094). A walk onto that cell trips nothing — the server
+        // starts the fight only when the landing cell equals the
+        // group's own cell (`findGroupAtCell`, strict equality). So
+        // walk the click up to the leader, exactly as canonical 1.29
+        // follows `linkedParent` in `DofusBattlefield.onSpriteRelease`.
+        const leaderId =
+          this.pickableIdToGroupSpriteIds.get(result.object.id)?.[0] ??
+          playerId;
+        const cellId = this.deps.worldActorRenderer()?.getPlayerCell(leaderId);
         if (cellId !== undefined) {
           this.deps.onCellPickThrough?.(cellId);
         }
@@ -880,7 +922,7 @@ export class BattlefieldPicking {
     // would fire `onHover(false)` here even though canonical 1.29
     // keeps the fighter hovered as long as the cursor is in the
     // cell diamond — the "hitbox doesn't widen" regression.
-    const next = result ? result.object.id : undefined;
+    const next = result && this.canPick(result.object.id) ? result.object.id : undefined;
     if (next === this.pixelHoverPickableId) {
       return;
     }
