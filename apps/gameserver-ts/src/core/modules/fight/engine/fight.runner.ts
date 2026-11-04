@@ -54,6 +54,18 @@ export class Runner {
     this.turnDurationMs = turnDurationMs;
   }
 
+  currentTurn(now = Date.now()) {
+    const turn = this.turn;
+    return turn ? {
+      spriteId: String(turn.fighter.id),
+      timeMs: turn.ended ? 0 : Math.max(0, turn.startedAt + turn.durationMs - now),
+      tableTurnNum: turn.number,
+      ended: turn.ended,
+      turnEpoch: this.fight.turnEpoch,
+      durationMs: turn.durationMs,
+    } : null;
+  }
+
   setObserver(o: TurnObserver): void {
     this.observer = o;
   }

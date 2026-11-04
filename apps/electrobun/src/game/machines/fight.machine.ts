@@ -221,7 +221,7 @@ export const fightMachine = setup({
       const duration = Math.max(0, event.payload.timeMs);
       return {
         deadline: Date.now() + duration,
-        turnDurationMs: duration,
+        turnDurationMs: event.payload.durationMs || duration,
         actionPending: false,
         turnIndex: round > 0 ? round - 1 : context.turnIndex,
         currentTurnSpriteId: event.payload.spriteId,

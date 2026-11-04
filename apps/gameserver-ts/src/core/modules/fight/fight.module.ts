@@ -1,3 +1,5 @@
+import { FightWorldService } from "./engine/fight.world.service";
+import { FightSpectatorService } from "./engine/fight.spectator.service";
 import { FightChallengeModule } from "@modules/fight/challenges/fight.challenge.module";
 import { FightEffectsModule } from "@modules/fight/effects/fight.effects.module";
 import { FightActionsService } from "@modules/fight/engine/fight.actions.service";
@@ -34,6 +36,8 @@ import { Global, Module } from "@nestjs/common";
   ],
   providers: [
     FightRegistryService,
+    FightWorldService,
+    FightSpectatorService,
     FightEndService,
     FightActionsService,
     FightHistoryRepository,
@@ -42,6 +46,8 @@ import { Global, Module } from "@nestjs/common";
   ],
   exports: [
     FightRegistryService,
+    FightWorldService,
+    FightSpectatorService,
     FightEndService,
     FightActionsService,
     FightHistoryRepository,

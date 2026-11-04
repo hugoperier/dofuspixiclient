@@ -1,3 +1,5 @@
+import { placeFightMarkers } from "@modules/fight/engine/fight.world.service";
+import { FightSpectatorService } from "@modules/fight/engine/fight.spectator.service";
 import type { MonsterSpell } from "@modules/fight/cast/fight.spell.types";
 import type { PlayerPresenceEntry } from "@modules/player-presence/player-presence.service";
 import { create } from "@bufbuild/protobuf";
@@ -80,7 +82,6 @@ export class FightStartService {
   // for 8-mob groups), which surfaced as two fighters sharing one spriteId
   // and the client's `Map<spriteId, fighter>` collapsing to a single slot.
   private readonly pendingGroups = new Set<number>();
-  private readonly pendingSessions = new Set<string>();
 
   private nextMonsterFighterId = -1_000_000;
 
@@ -94,7 +95,8 @@ export class FightStartService {
     private readonly stats: StatsService,
     private readonly mapMonsters: MapMonsterService,
     private readonly lifeRegen: LifeRegenService,
-    private readonly lifecycle: FightLifecycleService
+    private readonly lifecycle: FightLifecycleService,
+    private readonly spectators: FightSpectatorService
   ) {}
 
   async startPvM(
@@ -110,12 +112,11 @@ export class FightStartService {
   ): Promise<Fight | null> {
     if (
       this.pendingGroups.has(group.groupId) ||
-      this.pendingSessions.has(sessionId)
+      !this.registry.reserveSessions([sessionId])
     ) {
       return null;
     }
     this.pendingGroups.add(group.groupId);
-    this.pendingSessions.add(sessionId);
     try {
       if (this.registry.isInFight(sessionId)) {
         this.logger.warn(`Player already in fight sessionId=${sessionId}`);
@@ -156,6 +157,9 @@ export class FightStartService {
       this.addMonsters(fight, group);
 
       await this.challenges.assignChallenges(fight);
+      if (this.presence.getByCharacter(player.characterId)?.sessionId !== sessionId) return null;
+      placeFightMarkers(fight, player.cellId, group.cellId);
+      fight.placementEndsAt = Date.now() + 45_000;
       this.registry.add(fight);
       fight.transition(new InitialiseState(() => this.onFightReady(fight)));
       fight.transition(new PlacementState());
@@ -164,81 +168,14 @@ export class FightStartService {
         fighter.ready = true;
       }
 
-      const groupSpriteId = String(group.groupId);
-
-      // Hide every roleplay sprite on the player's map before entering
-      // fight mode — the engaged group, every OTHER monster group still on
-      // the map, and every other player. Without this, those sprites stay
-      // rendered through the fight: the renderer reuses the world-actors
-      // layer for fighters (battlefield-scene.ts:setFightMode) and pulls
-      // their team from `SpriteMovementEntry.team`, which proto3 defaults
-      // to 0 when not set during roleplay. Result: every leftover sprite
-      // pops a player-team ground ring at its random spawn cell the moment
-      // combat starts, producing ghost "duplicate" mobs scattered across
-      // non-placement cells. Canonical 1.29 hides the world layer entirely
-      // during a fight; we approximate by REMOVE-ing the sprites server-
-      // side and re-ADDing them in `FightEndService.endFight`.
-      const hideEntries: SpriteMovementEntry[] = [
-        create(SpriteMovementEntrySchema, {
-          operation: 2, // REMOVE
-          spriteId: groupSpriteId,
-        }),
-      ];
-
-      for (const otherGroup of this.mapMonsters.groupsOnMap(group.mapId)) {
-        if (otherGroup.id !== group.groupId) {
-          hideEntries.push(
-            create(SpriteMovementEntrySchema, {
-              operation: 2, // REMOVE
-              spriteId: String(otherGroup.id),
-            })
-          );
-        }
-      }
-
-      for (const otherPlayer of this.presence.onMap(group.mapId)) {
-        if (otherPlayer.characterId !== player.characterId) {
-          hideEntries.push(
-            create(SpriteMovementEntrySchema, {
-              operation: 2, // REMOVE
-              spriteId: otherPlayer.characterId,
-            })
-          );
-        }
-      }
-
-      this.frames.broadcast(
-        [sessionId],
-        create(DofusMessageSchema, {
-          payload: {
-            case: "gameMovement",
-            value: create(GameMovementSchema, { entries: hideEntries }),
-          },
-        })
-      );
-
-      const monsterFighters = fight.teams[1].fighters();
-      emitJoinFrames(
-        this.frames,
-        sessionId,
-        fight,
-        playerFighter,
-        monsterFighters,
-        [player]
-      );
-      removeSpritesFromMap(
-        this.frames,
-        this.presence,
-        group.mapId,
-        String(Number(player.characterId)),
-        groupSpriteId
-      );
+      this.spectators.sendInitial(fight, sessionId, playerFighter);
+      this.registry.changed(fight);
 
       this.armPlacement(fight);
       return fight;
     } finally {
       this.pendingGroups.delete(group.groupId);
-      this.pendingSessions.delete(sessionId);
+      this.registry.releaseSessions([sessionId]);
     }
   }
 
@@ -258,15 +195,8 @@ export class FightStartService {
     places0: string,
     places1: string
   ): Promise<Fight | null> {
-    if (
-      this.registry.isInFight(sessionIdA) ||
-      this.registry.isInFight(sessionIdB)
-    ) {
-      this.logger.warn(
-        `One player already in fight sessionIdA=${sessionIdA} sessionIdB=${sessionIdB}`
-      );
-      return null;
-    }
+    if (!this.registry.reserveSessions([sessionIdA, sessionIdB])) return null;
+    try {
 
     const fightMap = createFightMap(mapWidth, mapHeight, places0, places1);
     if (!fightMap) {
@@ -284,7 +214,9 @@ export class FightStartService {
     const fighterA = await this.loadPlayerFighter(sessionIdA, playerA);
     const fighterB = await this.loadPlayerFighter(sessionIdB, playerB);
 
-    if (!fighterA || !fighterB) {
+    if (!fighterA || !fighterB ||
+      this.presence.getByCharacter(playerA.characterId)?.sessionId !== sessionIdA ||
+      this.presence.getByCharacter(playerB.characterId)?.sessionId !== sessionIdB) {
       this.logger.warn(`Challenge: player data not found`);
       return null;
     }
@@ -296,27 +228,15 @@ export class FightStartService {
     fight.transition(new InitialiseState());
     fight.transition(new PlacementState());
 
-    emitJoinFrames(
-      this.frames,
-      sessionIdA,
-      fight,
-      fighterA,
-      [fighterB],
-      [playerA, playerB]
-    );
-    emitJoinFrames(
-      this.frames,
-      sessionIdB,
-      fight,
-      fighterB,
-      [fighterA],
-      [playerA, playerB]
-    );
-
+    placeFightMarkers(fight, playerA.cellId, playerB.cellId);
+    this.spectators.sendInitial(fight, sessionIdA, fighterA);
+    this.spectators.sendInitial(fight, sessionIdB, fighterB);
+    this.registry.changed(fight);
     return fight;
+    } finally { this.registry.releaseSessions([sessionIdA, sessionIdB]); }
   }
 
-  private async loadPlayerFighter(
+  async loadPlayerFighter(
     sessionId: string,
     player: PlayerPresenceEntry
   ): Promise<Fighter | null> {

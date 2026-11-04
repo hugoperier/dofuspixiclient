@@ -53,7 +53,9 @@ export class FightLifecycleService {
 
     // Transition to Active state
     const active = new ActiveState();
+    fight.combatStartedAt = Date.now();
     fight.transition(active);
+    this.fightRegistry.changed(fight);
 
     // Start the turn loop runner with monster AI
     const frameSink = this.createFrameSink(fight);

@@ -98,6 +98,42 @@ test("a cast names the spell the server resolved and emphasises both names", () 
   ]);
 });
 
+test("a critical hit closes its cast line instead of taking one of its own", () => {
+  action({ case: "criticalHit", value: { spellId: 3 } });
+  action({
+    case: "spellLaunch",
+    value: { spellId: 3, cellId: 600, name: "Attaque Naturelle" },
+  });
+
+  expect(lines()).toEqual(["Mikos lance Attaque Naturelle. Coup critique !"]);
+});
+
+test("a critical hit only qualifies the cast it preceded", () => {
+  action({ case: "criticalHit", value: { spellId: 3 } });
+  action({
+    case: "spellLaunch",
+    value: { spellId: 3, cellId: 600, name: "Attaque Naturelle" },
+  });
+  action({
+    case: "spellLaunch",
+    value: { spellId: 3, cellId: 600, name: "Attaque Naturelle" },
+  });
+
+  expect(lines()).toEqual([
+    "Mikos lance Attaque Naturelle. Coup critique !",
+    "Mikos lance Attaque Naturelle.",
+  ]);
+});
+
+test("a fully absorbed hit is still logged", () => {
+  action(
+    { case: "damage", value: { spriteId: "1", amount: 0, element: 1 } },
+    "2"
+  );
+
+  expect(lines()).toEqual(["Mikos perd 0 PV."]);
+});
+
 test("a spell the server could not name falls back to its id", () => {
   action({ case: "spellLaunch", value: { spellId: 202, cellId: 600 } });
 

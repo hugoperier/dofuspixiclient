@@ -32,6 +32,8 @@ export class Fight {
   spectators: Spectator[] = [];
   modules: ModuleList;
   readonly startedAt: number;
+  combatStartedAt = 0;
+  placementEndsAt = 0;
   readonly spellUsage = new SpellUsageTracker();
   ending = false;
   turnEpoch = 0;
@@ -72,41 +74,46 @@ export class Fight {
   // wire carries a single char per option; `enabled` always means "the
   // button is lit", i.e. help requested / fight locked / party only /
   // spectators blocked.
-  lockedTeam = false;
+  get lockedTeam(): boolean { return this.teams[0].locked; }
+  set lockedTeam(value: boolean) { this.teams[0].locked = value; }
   lockedSpectators = false;
-  partyOnly = false;
-  helpAllowed = false;
+  get partyOnly(): boolean { return this.teams[0].partyOnly; }
+  set partyOnly(value: boolean) { this.teams[0].partyOnly = value; }
+  get helpAllowed(): boolean { return this.teams[0].needHelp; }
+  set helpAllowed(value: boolean) { this.teams[0].needHelp = value; }
 
   /** True when `fighterId` leads either team. */
   isLeader(fighterId: number): boolean {
     return this.teams.some((t) => t.leaderId === fighterId);
   }
 
-  optionEnabled(code: FightOptionCode): boolean {
+  optionEnabled(code: FightOptionCode, side = 0): boolean {
+    const team = this.teams[side === 1 ? 1 : 0];
     switch (code) {
       case FightOptionCode.NeedHelp:
-        return this.helpAllowed;
+        return team.needHelp;
       case FightOptionCode.BlockJoin:
-        return this.lockedTeam;
+        return team.locked;
       case FightOptionCode.PartyOnly:
-        return this.partyOnly;
+        return team.partyOnly;
       case FightOptionCode.BlockSpectators:
         return this.lockedSpectators;
     }
   }
 
   /** Flip one option and return its new value. */
-  toggleOption(code: FightOptionCode): boolean {
-    const next = !this.optionEnabled(code);
+  toggleOption(code: FightOptionCode, side = 0): boolean {
+    const next = !this.optionEnabled(code, side);
+    const team = this.teams[side === 1 ? 1 : 0];
     switch (code) {
       case FightOptionCode.NeedHelp:
-        this.helpAllowed = next;
+        team.needHelp = next;
         break;
       case FightOptionCode.BlockJoin:
-        this.lockedTeam = next;
+        team.locked = next;
         break;
       case FightOptionCode.PartyOnly:
-        this.partyOnly = next;
+        team.partyOnly = next;
         break;
       case FightOptionCode.BlockSpectators:
         this.lockedSpectators = next;

@@ -438,9 +438,9 @@ export class FightFrameEmitter implements Emitter {
     );
   }
 
-  emitBuff(fight: Fight, casterId: number, targetId: number, buff: Buff): void {
+  emitBuff(fight: Fight, casterId: number, targetId: number, buff: Buff, targets = this.targets(fight)): void {
     this.frames.broadcast(
-      this.targets(fight),
+      targets,
       create(DofusMessageSchema, {
         payload: {
           case: "gameAction",

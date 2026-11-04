@@ -713,6 +713,7 @@ message GameTurnStart {
   int32  time_ms = 2;          // Turn time in milliseconds
   int32  table_turn_num = 3;   // Turn number in sequence
   bool   passive_turn = 4;     // Spells don't refresh
+  int32 duration_ms = 5;       // Full duration; time_ms is the remaining time on late entry
 }
 
 // GTF - Turn finish
@@ -773,6 +774,8 @@ message GameFightOption {
   bool   enabled = 1;   // true = '+', false = '-'
   string option = 2;    // single-char option code
   int32  leader_id = 3; // fight leader sprite id
+  int32 fight_id = 4;
+  int32 team_side = 5;
 }
 
 // GO - Game over
@@ -847,6 +850,20 @@ message GameChallenge {
   string    challenger_sprite = 6; // encoded appearance string
   string    challenged_sprite = 7;
   int32     challenge_flag = 8;    // arg1
+  int32 fight_id = 9;
+  int32 fight_type = 10;
+  repeated FightMapTeam teams = 11;
+}
+
+// Typed map markers. team_id identifies the camp leader, not its side.
+message FightMapTeam {
+  int32 team_id = 1;
+  int32 side = 2;
+  bool is_monster = 3;
+  int32 cell_id = 4;
+  bool locked = 5;
+  bool need_help = 6;
+  int32 capacity = 7;
 }
 
 // Gt - Team membership broadcast.
@@ -855,6 +872,7 @@ message GameChallenge {
 message GameTeam {
   int32 team_id = 1;
   repeated TeamMember members = 2;
+  int32 fight_id = 3;
 }
 
 message TeamMember {

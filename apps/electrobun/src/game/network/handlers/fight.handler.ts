@@ -1,9 +1,18 @@
+import { registerFightDirectory } from "./fight-directory.handler";
+import { mapFightsStore } from "@/game/stores/map-fights-store";
+import { GameCreateRequestSchema } from "@dofus/proto/game_pb";
+import { FightGetListRequestSchema, FightGetDetailsRequestSchema } from "@dofus/proto/misc_pb";
 import { create } from "@bufbuild/protobuf";
 
 import type { Connection } from "@/game/network/connection";
 import type { MessageHandler } from "@/game/network/message-handler";
 import type { CombatPresentation } from "@/game/scene/fight/combat-presentation";
-import { combatant, emphasis, fightLog } from "@/game/chat/fight-log";
+import {
+  castLineEnd,
+  combatant,
+  emphasis,
+  fightLog,
+} from "@/game/chat/fight-log";
 import {
   formatEffect,
   loadEffectsLang,
@@ -110,6 +119,7 @@ export interface ZonePayload {
 }
 
 export interface FightEventHandlers {
+  onFightLeft?: () => void;
   onFightCreated?: (payload: GameCreate) => void;
   onFightJoined?: (payload: GameJoin) => void;
   onPositionStart?: (payload: GamePositionStart) => void;
@@ -186,6 +196,13 @@ export class FightHandler {
     private readonly getMySpriteId: () => string | null = () => null
   ) {
     this.registerHandlers(messageHandler);
+    this.unsubscribers.push(...registerFightDirectory(messageHandler, this.connection));
+    this.unsubscribers.push(messageHandler.on("gameLeave", () => {
+      this.cancelPresentation();
+      fightActor.send({ type: "LEAVE" });
+      this.handlers.onFightLeft?.();
+      this.returnToMap();
+    }));
     // The combat log words buffs from the effects bundle, and the first
     // one lands within a turn of the first cast. Warming it here — the
     // call is idempotent and shares its promise — costs one fetch per
@@ -354,6 +371,7 @@ export class FightHandler {
 
     this.unsubscribers.push(
       mh.on("gameEnd", (payload) => {
+        const spectator = fightActor.getSnapshot().context.isSpectator;
         const generation = ++this.generation;
         this.criticalCasts.clear();
         fightActor.send({ type: "FINISHING" });
@@ -361,6 +379,7 @@ export class FightHandler {
         Promise.resolve(this.handlers.onFightEnd?.(payload)).finally(() => {
           if (generation === this.generation) {
             fightActor.send({ type: "FIGHT_END", payload });
+            if (spectator) this.returnToMap();
           }
         });
       })
@@ -487,6 +506,9 @@ export class FightHandler {
     // who receives them, so the client just records what it is told.
     this.unsubscribers.push(
       mh.on("gameFightOption", (payload) => {
+        if (payload.fightId && payload.fightId !== this.fightId) return;
+        const own = fightActor.getSnapshot().context.fighters.get(this.getMySpriteId() ?? "");
+        if (payload.option !== "A" && own && payload.teamSide !== own.team) return;
         applyFightOption(payload.option, payload.enabled, payload.leaderId);
       })
     );
@@ -608,16 +630,17 @@ export class FightHandler {
           data.value.name ||
           spellsStore.getSnapshot().byId.get(data.value.spellId)?.name ||
           `le sort ${data.value.spellId}`;
+        const critical =
+          this.criticalCasts.get(action.spriteId) === data.value.spellId;
+        this.criticalCasts.delete(action.spriteId);
         fightLog(
           combatant(this.fighterName(action.spriteId)),
           " lance ",
           emphasis(spellName),
-          "."
+          castLineEnd(critical)
         );
         const cast = spellLaunchToPayload(action, data.value);
-        cast.critical =
-          this.criticalCasts.get(action.spriteId) === data.value.spellId;
-        this.criticalCasts.delete(action.spriteId);
+        cast.critical = critical;
         this.handlers.onSpellCast?.(cast);
         break;
       }
@@ -634,17 +657,21 @@ export class FightHandler {
         const weapon = inventoryStore
           .getSnapshot()
           .templates.get(data.value.weaponTemplateId)?.name;
+        const critical =
+          this.criticalCasts.get(action.spriteId) === CLOSE_COMBAT_SPELL_ID;
+        this.criticalCasts.delete(action.spriteId);
         if (weapon) {
           fightLog(
             combatant(this.fighterName(action.spriteId)),
             " frappe avec ",
             emphasis(weapon),
-            "."
+            castLineEnd(critical)
           );
         } else {
           fightLog(
             combatant(this.fighterName(action.spriteId)),
-            " frappe au corps à corps."
+            " frappe au corps à corps",
+            castLineEnd(critical)
           );
         }
         const casterId = Number(action.spriteId) || 0;
@@ -654,20 +681,17 @@ export class FightHandler {
           visualGfxId: 0,
           spellLevel: 1,
           targetCellId: data.value.targetCell,
-          critical:
-            this.criticalCasts.get(action.spriteId) === CLOSE_COMBAT_SPELL_ID,
+          critical,
           animation: data.value.animation || "anim1",
         });
-        this.criticalCasts.delete(action.spriteId);
         break;
       }
+      // The server sends GA;301 just before the launch it qualifies, so
+      // the line is written by `spellLaunch` / `closeCombat`, on the
+      // same row as the cast rather than one of its own.
       case "criticalHit":
         this.criticalCasts.set(action.spriteId, data.value.spellId);
         this.handlers.onCriticalHit?.();
-        fightLog(
-          combatant(this.fighterName(action.spriteId)),
-          " : coup critique !"
-        );
         break;
       case "criticalMiss":
         this.criticalCasts.delete(action.spriteId);
@@ -1102,6 +1126,24 @@ export class FightHandler {
   }
 
   /** Forfeit the fight. */
+  openFightBrowser(): void {
+    mapFightsStore.setState({ open: true });
+    this.connection.send(encodeClient("fightGetList", create(FightGetListRequestSchema)));
+  }
+  fightDetails(fightId: number): void {
+    mapFightsStore.setState({ selectedId: fightId, details: null });
+    this.connection.send(encodeClient("fightGetDetails", create(FightGetDetailsRequestSchema, { fightId })));
+  }
+  joinFight(fightId: number, teamId?: number): void {
+    this.connection.send(encodeClient("gameAction", create(GameActionRequestSchema, {
+      actionType: teamId === undefined ? 976 : 903,
+      params: teamId === undefined ? String(fightId) : `${fightId};${teamId}`,
+    })));
+  }
+  private returnToMap(): void {
+    this.connection.send(encodeClient("gameCreate", create(GameCreateRequestSchema, { type: 1 })));
+  }
+
   forfeit(): void {
     this.connection.send(
       encodeClient("gameLeave", create(GameLeaveRequestSchema, {}))

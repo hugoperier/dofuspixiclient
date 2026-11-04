@@ -1,3 +1,4 @@
+import { FightSpectatorService } from "@modules/fight/engine/fight.spectator.service";
 import type { HandlerContext } from "@shared/gateway-adapter/ws-router";
 import {
   type GameLeaveRequest,
@@ -12,7 +13,8 @@ import { MessageHandler } from "@shared/gateway-adapter/message-handler.decorato
 export class FightLeaveHandler {
   constructor(
     private readonly fights: FightRegistryService,
-    private readonly actions: FightActionsService
+    private readonly actions: FightActionsService,
+    private readonly spectators: FightSpectatorService
   ) {}
 
   @MessageHandler(GameLeaveRequestSchema)
@@ -24,6 +26,9 @@ export class FightLeaveHandler {
     const fighter = fight
       ?.fighters()
       .find((entry) => entry.sessionId === ctx.sessionId);
+    if (fight && !fighter) {
+      await fight.runAction(() => this.spectators.leave(fight, ctx.sessionId));
+    }
     if (fight && fighter) {
       await this.actions.abandon(fight, fighter);
     }

@@ -1,3 +1,4 @@
+import { canPerceive } from "@modules/fight/engine/fight.visibility";
 import type { Fight } from "@modules/fight/core/fight.entity";
 import type { Fighter } from "@modules/fight/core/fight.fighter";
 import type { PlayerPresenceEntry } from "@modules/player-presence/player-presence.service";
@@ -11,6 +12,7 @@ import {
 } from "@dofus/proto/common_pb";
 import {
   GameCreateSchema,
+  GameReadySchema,
   GameFightOptionSchema,
   GameJoinSchema,
   GameMovementSchema,
@@ -152,8 +154,8 @@ export function emitJoinFrames(
   frames: GatewayFrameService,
   sessionId: string,
   fight: Fight,
-  playerFighter: Fighter,
-  opponents: Fighter[],
+  playerFighter: Fighter | undefined,
+  _opponents: Fighter[],
   appearances: PlayerPresenceEntry[] = []
 ): void {
   frames.broadcast(
@@ -175,11 +177,11 @@ export function emitJoinFrames(
       payload: {
         case: "gameJoin",
         value: create(GameJoinSchema, {
-          state: 2,
+          state: playerFighter ? 2 : 3,
           hasCancel: false,
           hasChallenge: false,
-          isSpectator: false,
-          timerMs: 45000,
+          isSpectator: !playerFighter,
+          timerMs: playerFighter && fight.placementEndsAt ? Math.max(0, fight.placementEndsAt - Date.now()) : 0,
           fightType: fight.type,
           fightId: fight.id,
         }),
@@ -187,7 +189,7 @@ export function emitJoinFrames(
     })
   );
 
-  frames.broadcast(
+  if (playerFighter) frames.broadcast(
     [sessionId],
     create(DofusMessageSchema, {
       payload: {
@@ -211,48 +213,18 @@ export function emitJoinFrames(
         payload: {
           case: "gameFightOption",
           value: create(GameFightOptionSchema, {
-            enabled: fight.optionEnabled(code),
+            enabled: fight.optionEnabled(code, playerFighter?.team?.side),
             option: code,
-            leaderId: playerFighter.team?.leaderId ?? 0,
+            leaderId: playerFighter?.team?.leaderId ?? 0,
+            fightId: fight.id,
+            teamSide: playerFighter?.team?.side ?? 0,
           }),
         },
       })
     );
   }
 
-  const allFighters = [playerFighter, ...opponents];
-  const entries = allFighters.map((m) => {
-    const appearance = appearances.find(
-      (player) => player.characterId === String(m.id)
-    );
-    return create(SpriteMovementEntrySchema, {
-      accessories: appearance
-        ? toSpriteEntry(appearance, SpriteMovementEntry_Operation.ADD)
-            .accessories
-        : [],
-      sex: appearance?.sex ?? 0,
-      operation: 0,
-      spriteType:
-        m.kind === FighterKind.Monster
-          ? SpriteType.MONSTER
-          : SpriteType.CHARACTER,
-      spriteId: String(m.id),
-      cellId: m.cell,
-      direction: m.direction,
-      gfxId:
-        m.kind === FighterKind.Monster ? m.monsterGfx : (m.player?.gfx ?? 0),
-      scaleX: 100,
-      scaleY: 100,
-      name: m.name,
-      team: m.team?.side ?? 0,
-      lp: m.lp,
-      lpMax: m.lpMax,
-      ap: m.ap,
-      mp: m.mp,
-      level: m.level,
-      colors: fighterColors(m),
-    });
-  });
+  const entries = fight.fighters().map((fighter) => fighterEntry(fighter, appearances, playerFighter));
 
   frames.broadcast(
     [sessionId],
@@ -263,6 +235,10 @@ export function emitJoinFrames(
       },
     })
   );
+  for (const fighter of fight.fighters()) {
+    frames.broadcast([sessionId], create(DofusMessageSchema, { payload: { case: "gameReady", value: create(GameReadySchema, { spriteId: String(fighter.id), isReady: fighter.ready }) } }));
+  }
+
 }
 
 export function removeSpritesFromMap(
@@ -302,4 +278,37 @@ export function removeSpritesFromMap(
       },
     })
   );
+}
+
+export function fighterEntry(m: Fighter, appearances: PlayerPresenceEntry[] = [], viewer?: Fighter) {
+    const appearance = appearances.find(
+      (player) => player.characterId === String(m.id)
+    );
+    return create(SpriteMovementEntrySchema, {
+      accessories: appearance
+        ? toSpriteEntry(appearance, SpriteMovementEntry_Operation.ADD)
+            .accessories
+        : [],
+      sex: appearance?.sex ?? 0,
+      operation: SpriteMovementEntry_Operation.ADD,
+      spriteType:
+        m.player ? SpriteType.CHARACTER : SpriteType.MONSTER,
+      spriteId: String(m.id),
+      cellId: canPerceive(m, viewer) && !m.dead ? m.cell : -1,
+      direction: m.direction,
+      gfxId:
+        m.appearanceGfx ?? m.player?.gfx ?? m.monsterGfx,
+      scaleX: 100,
+      scaleY: 100,
+      name: m.name,
+      team: m.team?.side ?? 0,
+      lp: m.lp,
+      lpMax: m.lpMax,
+      ap: m.ap,
+      mp: m.mp,
+      level: m.level,
+      colors: fighterColors(m),
+      isSummoned: m.isInvocation(),
+      summonerId: m.invocatorId ? String(m.invocatorId) : "",
+    });
 }

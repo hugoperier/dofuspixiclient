@@ -63,13 +63,14 @@ beforeEach(() => {
       sent.push({ targets, message }),
   } as unknown as GatewayFrameService;
   const fights = {
+    changed: () => {},
     getBySession: (sessionId: string) =>
       fight.fighters().some((f) => f.sessionId === sessionId)
         ? fight
         : undefined,
   } as unknown as FightRegistryService;
 
-  handler = new FightOptionsHandler(frames, fights);
+  handler = new FightOptionsHandler(frames, fights, { expel: () => {} } as never);
 });
 
 const ctx = (sessionId: string): HandlerContext => ({ sessionId });

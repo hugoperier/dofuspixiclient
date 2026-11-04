@@ -19,6 +19,11 @@ export function emphasis(text: string): ChatSegment {
   return { text, bold: true };
 }
 
+/** How a cast or a swing line closes — with the critical hit, when it was one. */
+export function castLineEnd(critical: boolean): string {
+  return critical ? ". Coup critique !" : ".";
+}
+
 export function fightLog(...parts: (string | ChatSegment)[]): void {
   const segments = parts.map((part) =>
     typeof part === "string" ? { text: part } : part

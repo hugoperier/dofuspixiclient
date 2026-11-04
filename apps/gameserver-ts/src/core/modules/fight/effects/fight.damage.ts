@@ -198,11 +198,25 @@ export function applyDamageToTarget(
   element: number
 ): number {
   const { target, caster, fight, emitter } = scope;
-  if (!target || target.dead || damage <= 0) {
+  if (!target || target.dead) {
     return 0;
   }
 
   const cause = scope.cause ?? "direct";
+  // A hit that lands on a fighter and is fully absorbed is still reported:
+  // 1.29 sends GA;100 with 0 and the client prints "perd 0 PDV"
+  // (GameActions.as case 100 logs before its `!= 0` LP-update gate).
+  // A life cost, a reflection or a push collision has nothing to report.
+  const reportAbsorbed = (): number => {
+    if (cause !== "life-cost" && cause !== "reflection" && cause !== "push") {
+      emitter.emitDamage(fight, caster.id, target.id, 0, element);
+    }
+    return 0;
+  };
+  if (damage <= 0) {
+    return reportAbsorbed();
+  }
+
   const context: DamageContext = {
     attacker: caster,
     defender: target,
@@ -255,7 +269,7 @@ export function applyDamageToTarget(
   }
   damage = Math.min(Math.max(0, Math.floor(context.amount)), target.lp);
   if (damage <= 0) {
-    return 0;
+    return reportAbsorbed();
   }
   context.amount = damage;
   if (cause !== "life-cost") {

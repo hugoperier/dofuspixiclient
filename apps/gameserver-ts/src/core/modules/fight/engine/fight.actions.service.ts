@@ -1,3 +1,4 @@
+import { fightTurnEntries } from "./fight.snapshot";
 import type { Fight } from "@modules/fight/core/fight.entity";
 import type { Fighter } from "@modules/fight/core/fight.fighter";
 import type { Session } from "@shared/gateway-adapter/session-registry";
@@ -374,59 +375,7 @@ export class FightActionsService {
           payload: {
             case: "gameTurnMiddle",
             value: create(GameTurnMiddleSchema, {
-              entries: fight.fighters().map((fighter) =>
-                create(TurnMiddleEntrySchema, {
-                  spriteId: String(fighter.id),
-                  isDead: fighter.dead,
-                  cellNum: canPerceive(fighter, viewer) ? fighter.cell : -1,
-                  invisible: fighter.invisible,
-                  hidden: !canPerceive(fighter, viewer),
-                  carryingId:
-                    fighter.carryingId === null
-                      ? ""
-                      : String(fighter.carryingId),
-                  carriedById:
-                    fighter.carriedById === null
-                      ? ""
-                      : String(fighter.carriedById),
-                  appearanceGfx:
-                    fighter.appearanceGfx ??
-                    fighter.player?.gfx ??
-                    fighter.monsterGfx,
-                  maxSummons: Math.max(
-                    0,
-                    1 + fighter.stats.get(Characteristic.MaxSummons)
-                  ),
-                  staticFighter: fighter.kind === FighterKind.Static,
-                  resurrectable:
-                    fighter.dead &&
-                    !fighter.hasLeftFight &&
-                    fighter.revivedById === null &&
-                    (!fighter.isInvocation() ||
-                      fight
-                        .fighters()
-                        .some(
-                          (owner) =>
-                            owner.id === fighter.invocatorId && !owner.dead
-                        )),
-                  lp: fighter.lp,
-                  lpMax: fighter.lpMax,
-                  ap: fighter.ap,
-                  mp: fighter.mp,
-                  apMax: Math.max(
-                    0,
-                    fighter.stats.get(Characteristic.ActionPoints)
-                  ),
-                  mpMax: Math.max(
-                    0,
-                    fighter.stats.get(Characteristic.MovementPoints)
-                  ),
-                  rangeBonus: fighter.stats.get(Characteristic.Range),
-                  states: [...fighter.states.snapshot().keys()].filter(
-                    (id) => id >= 0
-                  ),
-                })
-              ),
+              entries: fightTurnEntries(fight, viewer),
             }),
           },
         })

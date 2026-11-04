@@ -1,3 +1,4 @@
+import { FightSpectatorService } from "@modules/fight/engine/fight.spectator.service";
 import type { Fight } from "@modules/fight/core/fight.entity";
 import type { Fighter } from "@modules/fight/core/fight.fighter";
 import type { HandlerContext } from "@shared/gateway-adapter/ws-router";
@@ -37,7 +38,8 @@ import { MessageHandler } from "@shared/gateway-adapter/message-handler.decorato
 export class FightOptionsHandler {
   constructor(
     private readonly frames: GatewayFrameService,
-    private readonly fights: FightRegistryService
+    private readonly fights: FightRegistryService,
+    private readonly spectators: FightSpectatorService
   ) {}
 
   @MessageHandler(FightNeedHelpRequestSchema)
@@ -55,7 +57,7 @@ export class FightOptionsHandler {
     ctx: HandlerContext,
     _msg: FightBlockJoinExceptPartyRequest
   ): void {
-    this.toggle(ctx, FightOptionCode.PartyOnly);
+    // Unavailable until party membership is implemented.
   }
 
   @MessageHandler(FightBlockSpectatorsRequestSchema)
@@ -117,8 +119,10 @@ export class FightOptionsHandler {
       return;
     }
 
-    const enabled = fight.toggleOption(code);
+    const enabled = fight.toggleOption(code, fighter.team?.side);
+    if (code === FightOptionCode.BlockSpectators && enabled) this.spectators.expel(fight);
     this.broadcastOption(fight, fighter.id, code, enabled);
+    this.fights.changed(fight);
   }
 
   private broadcastOption(
@@ -136,6 +140,8 @@ export class FightOptionsHandler {
             enabled,
             option: code,
             leaderId,
+            fightId: fight.id,
+            teamSide: fight.teams.find((t) => t.leaderId === leaderId)?.side ?? 0,
           }),
         },
       })
@@ -146,7 +152,7 @@ export class FightOptionsHandler {
     ctx: HandlerContext
   ): { fight: Fight; fighter: Fighter } | null {
     const fight = this.fights.getBySession(ctx.sessionId);
-    if (!fight) {
+    if (!fight || fight.ending) {
       return null;
     }
     const fighter = fight

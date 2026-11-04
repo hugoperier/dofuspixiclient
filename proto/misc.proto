@@ -151,6 +151,8 @@ message FightListEntry {
   int64     timestamp = 2;
   FightTeamSummary team1 = 3;
   FightTeamSummary team2 = 4;
+  int32 phase = 5; // 2 = placement, 3 = active
+  bool spectators_allowed = 6;
 }
 
 message FightTeamSummary {

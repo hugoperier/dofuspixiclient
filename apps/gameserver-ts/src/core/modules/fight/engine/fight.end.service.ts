@@ -254,6 +254,8 @@ export class FightEndService {
 
     // Broadcast GE to all fight participants
     const targets = fight.allSessions();
+    // Spectators can reload exploration as soon as their result is presented.
+    for (const spectator of fight.spectators) this.registry.unregisterSession(spectator.sessionId);
     const dropTemplates = [
       ...new Set(
         results.flatMap((result) => result.itemsWon.map((item) => item.itemId))
@@ -321,6 +323,8 @@ export class FightEndService {
     fight.fightMap.objects.clear();
     // Clean spell usage tracker
     fight.spellUsage.clear();
+
+    this.registry.remove(fight.id);
 
     // Handle losers: respawn at savepoint
     for (const fighter of fight.fighters()) {
@@ -393,7 +397,7 @@ export class FightEndService {
       // empty until the player crosses an edge and re-enters.
       const worldEntries: SpriteMovementEntry[] = [];
 
-      for (const otherPlayer of this.presence.onMap(presence.mapId)) {
+      for (const otherPlayer of this.presence.worldOnMap(presence.mapId)) {
         if (otherPlayer.characterId !== presence.characterId) {
           worldEntries.push(
             toSpriteEntry(otherPlayer, SpriteMovementEntry_Operation.ADD)
@@ -418,8 +422,7 @@ export class FightEndService {
       }
     }
 
-    // Cleanup
-    this.registry.remove(fight.id);
+    // Registry membership was released before the result was announced.
     this.logger.log(
       `Fight ${fight.id} ended — winner: team ${winner}, duration: ${durationMs}ms, xp: ${totalXp}, kamas: ${totalKamas}`
     );

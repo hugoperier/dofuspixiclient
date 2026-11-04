@@ -564,6 +564,7 @@ export class GameClient {
     this.mapHandler.setCombatPresentation(this.presentation);
     this.fightHandler.setCombatPresentation(this.presentation);
     this.fightHandler.setHandlers({
+      onFightLeft: () => { void this.worldAudio.endFight(); },
       onFightStart: () => {
         void this.worldAudio.startFight();
       },
@@ -668,6 +669,11 @@ export class GameClient {
         // they'd pop the moment the damage frame lands on the wire,
         // which the user noticed as "damage view shows straight away
         // instead of waiting for the actual hit".
+        // A fully absorbed hit is only a chat line: GameActions.as case
+        // 100 gates `updateLP` (popup + recoil) on a non-zero amount.
+        if (payload.amount === 0) {
+          return;
+        }
         const targetId = Number(payload.spriteId) || 0;
         const apply = (): void => {
           const ui = this.battlefield?.getFightUI();
@@ -2518,6 +2524,10 @@ export class GameClient {
   }
 
   // ── Fight actions (called by FightOverlay) ───────────────────────
+
+  openFightBrowser(): void { this.fightHandler.openFightBrowser(); }
+  fightDetails(fightId: number): void { this.fightHandler.fightDetails(fightId); }
+  joinFight(fightId: number, teamId?: number): void { this.fightHandler.joinFight(fightId, teamId); }
 
   fightReady(): void {
     const fight = fightStore.getSnapshot();
