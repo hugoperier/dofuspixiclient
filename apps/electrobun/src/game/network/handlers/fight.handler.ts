@@ -647,7 +647,8 @@ export class FightHandler {
       // A weapon swing. The wire verb differs from a spell cast
       // (`GA;303`, per 1.29) but the presentation is the same one:
       // `visualGfxId` 0 means "no spell visual", so the caster plays
-      // the weapon's pose and the damage still gates behind it.
+      // the weapon's pose — `anim14` for a sword, `anim0` for a punch,
+      // whatever the server named — and the damage gates behind it.
       case "closeCombat": {
         // The weapon template is named only when the viewer happens to
         // own one too — `inventoryStore.templates` holds what the
@@ -682,7 +683,9 @@ export class FightHandler {
           spellLevel: 1,
           targetCellId: data.value.targetCell,
           critical,
-          animation: data.value.animation || "anim1",
+          // A server that predates the field gets the punch, never
+          // the cast pose a spell uses.
+          animation: data.value.animation || "anim0",
         });
         break;
       }

@@ -121,6 +121,41 @@ export function getAnimationBaseFromType(
 }
 
 /**
+ * What a caster plays for a cast or a swing, from the clip the server
+ * named.
+ *
+ * Every spell sends `anim1`, the cast pose. A close-combat swing sends
+ * the held weapon's own clip — `anim14` for a sword, `anim10` for a bow,
+ * `anim0` for a punch (`PlayableCharacter.ToolAnimation`). Anything but
+ * the cast pose is a swing: it runs the ATTACK lifecycle, on the clip
+ * the server named rather than ATTACK's default `anim0`.
+ */
+export function casterPose(animation: string): {
+  state: PlayerAnimationValue;
+  sprite: string;
+} {
+  const cast = getAnimationBaseFromType(PlayerAnimation.CAST);
+
+  if (!animation || animation === cast) {
+    return { state: PlayerAnimation.CAST, sprite: cast };
+  }
+
+  return { state: PlayerAnimation.ATTACK, sprite: animation };
+}
+
+/**
+ * The sprite clip a player's current state plays: the clip it was asked
+ * for (`spriteAnimation`), else the state's default. A sword swing that
+ * turns mid-way must stay on `anim14`, not fall back to ATTACK's `anim0`.
+ */
+export function spriteBaseOf(player: {
+  animation: PlayerAnimationValue;
+  spriteAnimation: string | null;
+}): string {
+  return player.spriteAnimation ?? getAnimationBaseFromType(player.animation);
+}
+
+/**
  * Build full animation name from base animation and direction.
  */
 export function buildAnimationName(

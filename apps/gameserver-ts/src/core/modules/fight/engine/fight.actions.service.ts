@@ -296,13 +296,11 @@ export class FightActionsService {
             value: create(ActionCloseCombatSchema, {
               targetCell,
               weaponTemplateId: resolution.closeCombat.weaponTemplateId,
-              // `anim0` is the melee pose in every player's atlas, and
-              // the only value 1.29 ever sends for a weapon swing — the
-              // client switches on exactly this string to play ATTACK
-              // instead of the CAST pose a fireball uses. It is not the
-              // item's own `animationId`: that one says how the sprite
-              // *holds* the weapon while walking around.
-              animation: "anim0",
+              // The weapon's own pose — `anim14` for a sword, `anim0`
+              // for a punch. 1.29 reads it off the caster's held item
+              // (`ToolAnimation`); a viewer here knows nobody's
+              // equipment but its own, so the server names it.
+              animation: resolution.closeCombat.animation,
             }),
           },
         });

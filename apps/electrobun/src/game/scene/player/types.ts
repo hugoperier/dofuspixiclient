@@ -111,6 +111,13 @@ export interface ActivePlayer {
   maxHp: number;
   gfxId: number;
   animation: PlayerAnimationValue;
+  /**
+   * The sprite clip `animation` plays when it is not that state's
+   * default — a sword swing is ATTACK on `anim14`, a harvest is HARVEST
+   * on the tool's clip. Null means the default. Kept on the player so a
+   * direction change mid-swing re-picks the same clip.
+   */
+  spriteAnimation: string | null;
   carrying?: boolean;
   currentAnimName: string;
   currentAnimData: CharacterAnimation | null;

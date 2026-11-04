@@ -47,6 +47,7 @@ export class SpellsRepository {
         "itemTemplates.description as description",
         "itemTemplates.effects as effects",
         "itemTemplates.weaponInfo as weaponInfo",
+        "itemTemplates.animationId as animationId",
       ])
       .where("items.ownerKind", "=", playerOwner(playerId).kind)
       .where("items.ownerId", "=", playerId)

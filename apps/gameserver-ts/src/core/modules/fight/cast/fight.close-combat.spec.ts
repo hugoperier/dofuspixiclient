@@ -2,7 +2,10 @@ import { describe, expect, it } from "bun:test";
 
 import type { SpellLevel } from "@modules/fight/cast/fight.spell.types";
 import type { WeaponInfo } from "@modules/inventory/weapon-info";
-import { buildCloseCombatSpell } from "@modules/fight/cast/fight.close-combat";
+import {
+  buildCloseCombatSpell,
+  closeCombatAnimation,
+} from "@modules/fight/cast/fight.close-combat";
 
 /** `spell_levels(0, 1)` as migration 0039 seeds it: the bare-handed punch. */
 const PUNCH = {
@@ -153,5 +156,29 @@ describe("buildCloseCombatSpell", () => {
     });
 
     expect(swing.apCost).toBe(1);
+  });
+});
+
+describe("closeCombatAnimation", () => {
+  // `PlayableCharacter.ToolAnimation`, fight branch: `"anim" + an`, and
+  // `anim0` when there is no `an` to read.
+  it("punches with anim0 bare-handed", () => {
+    expect(closeCombatAnimation(undefined)).toBe("anim0");
+  });
+
+  it("swings with the weapon's own pose", () => {
+    // Petite Epée de Boisaille (40) carries `an: 14`, the Petit Arc de
+    // Boisaille (88) `an: 10` in items.json.
+    expect(closeCombatAnimation(14)).toBe("anim14");
+    expect(closeCombatAnimation(10)).toBe("anim10");
+  });
+
+  it("falls back to the punch, not the harvest pose, when an is absent", () => {
+    expect(closeCombatAnimation(null)).toBe("anim0");
+  });
+
+  it("keeps an explicit an of 0", () => {
+    // Epée de Grüt (10622) names `an: 0` outright.
+    expect(closeCombatAnimation(0)).toBe("anim0");
   });
 });

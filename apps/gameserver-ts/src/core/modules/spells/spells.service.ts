@@ -16,6 +16,7 @@ import {
 import {
   buildCloseCombatSpell,
   CLOSE_COMBAT_SPELL_ID,
+  closeCombatAnimation,
 } from "@modules/fight/cast/fight.close-combat";
 import { parseItemEffects } from "@modules/inventory/item-effects";
 import { readWeaponInfo } from "@modules/inventory/weapon-info";
@@ -28,10 +29,9 @@ import type { SummonTemplate } from "./combat-catalog.types";
 /**
  * The close-combat attack plus the presentation the wire needs for it.
  *
- * `weaponTemplateId` is what the `GA;303` broadcast carries alongside
- * the cell: the client holds no equipment but its own, so it cannot
- * work out which weapon swung. The pose does not travel from here —
- * a swing is always `anim0`.
+ * `weaponTemplateId` and `animation` are what the `GA;303` broadcast
+ * carries alongside the cell: the client holds no equipment but its
+ * own, so it can neither name the weapon that swung nor pick its pose.
  */
 export interface CloseCombatAttack {
   spell: SpellLevel;
@@ -39,6 +39,8 @@ export interface CloseCombatAttack {
   weaponTemplateId: number;
   name: string;
   description: string;
+  /** The caster's pose — see {@link closeCombatAnimation}. */
+  animation: string;
 }
 
 import { prepareCombatData } from "./combat-dependencies";
@@ -82,6 +84,7 @@ export class SpellsService implements SpellPort {
       // is no weapon — "Coup de poing".
       name: lang?.name ?? "Coup de poing",
       description: lang?.description ?? "",
+      animation: closeCombatAnimation(undefined),
     };
 
     const weapon = await this.repo.findEquippedWeapon(playerId);
@@ -102,6 +105,7 @@ export class SpellsService implements SpellPort {
       weaponTemplateId: weapon.id,
       name: weapon.name,
       description: weapon.description,
+      animation: closeCombatAnimation(weapon.animationId),
     };
   }
 

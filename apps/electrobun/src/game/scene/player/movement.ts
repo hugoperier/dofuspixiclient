@@ -110,6 +110,7 @@ export class PlayerMovement {
       player.useRun = useRun;
       player.moving = true;
       player.animation = useRun ? PlayerAnimation.RUN : PlayerAnimation.WALK;
+      player.spriteAnimation = null;
       player.moveResolve = resolve;
       this.deps.pickingSystem()?.markDirty();
 
@@ -356,6 +357,7 @@ export class PlayerMovement {
     player.moveDistance = 0;
     player.moving = false;
     player.animation = PlayerAnimation.IDLE;
+    player.spriteAnimation = null;
     this.deps.pickingSystem()?.markDirty();
 
     this.deps.spriteController().switch(player, "static", player.direction);

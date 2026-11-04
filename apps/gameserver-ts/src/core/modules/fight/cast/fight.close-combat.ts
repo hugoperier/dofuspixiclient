@@ -11,6 +11,28 @@ import { AreaKind } from "@modules/fight/fight.types";
 export const CLOSE_COMBAT_SPELL_ID = 0;
 
 /**
+ * The pose a close-combat swing plays.
+ *
+ * `PlayableCharacter.ToolAnimation` in a fight: `"anim" + an`, where `an`
+ * is the held item's animation in the lang bundle — `anim14` for a
+ * sword, `anim10` for a bow, `anim15` for a hammer. Bare hands, and an
+ * item whose `an` is absent, punch with `anim0`. The `GA;303` handler
+ * hands this to `spriteLaunchVisualEffect` as the caster's animation,
+ * so it is what the swing looks like and not just how the sprite holds
+ * the weapon.
+ *
+ * @param animationId `item_templates.animation_id` — null when the
+ *   bundle names none, undefined for bare hands.
+ */
+export function closeCombatAnimation(
+  animationId: number | null | undefined
+): string {
+  return animationId === null || animationId === undefined
+    ? "anim0"
+    : `anim${animationId}`;
+}
+
+/**
  * What a weapon does when it lands.
  *
  * A weapon template's effect list mixes two unrelated things: what the

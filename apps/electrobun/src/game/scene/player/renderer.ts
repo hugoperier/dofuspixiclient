@@ -20,13 +20,13 @@ import { projectCellPosition } from "@/game/datacenter/map";
 import { PlayerActor } from "@/game/scene/player/actor";
 import {
   animCycleTriggerFrame,
-  getAnimationBaseFromType,
   getCellPositionWithSlope,
   initFrameState,
   initMovementState,
   isOneShotAnimation,
   PlayerAnimation,
   type PlayerAnimationValue,
+  spriteBaseOf,
 } from "@/game/scene/player/animation";
 import {
   applyFighterCircleTeam,
@@ -294,8 +294,7 @@ export class PlayerRenderer {
       player.direction = finalDir;
 
       if (player.sprite) {
-        const baseAnim = getAnimationBaseFromType(player.animation);
-        this.sprites.switch(player, baseAnim, finalDir);
+        this.sprites.switch(player, spriteBaseOf(player), finalDir);
       } else if (player.placeholderGraphics) {
         drawPlayerPlaceholder(
           player.placeholderGraphics,
@@ -399,6 +398,11 @@ export class PlayerRenderer {
        * cast/visual sequence on the same per-sprite Sequencer).
        */
       onLastFrame?: () => void;
+      /**
+       * The sprite clip to play instead of the state's default — a
+       * weapon swing is ATTACK on `anim<an>`, see `casterPose`.
+       */
+      sprite?: string;
     }
   ): void {
     const player = this.players.get(id);
@@ -408,6 +412,7 @@ export class PlayerRenderer {
     }
 
     player.animation = animation;
+    player.spriteAnimation = options?.sprite ?? null;
     // Any new explicit setAnimation call cancels a pending revert
     // — e.g. server-driven HIT mid-cast must not be overridden by the
     // queued cast→idle revert.
@@ -431,7 +436,6 @@ export class PlayerRenderer {
     if (options?.onLastFrame && isOneShotAnimation(animation)) {
       player.onAnimLastFrame = options.onLastFrame;
     }
-    const baseAnim = getAnimationBaseFromType(animation);
     // Snapshot the current animation data BEFORE delegating to
     // sprite-controller. The lifecycle gate fires hooks only after the
     // controller's `apply()` has swapped `currentAnimData` to a new
@@ -446,7 +450,7 @@ export class PlayerRenderer {
     ) {
       player.animDataAtRequest = player.currentAnimData;
     }
-    this.sprites.switch(player, baseAnim, player.direction);
+    this.sprites.switch(player, spriteBaseOf(player), player.direction);
   }
 
   /** Play an arbitrary tool animation in a loop, then restore idle exactly. */
@@ -467,6 +471,7 @@ export class PlayerRenderer {
     }
 
     player.animation = PlayerAnimation.HARVEST;
+    player.spriteAnimation = baseAnim;
     player.frameIndex = 0;
     player.frameTimer = 0;
     player.revertTo = null;
@@ -629,8 +634,7 @@ export class PlayerRenderer {
       : direction;
 
     player.direction = finalDir;
-    const baseAnim = getAnimationBaseFromType(player.animation);
-    this.sprites.switch(player, baseAnim, finalDir);
+    this.sprites.switch(player, spriteBaseOf(player), finalDir);
   }
 
   // ── Accessors ───────────────────────────────────────────────────────
@@ -1109,6 +1113,7 @@ export class PlayerRenderer {
       maxHp: data.maxHp,
       gfxId: parseGfxId(data.look),
       animation: PlayerAnimation.IDLE,
+      spriteAnimation: null,
       currentAnimName: "",
       currentAnimData: null,
       frameIndex: frame.frameIndex,

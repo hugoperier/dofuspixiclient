@@ -376,8 +376,13 @@ export interface ItemTemplatesTable {
   sellPrice: number;
   maxPerTarget: number;
   description: string;
-  /** `items.json`'s `an`; roleplay default is `anim3`. */
-  animationId: number;
+  /**
+   * `items.json`'s `an`, null when the bundle names none. The default
+   * depends on where the item is used — `anim3` for a harvest, `anim0`
+   * for a swing in a fight (`PlayableCharacter.ToolAnimation`) — so it
+   * is applied by the reader, not stored.
+   */
+  animationId: number | null;
   /**
    * Close-combat statistics for a weapon — `WeaponInfo`, or null for
    * everything that is not swung. `migrations/0065` seeds it from the

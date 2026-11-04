@@ -90,7 +90,7 @@ import {
   type PresentationScope,
 } from "@/game/scene/fight/combat-presentation";
 import { HighlightType } from "@/game/scene/overlays/cell-highlighter";
-import { PlayerAnimation } from "@/game/scene/player/animation";
+import { casterPose, PlayerAnimation } from "@/game/scene/player/animation";
 import { characterStore, closeNpcDialog } from "@/game/stores";
 import {
   appendErrorMessage,
@@ -2115,10 +2115,12 @@ export class GameClient {
     const hitFired = new Promise<void>((resolve) => {
       hitFiredResolve = resolve;
     });
+    // No visual 0, not even for a swing: retail ships no
+    // `clips/spells/0.swf`, and `GA;303` plays only the caster's
+    // `ToolAnimation`. The published `0.dofasset` is empty, so asking
+    // for it only wrote an error line in the chat on every first hit.
     const launchSpellVisual = (): Promise<void> | undefined =>
-      payload.targetCellId < 0 ||
-      casterCellId < 0 ||
-      (payload.visualGfxId <= 0 && payload.spellId !== 0)
+      payload.targetCellId < 0 || casterCellId < 0 || payload.visualGfxId <= 0
         ? undefined
         : fightUI?.playSpell({
             signal: scope.signal,
@@ -2207,19 +2209,17 @@ export class GameClient {
           resolve();
         }
       };
-      // Pick the cast pose based on the server-supplied animation
-      // hint. Canonical Dofus 1.29 sends "anim0" for close-combat
-      // (the melee punch frame in every player's atlas) and "anim1"
-      // for any ranged / magic spell. Without this gate the punch
-      // (spell 0) used to play the same cast pose as a fireball.
+      // Pick the pose from the server-supplied clip: "anim1" for any
+      // spell, the held weapon's own clip for a close-combat swing
+      // (`anim14` sword, `anim10` bow, `anim0` punch). Without this
+      // every weapon swung with the punch, and the punch with the same
+      // cast pose as a fireball.
       // Direction handling has moved to the server — fight-turn
       // handler emits an authoritative `directionChange` action
       // before every SpellLaunch (and before close combat).
-      const castPose =
-        payload.animation === "anim0"
-          ? PlayerAnimation.ATTACK
-          : PlayerAnimation.CAST;
-      actorRenderer?.setAnimation(payload.casterId, castPose, {
+      const pose = casterPose(payload.animation);
+      actorRenderer?.setAnimation(payload.casterId, pose.state, {
+        sprite: pose.sprite,
         revertTo: PlayerAnimation.IDLE,
         // Spell visual launches at applyEnd — the canonical hook
         // (`GAC.applyEnd → sequencer.onActionEnd`).

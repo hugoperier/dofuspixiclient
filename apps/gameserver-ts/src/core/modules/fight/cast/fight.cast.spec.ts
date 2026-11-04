@@ -181,6 +181,7 @@ describe("close combat", () => {
         weaponTemplateId: 88,
         name: "Petit Arc de Boisaille",
         description: "",
+        animation: "anim10",
       });
 
     const resolution = await h.casts.resolve("player", "0;230");
@@ -188,6 +189,7 @@ describe("close combat", () => {
     expect(rankAsked).toBe(false);
     expect(resolution.spell.apCost).toBe(4);
     expect(resolution.closeCombat?.weaponTemplateId).toBe(88);
+    expect(resolution.closeCombat?.animation).toBe("anim10");
 
     h.casts.apply(resolution);
     expect(h.damage).toEqual([30]);
