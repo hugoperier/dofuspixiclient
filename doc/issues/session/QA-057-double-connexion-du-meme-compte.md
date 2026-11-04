@@ -9,7 +9,7 @@ session: 1
 opened: 2026-08-20
 closed:
 fixed_in: 114ef43db6
-related: [QA-046, QA-058]
+related: [QA-046]
 files:
   - apps/gameserver-ts/src/core/features/auth/login/login.handler.ts
   - apps/gameserver-ts/src/core/features/game/select-character/select-character.handler.ts

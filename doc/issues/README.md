@@ -91,27 +91,27 @@ causes racines et les notes de méthode, mais plus le détail par entrée.
 
 _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 
-**178 entrées**, dont **174 encore ouvertes**.
+**176 entrées**, dont **171 encore ouvertes**.
 
 ## Par gravité
 
 | Gravité | Restantes | Total |
 |---|---|---|
 | P0 — bloque la session (crash, impossible d'avancer) | 5 | 5 |
-| P1 — fonctionnalité cassée ou absente sur un flux principal | 76 | 76 |
+| P1 — fonctionnalité cassée ou absente sur un flux principal | 74 | 75 |
 | P2 — comportement divergent du 1.29 canonique, contournable | 65 | 65 |
-| P3 — finition, confort, cosmétique | 28 | 29 |
+| P3 — finition, confort, cosmétique | 27 | 28 |
 | Sans gravité — vérifications sans défaut | 0 | 3 |
 
 ## Par statut
 
 | Statut | Entrées |
 |---|---|
-| `open` — observé, non reproduit méthodiquement | 40 |
-| `confirmed` — reproduit, preuve au dossier | 17 |
-| `in-progress` — correctif engagé | 13 |
+| `open` — observé, non reproduit méthodiquement | 39 |
+| `confirmed` — reproduit, preuve au dossier | 16 |
+| `in-progress` — correctif engagé | 12 |
 | `fixed` — correctif livré, reste à revérifier manette en main | 104 |
-| `closed` — vérifié, clos | 3 |
+| `closed` — vérifié, clos | 4 |
 | `wontfix` — écarté, avec la raison en fiche | 1 |
 
 ## Par domaine
@@ -123,7 +123,7 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [`camera-zoom/`](camera-zoom/) | 3 | 3 |
 | [`chat/`](chat/) | 5 | 5 |
 | [`exchange/`](exchange/) | 23 | 23 |
-| [`fight/`](fight/) | 23 | 23 |
+| [`fight/`](fight/) | 20 | 21 |
 | [`hud-banner/`](hud-banner/) | 9 | 9 |
 | [`hud-panels/`](hud-panels/) | 19 | 20 |
 | [`input/`](input/) | 7 | 8 |
@@ -159,12 +159,11 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [QA-025](world-render/QA-025-aucune-animation-d-attente.md) | P1 | world-render | gap | confirmed | Les personnages n'ont aucune animation d'attente |
 | [QA-036](world-content/QA-036-personnage-possede-tous-les-sorts.md) | P1 | world-content | data | fixed | Le personnage possède les 2 091 sorts du jeu |
 | [QA-041](camera-zoom/QA-041-atlas-gpu-512mo-realloue-a-chaque-zoom.md) | P1 | camera-zoom | bug | confirmed | Un atlas GPU de 512 Mo est réalloué à chaque changement de zoom, et jamais utilisé |
-| [QA-043](fight/QA-043-mode-tactique-sans-declencheur.md) | P1 | fight | gap | confirmed | Le mode tactique n'a aucun déclencheur dans l'interface |
+| [QA-043](fight/QA-043-mode-tactique-sans-declencheur.md) | P1 | fight | gap | closed | ~~Le mode tactique n'a aucun déclencheur dans l'interface~~ |
 | [QA-046](session/QA-046-session-zombie-apres-redemarrage-core.md) | P1 | session | bug | fixed | Session zombie après un redémarrage du core : aucun retour utilisateur |
 | [QA-049](world-render/QA-049-aucun-retour-visuel-au-survol.md) | P1 | world-render | gap | confirmed | Aucun retour visuel au survol d'une cellule |
 | [QA-050](world-render/QA-050-objets-interactifs-non-cliquables.md) | P1 | world-render | gap | fixed | 194 objets interactifs chargés sur la map, aucun n'est cliquable |
 | [QA-057](session/QA-057-double-connexion-du-meme-compte.md) | P1 | session | bug | fixed | Un même compte pouvait ouvrir autant de fenêtres qu'il voulait |
-| [QA-058](fight/QA-058-combat-jamais-teste.md) | P1 | fight | test-gap | in-progress | Le combat est jouable mais non finalisé |
 | [QA-059](fight/QA-059-aucun-xp-ni-kamas-en-fin-de-combat.md) | P1 | fight | bug | in-progress | XP et kamas toujours nuls en fin de combat |
 | [QA-060](fight/QA-060-aucun-butin-d-objets-en-fin-de-combat.md) | P1 | fight | gap | in-progress | Aucun butin d'objets en fin de combat |
 | [QA-061](fight/QA-061-glyphes-ne-touchent-que-la-case-centrale.md) | P1 | fight | bug | in-progress | Les glyphes ne touchent que leur case centrale, la zone est ignorée |
@@ -314,7 +313,6 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [QA-031](worldmap/QA-031-barre-d-aide-recouvre-la-banniere.md) | P3 | worldmap | bug | fixed | La barre d'aide recouvre la bannière |
 | [QA-032](worldmap/QA-032-panneau-categories-masque-la-carte.md) | P3 | worldmap | bug | fixed | Le panneau « Categories » masque la carte et n'est ni déplaçable ni repliable |
 | [QA-042](world-render/QA-042-tuiles-non-re-rasterisees-au-zoom.md) | P3 | world-render | bug | open | Le rendu des tuiles n'est pas re-rastérisé net au zoom fort |
-| [QA-044](fight/QA-044-fond-hors-map-noir-en-mode-tactique.md) | P3 | fight | bug | open | Le fond hors-map reste noir en mode tactique |
 | [QA-053](hud-banner/QA-053-libelles-accessibilite-casses.md) | P3 | hud-banner | bug | open | Libellés d'accessibilité cassés sur les boutons de menu |
 | [QA-073](fight/QA-073-duree-de-glyphe-comptee-par-tour.md) | P3 | fight | bug | in-progress | La durée d'un glyphe est décomptée par tour et non par round |
 | [QA-075](fight/QA-075-sort-declencheur-charge-au-niveau-1.md) | P3 | fight | bug | in-progress | Le sort déclencheur d'un glyphe ou d'un piège est toujours chargé au niveau 1 |
