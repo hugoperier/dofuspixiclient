@@ -1,6 +1,11 @@
 import type { AdminCommandRequest } from "@dofus/proto/admin_pb";
 import { create } from "@bufbuild/protobuf";
-import { AreaKind, cellsInArea, isFightWalkable } from "@dofus/grid";
+import {
+  AreaKind,
+  cellsInArea,
+  cellToCoord,
+  isFightWalkable,
+} from "@dofus/grid";
 import { ExchangeType } from "@dofus/proto";
 import { AdminCommandSource } from "@dofus/proto/admin_pb";
 import { match } from "ts-pattern";
@@ -2703,7 +2708,7 @@ export class GameClient {
     }
     const fight = fightStore.getSnapshot();
     const mine = fight.fighters.get(fight.mySpriteId ?? "");
-    return pf.cellsInRange(
+    const cells = pf.cellsInRange(
       casterCellId,
       spell.rangeMin,
       Math.max(
@@ -2712,6 +2717,16 @@ export class GameClient {
       ),
       true
     );
+    if (!spell.lineOnly) {
+      return cells;
+    }
+    // 1.29 draws a line-only spell's underlay as a cross ("X"), not the
+    // full ring ("C") — `GameManager.drawSpellRange`, GameManager.as:393.
+    const origin = cellToCoord(casterCellId, pf.width);
+    return cells.filter((cell) => {
+      const c = cellToCoord(cell, pf.width);
+      return c.x === origin.x || c.y === origin.y;
+    });
   }
 
   private syncFightOccupiedCells(

@@ -272,6 +272,30 @@ test("a spell held ready follows the caster to the cell they move to", () => {
   expect(cast.context.targetingCells).not.toContain(260);
 });
 
+test("a line-only spell's range is the cross, not the whole ring", () => {
+  // From 200, 229 is two steps away but off both axes; 230 and 228
+  // sit on the two lines through the caster.
+  client.fightSelectSpell(1);
+  expect(spellCastActor.getSnapshot().context.targetingCells).toContain(229);
+  spellCastActor.send({ type: "DESELECT" });
+
+  applySpellList([
+    create(SpellDataSchema, {
+      spellId: 3,
+      level: 6,
+      apCost: 3,
+      rangeMin: 1,
+      rangeMax: 2,
+      lineOnly: true,
+    }),
+  ]);
+  client.fightSelectSpell(3);
+  const targeting = spellCastActor.getSnapshot().context.targetingCells;
+  expect(targeting).toContain(230);
+  expect(targeting).toContain(228);
+  expect(targeting).not.toContain(229);
+});
+
 test("a sprite-position frame moves the sprite, not just the fight store", async () => {
   const messages = Reflect.get(client, "messageHandler") as MessageHandler;
   // ACTION_SPRITE_POSITION (4) — what the server emits for every
