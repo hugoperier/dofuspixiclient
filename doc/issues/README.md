@@ -91,14 +91,14 @@ causes racines et les notes de méthode, mais plus le détail par entrée.
 
 _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 
-**177 entrées**, dont **173 encore ouvertes**.
+**178 entrées**, dont **174 encore ouvertes**.
 
 ## Par gravité
 
 | Gravité | Restantes | Total |
 |---|---|---|
 | P0 — bloque la session (crash, impossible d'avancer) | 5 | 5 |
-| P1 — fonctionnalité cassée ou absente sur un flux principal | 75 | 75 |
+| P1 — fonctionnalité cassée ou absente sur un flux principal | 76 | 76 |
 | P2 — comportement divergent du 1.29 canonique, contournable | 65 | 65 |
 | P3 — finition, confort, cosmétique | 28 | 29 |
 | Sans gravité — vérifications sans défaut | 0 | 3 |
@@ -110,7 +110,7 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | `open` — observé, non reproduit méthodiquement | 40 |
 | `confirmed` — reproduit, preuve au dossier | 17 |
 | `in-progress` — correctif engagé | 13 |
-| `fixed` — correctif livré, reste à revérifier manette en main | 103 |
+| `fixed` — correctif livré, reste à revérifier manette en main | 104 |
 | `closed` — vérifié, clos | 3 |
 | `wontfix` — écarté, avec la raison en fiche | 1 |
 
@@ -123,7 +123,7 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [`camera-zoom/`](camera-zoom/) | 3 | 3 |
 | [`chat/`](chat/) | 5 | 5 |
 | [`exchange/`](exchange/) | 23 | 23 |
-| [`fight/`](fight/) | 22 | 22 |
+| [`fight/`](fight/) | 23 | 23 |
 | [`hud-banner/`](hud-banner/) | 9 | 9 |
 | [`hud-panels/`](hud-panels/) | 19 | 20 |
 | [`input/`](input/) | 7 | 8 |
@@ -225,6 +225,7 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [QA-173](fight/QA-173-barre-de-sorts-inerte-au-clavier.md) | P1 | fight | gap | fixed | La barre de raccourcis ne bascule pas en combat et n'a aucune touche de combat |
 | [QA-174](fight/QA-174-corps-a-corps-absent.md) | P1 | fight | gap | fixed | Le corps-à-corps n'existe nulle part — ni slot, ni chemin serveur, ni stats d'arme |
 | [QA-175](input/QA-175-clic-sur-un-membre-de-groupe-sans-effet.md) | P1 | input | bug | fixed | Un clic sur un monstre autre que le leader marche jusqu'à lui sans lancer le combat |
+| [QA-178](fight/QA-178-ligne-de-vue-traverse-les-combattants-en-diagonale.md) | P1 | fight | bug | fixed | La ligne de vue passe à travers les combattants sur une diagonale non axiale |
 
 ## P2 — comportement divergent du 1.29 canonique, contournable
 

@@ -6,7 +6,9 @@ import {
   type FightMapDims,
   type FightMapLos,
   hasLineOfSight,
+  sightLineCoords,
 } from "./area.ts";
+import { cellToCoord } from "./cell.ts";
 
 const fmap: FightMapDims = { width: 15, height: 17 };
 const ORIGIN = 285;
@@ -26,9 +28,9 @@ describe("cellsInArea", () => {
   });
 
   it("Circle radius 0 = just origin (1 cell)", () => {
-    expect(setOf(cellsInArea(fmap, ORIGIN, ORIGIN, AreaKind.Circle, 0))).toEqual(
-      setOf([ORIGIN])
-    );
+    expect(
+      setOf(cellsInArea(fmap, ORIGIN, ORIGIN, AreaKind.Circle, 0))
+    ).toEqual(setOf([ORIGIN]));
   });
 
   it("Circle radius 1 covers 5 cells (diamond: origin + 4 cardinals)", () => {
@@ -143,6 +145,71 @@ describe("hasLineOfSight", () => {
 
   it("does NOT block when the only fighter is on the caster cell itself", () => {
     expect(hasLineOfSight(losMap([285]), 285, 285 + 30)).toBe(true);
+  });
+
+  // Cell at iso offset (dx, dy) from 285, which sits at (19, 0) on a
+  // 15-wide map: +1 x is +width, +1 y is +(width - 1).
+  const at = (dx: number, dy: number) => 285 + dx * 15 + dy * 14;
+
+  it("blocks on a fighter Bresenham's diagonal step used to skip (QA-178)", () => {
+    // The in-game report: two fighters stacked NE of the caster, the
+    // target 2 cells SE and 3 NE away. The segment from (0,0) to (2,-3)
+    // crosses (0,-1) before (1,-1); Bresenham jumped straight to (1,-1).
+    const target = at(2, -3);
+    expect(hasLineOfSight(losMap(), 285, target)).toBe(true);
+    expect(hasLineOfSight(losMap([at(0, -1), at(0, -2)]), 285, target)).toBe(
+      false
+    );
+    expect(hasLineOfSight(losMap([at(0, -1)]), 285, target)).toBe(false);
+    expect(hasLineOfSight(losMap([at(2, -2)]), 285, target)).toBe(false);
+  });
+
+  it("walks every cell the segment crosses, like retail getCellsIdBetween", () => {
+    const rel = sightLineCoords(15, 285, at(2, -3)).map((p) => [p.x - 19, p.y]);
+    expect(rel).toEqual([
+      [0, -1],
+      [1, -1],
+      [1, -2],
+      [2, -2],
+      [2, -3],
+    ]);
+  });
+
+  it("steps diagonally only through an exact grid corner", () => {
+    // (0,0) → (2,2) passes through the corners: only (1,1) lies between.
+    expect(hasLineOfSight(losMap([at(1, 0), at(0, 1)]), 285, at(2, 2))).toBe(
+      true
+    );
+    expect(hasLineOfSight(losMap([at(1, 1)]), 285, at(2, 2))).toBe(false);
+  });
+
+  it("is symmetric: A sees B exactly when B sees A", () => {
+    const blockers = [at(1, 0), at(-1, 2), at(2, -1), at(0, -2)];
+    const map = losMap(blockers);
+    const cells: number[] = [];
+    for (let dx = -4; dx <= 4; dx++) {
+      for (let dy = -4; dy <= 4; dy++) {
+        const c = at(dx, dy);
+        const back = cellToCoord(c, 15);
+        if (back.x === 19 + dx && back.y === dy && !blockers.includes(c)) {
+          cells.push(c);
+        }
+      }
+    }
+    expect(cells.length).toBeGreaterThan(40);
+    for (const a of cells) {
+      for (const b of cells) {
+        expect([a, b, hasLineOfSight(map, a, b)]).toEqual([
+          a,
+          b,
+          hasLineOfSight(map, b, a),
+        ]);
+      }
+    }
+  });
+
+  it("refuses a target cell that itself blocks sight (retail checkView)", () => {
+    expect(hasLineOfSight(losMap([], [at(2, 0)]), 285, at(2, 0))).toBe(false);
   });
 
   it("blocks when the line walks off the map", () => {
