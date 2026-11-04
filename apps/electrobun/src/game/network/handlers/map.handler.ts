@@ -1,5 +1,5 @@
 import { create } from "@bufbuild/protobuf";
-import { DofusPathfinding } from "@dofus/grid";
+import { DofusPathfinding, isFightWalkable } from "@dofus/grid";
 
 import type { AudioManager } from "@/game/audio/audio-manager";
 import type { CellData } from "@/game/datacenter/cell";
@@ -594,12 +594,22 @@ export class MapHandler {
     const walkableIds = mapData.cells
       .filter((c) => c.walkable)
       .map((c) => c.id);
+    // Fights use a narrower set: the `movement = 1` holes and doors are
+    // off limits to a fighter. The server builds its fight map with the
+    // same rule, so a path through one would only be refused.
+    const fightWalkableIds = mapData.cells
+      .filter(isFightWalkable)
+      .map((c) => c.id);
     this.pathfinding = new DofusPathfinding(
       mapData.width,
       mapData.height,
-      walkableIds
+      walkableIds,
+      fightWalkableIds
     );
-    log.debug(`Pathfinding built: ${walkableIds.length} walkable cells`);
+    log.debug(
+      `Pathfinding built: ${walkableIds.length} walkable cells, ` +
+        `${fightWalkableIds.length} in fight`
+    );
     return this.pathfinding;
   }
 

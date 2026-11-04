@@ -1,5 +1,6 @@
 import type { HandlerContext } from "@shared/gateway-adapter/ws-router";
 import { create } from "@bufbuild/protobuf";
+import { isFightWalkable } from "@dofus/grid";
 import {
   type GameActionAck,
   GameActionAckSchema,
@@ -193,7 +194,7 @@ export class MoveAckHandler {
     }
 
     const walkable = mapData.cells
-      .filter((cell) => cell.active && cell.movement > 1)
+      .filter(isFightWalkable)
       .map((cell) => cell.id);
 
     const fight = await this.fightStart.startPvM(

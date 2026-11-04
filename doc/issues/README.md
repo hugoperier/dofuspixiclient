@@ -91,7 +91,7 @@ causes racines et les notes de méthode, mais plus le détail par entrée.
 
 _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 
-**176 entrées**, dont **171 encore ouvertes**.
+**177 entrées**, dont **172 encore ouvertes**.
 
 ## Par gravité
 
@@ -99,7 +99,7 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 |---|---|---|
 | P0 — bloque la session (crash, impossible d'avancer) | 5 | 5 |
 | P1 — fonctionnalité cassée ou absente sur un flux principal | 74 | 75 |
-| P2 — comportement divergent du 1.29 canonique, contournable | 65 | 65 |
+| P2 — comportement divergent du 1.29 canonique, contournable | 66 | 66 |
 | P3 — finition, confort, cosmétique | 27 | 28 |
 | Sans gravité — vérifications sans défaut | 0 | 3 |
 
@@ -110,7 +110,7 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | `open` — observé, non reproduit méthodiquement | 39 |
 | `confirmed` — reproduit, preuve au dossier | 16 |
 | `in-progress` — correctif engagé | 12 |
-| `fixed` — correctif livré, reste à revérifier manette en main | 104 |
+| `fixed` — correctif livré, reste à revérifier manette en main | 105 |
 | `closed` — vérifié, clos | 4 |
 | `wontfix` — écarté, avec la raison en fiche | 1 |
 
@@ -123,7 +123,7 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [`camera-zoom/`](camera-zoom/) | 3 | 3 |
 | [`chat/`](chat/) | 5 | 5 |
 | [`exchange/`](exchange/) | 23 | 23 |
-| [`fight/`](fight/) | 20 | 21 |
+| [`fight/`](fight/) | 21 | 22 |
 | [`hud-banner/`](hud-banner/) | 9 | 9 |
 | [`hud-panels/`](hud-panels/) | 19 | 20 |
 | [`input/`](input/) | 7 | 8 |
@@ -295,6 +295,7 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [QA-172](fight/QA-172-impossible-d-enchainer-les-actions-pendant-une-animation.md) | P2 | fight | feature | fixed | Impossible d'enchaîner les actions en combat tant qu'une animation joue |
 | [QA-176](fight/QA-176-rejoindre-un-combat-en-spectateur-n-existe-pas.md) | P2 | fight | gap | open | Rejoindre un combat en spectateur n'existe pas, donc l'option « interdire les spectateurs » ne garde rien |
 | [QA-177](fight/QA-177-option-equipe-seulement-diffusee-sans-etre-appliquee.md) | P2 | fight | gap | open | L'option « équipe seulement » est diffusée sans être appliquée — il n'y a pas de module groupe |
+| [QA-179](fight/QA-179-le-chemin-de-combat-traverse-les-trous.md) | P2 | fight | bug | fixed | En combat, l'aperçu du déplacement passe par les trous de la carte |
 
 ## P3 — finition, confort, cosmétique
 

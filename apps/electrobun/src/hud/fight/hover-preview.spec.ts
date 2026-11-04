@@ -18,10 +18,9 @@ afterEach(() => {
   spellCastActor.send({ type: "RESET" });
 });
 
-function harness() {
+function harness(pf = new DofusPathfinding(15, 17, [200, 215, 230, 245, 260])) {
   let hover: (cell: number | null) => void = () => {};
   const highlights = new Map<string, number[]>();
-  const pf = new DofusPathfinding(15, 17, [200, 215, 230, 245, 260]);
   const preview = new HoverPreview({
     battlefield: {
       setOnCellHover: (fn: typeof hover) => {
@@ -70,6 +69,24 @@ test("only a complete reachable path is previewed", () => {
   expect(h.highlights.has("movement-path")).toBe(false);
   h.pf.addOccupied(215);
   h.hover(230);
+  expect(h.highlights.has("movement-path")).toBe(false);
+});
+
+test("a hole is neither crossed nor targeted by the path preview", () => {
+  // 230 is a `movement = 1` hole: walkable in roleplay, never in a fight.
+  const h = harness(
+    new DofusPathfinding(
+      15,
+      17,
+      [200, 215, 230, 245, 260],
+      [200, 215, 245, 260]
+    )
+  );
+  h.hover(215);
+  expect(h.highlights.get("movement-path")).toEqual([215]);
+  h.hover(230);
+  expect(h.highlights.has("movement-path")).toBe(false);
+  h.hover(245);
   expect(h.highlights.has("movement-path")).toBe(false);
 });
 

@@ -48,6 +48,7 @@ export {
 export { getNeighbors, isValidDirection } from "./neighbors.ts";
 export { DofusPathfinding } from "./pathfinding.ts";
 export { GRID_VERSION } from "./version.ts";
+export { type CellMovement, isFightWalkable } from "./walkability.ts";
 export {
   type DecodedZone,
   decodeZonePair,

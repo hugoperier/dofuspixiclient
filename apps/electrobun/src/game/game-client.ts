@@ -1,6 +1,6 @@
 import type { AdminCommandRequest } from "@dofus/proto/admin_pb";
 import { create } from "@bufbuild/protobuf";
-import { AreaKind, cellsInArea } from "@dofus/grid";
+import { AreaKind, cellsInArea, isFightWalkable } from "@dofus/grid";
 import { ExchangeType } from "@dofus/proto";
 import { AdminCommandSource } from "@dofus/proto/admin_pb";
 import { match } from "ts-pattern";
@@ -2598,9 +2598,7 @@ export class GameClient {
         losBlocked: (id) => this.battlefield?.isCellLosBlocked(id) ?? true,
       },
       cell,
-      Boolean(
-        terrain && terrain.active !== false && (terrain.movement ?? 0) > 1
-      )
+      terrain !== undefined && isFightWalkable(terrain)
     );
   }
 

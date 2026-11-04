@@ -31,14 +31,27 @@ export class DofusPathfinding {
   private totalRows: number;
   private dirOffsets: number[];
   private walkableSet: Set<number>;
+  private fightWalkableSet: Set<number>;
   private occupiedCells: Set<number> = new Set();
 
-  constructor(mapWidth: number, mapHeight: number, walkableCellIds: number[]) {
+  /**
+   * `fightWalkableCellIds` is the narrower set a fighter may use (see
+   * `isFightWalkable`): it drops the `movement = 1` cells — holes, doors —
+   * that roleplay can still walk onto. It defaults to `walkableCellIds` for
+   * callers that already pass a fight-only set.
+   */
+  constructor(
+    mapWidth: number,
+    mapHeight: number,
+    walkableCellIds: number[],
+    fightWalkableCellIds: number[] = walkableCellIds
+  ) {
     this.mapWidth = mapWidth;
     this.mapHeight = mapHeight;
     this.totalRows = 2 * mapHeight - 1;
     this.dirOffsets = getDirOffsets(mapWidth);
     this.walkableSet = new Set(walkableCellIds);
+    this.fightWalkableSet = new Set(fightWalkableCellIds);
   }
 
   get width(): number {
@@ -62,18 +75,25 @@ export class DofusPathfinding {
    * four cardinal-isometric directions (1=SE, 3=SW, 5=NW, 7=NE) — the
    * only ones valid on the Dofus 1.29 combat grid. The half-step
    * directions 0/2/4/6 are walkable in roleplay but illegal in fight
-   * and would get rejected by the server's path validator.
+   * and would get rejected by the server's path validator. Steps and
+   * destination come from the fight set only, so a hole is neither
+   * crossed nor reached.
    */
   findFightPath(startId: number, goalId: number): number[] | null {
-    return this.findPath(startId, goalId, true);
+    return this.search(startId, goalId, true);
   }
 
-  findPath(
+  findPath(startId: number, goalId: number): number[] | null {
+    return this.search(startId, goalId, false);
+  }
+
+  private search(
     startId: number,
     goalId: number,
-    orthogonalOnly = false
+    fight: boolean
   ): number[] | null {
-    if (!this.walkableSet.has(startId) || !this.walkableSet.has(goalId)) {
+    const walkable = fight ? this.fightWalkableSet : this.walkableSet;
+    if (!this.walkableSet.has(startId) || !walkable.has(goalId)) {
       return null;
     }
     if (startId === goalId) {
@@ -124,7 +144,7 @@ export class DofusPathfinding {
         // 7=NE) — the ones that move a full cell visually. The
         // half-step directions (0/2/4/6) are roleplay-only and fail
         // server-side path validation in combat.
-        if (orthogonalOnly && (dir & 1) === 0) {
+        if (fight && (dir & 1) === 0) {
           continue;
         }
         if (
@@ -141,7 +161,7 @@ export class DofusPathfinding {
         }
 
         const neighborId = current.cellId + (this.dirOffsets[dir] as number);
-        if (!this.walkableSet.has(neighborId)) {
+        if (!walkable.has(neighborId)) {
           continue;
         }
         if (neighborId !== goalId && this.occupiedCells.has(neighborId)) {
@@ -239,11 +259,15 @@ export class DofusPathfinding {
    * The starting cell is excluded from the result. Cells held by other
    * fighters (in `occupiedCells`) are walkable as transit but never
    * appear as a destination — same rule the server uses.
+   *
+   * `fight` keeps to the four fight directions and the fight set, so
+   * holes neither show in the ring nor carry it across.
    */
-  reachable(start: number, maxSteps: number, orthogonalOnly = false): number[] {
+  reachable(start: number, maxSteps: number, fight = false): number[] {
     if (maxSteps <= 0 || !this.walkableSet.has(start)) {
       return [];
     }
+    const walkable = fight ? this.fightWalkableSet : this.walkableSet;
     const visited = new Map<number, number>();
     visited.set(start, 0);
     const queue: number[] = [start];
@@ -254,11 +278,11 @@ export class DofusPathfinding {
       if (depth >= maxSteps) {
         continue;
       }
-      const neighbors = orthogonalOnly
+      const neighbors = fight
         ? this.getFightNeighbors(cell)
         : this.getNeighbors(cell);
       for (const n of neighbors) {
-        if (!this.walkableSet.has(n) || visited.has(n)) {
+        if (!walkable.has(n) || visited.has(n)) {
           continue;
         }
         visited.set(n, depth + 1);
