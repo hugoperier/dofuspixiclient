@@ -603,6 +603,11 @@ message ActionSpellLaunch {
   // the spells its own SpellList carries, so without this every monster
   // cast reads as its bare id in the combat log.
   string name = 9;
+  // How the client anchors the visual — `GA;300` param 4 in 1.29, read
+  // from `sorts.spriteInfos` (10/12 caster, 11 target, 20/21 linear,
+  // 30/31 ballistic, 40/41 beam, 50/51 world). 0 = unknown: the client
+  // falls back on the visual module's own value. See QA-181.
+  int32  display_type = 10;
 }
 
 // ActionCriticalHit (GA;301;<casterId>;<spellIdOrZero>)

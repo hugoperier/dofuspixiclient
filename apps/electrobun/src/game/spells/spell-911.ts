@@ -79,7 +79,9 @@ export class Spell911 extends RuntimeSpell {
     this.cercleSym = {
       name: "cercle",
       totalFrames: 42,
-      frames: textures.getFrames("sprite_25"),
+      // sprite_25 is baked into sprite_29's composite frames: drawing it again
+      // doubled it (QA-183, `audit-spell-display-types.ts`). Scripts kept.
+      frames: [],
       anchorX: cercleAnchor.x,
       anchorY: cercleAnchor.y,
       frameScripts: new Map([

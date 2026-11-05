@@ -119,10 +119,17 @@ export class Spell1010 extends RuntimeSpell {
     // Sound callbacks are only available in onSpellStart. We capture
     // a reference here so frame scripts inside the symbol can trigger
     // them at the canonical frames.
+    //
+    // sprite_14 is one thorn vine; sprite_15 is the cluster, several
+    // sprite_14 instances baked into its composite frames (all 62 of
+    // sprite_14's paths are in sprite_15's SVGs, and sprite_15_40 shows the
+    // vines). Drawing sprite_14 again at the root added a vine — at the
+    // world origin under the canonical displayType 51. It keeps its frame
+    // scripts (the "herbe"/"fronde" sounds) and draws nothing. QA-183.
     this.sprite14Sym = {
       name: "sprite_14",
       totalFrames: 261,
-      frames: textures.getFrames("sprite_14"),
+      frames: [],
       anchorX: sprite14Anchor.x,
       anchorY: sprite14Anchor.y,
       frameScripts: new Map([
@@ -180,10 +187,14 @@ export class Spell1010 extends RuntimeSpell {
           (clip) => {
             // AS DefineSprite_15/frame_1/DoAction.as:
             //   _X = _parent.cellTo.x; _Y = _parent.cellTo.y;
-            // displayType=11: container origin === cellTo in world coords.
-            // Container-local position of cellTo is (0, 0).
-            clip.x = 0;
-            clip.y = 0;
+            // root.vars.cellTo is in the container's space (QA-182): the literal
+            // translation lands on the target under the canonical displayType as
+            // under the module's own one.
+            const cellTo = clip.parent?.vars.cellTo as
+              | { x: number; y: number }
+              | undefined;
+            clip.x = cellTo?.x ?? 0;
+            clip.y = cellTo?.y ?? 0;
           },
         ],
         [

@@ -91,16 +91,16 @@ causes racines et les notes de méthode, mais plus le détail par entrée.
 
 _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 
-**178 entrées**, dont **173 encore ouvertes**.
+**182 entrées**, dont **177 encore ouvertes**.
 
 ## Par gravité
 
 | Gravité | Restantes | Total |
 |---|---|---|
 | P0 — bloque la session (crash, impossible d'avancer) | 5 | 5 |
-| P1 — fonctionnalité cassée ou absente sur un flux principal | 74 | 75 |
-| P2 — comportement divergent du 1.29 canonique, contournable | 67 | 67 |
-| P3 — finition, confort, cosmétique | 27 | 28 |
+| P1 — fonctionnalité cassée ou absente sur un flux principal | 75 | 76 |
+| P2 — comportement divergent du 1.29 canonique, contournable | 69 | 69 |
+| P3 — finition, confort, cosmétique | 28 | 29 |
 | Sans gravité — vérifications sans défaut | 0 | 3 |
 
 ## Par statut
@@ -110,7 +110,7 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | `open` — observé, non reproduit méthodiquement | 39 |
 | `confirmed` — reproduit, preuve au dossier | 16 |
 | `in-progress` — correctif engagé | 12 |
-| `fixed` — correctif livré, reste à revérifier manette en main | 106 |
+| `fixed` — correctif livré, reste à revérifier manette en main | 110 |
 | `closed` — vérifié, clos | 4 |
 | `wontfix` — écarté, avec la raison en fiche | 1 |
 
@@ -123,7 +123,7 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [`camera-zoom/`](camera-zoom/) | 3 | 3 |
 | [`chat/`](chat/) | 5 | 5 |
 | [`exchange/`](exchange/) | 23 | 23 |
-| [`fight/`](fight/) | 22 | 23 |
+| [`fight/`](fight/) | 26 | 27 |
 | [`hud-banner/`](hud-banner/) | 9 | 9 |
 | [`hud-panels/`](hud-panels/) | 19 | 20 |
 | [`input/`](input/) | 7 | 8 |
@@ -225,6 +225,7 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [QA-174](fight/QA-174-corps-a-corps-absent.md) | P1 | fight | gap | fixed | Le corps-à-corps n'existe nulle part — ni slot, ni chemin serveur, ni stats d'arme |
 | [QA-175](input/QA-175-clic-sur-un-membre-de-groupe-sans-effet.md) | P1 | input | bug | fixed | Un clic sur un monstre autre que le leader marche jusqu'à lui sans lancer le combat |
 | [QA-178](fight/QA-178-ligne-de-vue-traverse-les-combattants-en-diagonale.md) | P1 | fight | bug | fixed | La ligne de vue passe à travers les combattants sur une diagonale non axiale |
+| [QA-182](fight/QA-182-un-visuel-ancre-sur-la-cible-se-dessine-au-double-de-sa-position.md) | P1 | fight | bug | fixed | Un visuel qui lit cellTo se dessine au double de sa position, loin de la case visée |
 
 ## P2 — comportement divergent du 1.29 canonique, contournable
 
@@ -297,6 +298,8 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [QA-177](fight/QA-177-option-equipe-seulement-diffusee-sans-etre-appliquee.md) | P2 | fight | gap | open | L'option « équipe seulement » est diffusée sans être appliquée — il n'y a pas de module groupe |
 | [QA-179](fight/QA-179-le-chemin-de-combat-traverse-les-trous.md) | P2 | fight | bug | fixed | En combat, l'aperçu du déplacement passe par les trous de la carte |
 | [QA-180](fight/QA-180-les-armes-frappent-avec-la-pose-du-coup-de-poing.md) | P2 | fight | bug | fixed | En combat, toutes les armes frappent avec la pose du coup de poing |
+| [QA-181](fight/QA-181-le-displaytype-canonique-des-sorts-n-est-jamais-transmis.md) | P2 | fight | bug | fixed | Les visuels de sort ignorent leur displayType canonique et s'ancrent au hasard du module |
+| [QA-184](fight/QA-184-frappe-de-xelor-se-dessine-avec-des-morceaux-manquants.md) | P2 | fight | bug | fixed | Frappe de Xélor se dessine avec des morceaux manquants |
 
 ## P3 — finition, confort, cosmétique
 
@@ -330,6 +333,7 @@ _Généré par `just issues` — ne pas éditer à la main entre les marqueurs._
 | [QA-163](hud-panels/QA-163-aucun-affichage-numerique-des-pods.md) | P3 | hud-panels | gap | fixed | Les pods n'ont aucune valeur chiffrée — la recette QA-133 n'est pas exécutable à la main |
 | [QA-164](world-content/QA-164-carte-de-reference-des-ressources-impraticable.md) | P3 | world-content | data | fixed | La carte de référence des ressources n'a pas de sol, et le panneau admin ne sait pas y aller |
 | [QA-165](progression/QA-165-ecarts-de-volumetrie-du-referentiel.md) | P3 | progression | data | fixed | Le référentiel importé ne fait pas les comptes annoncés par le runbook S04 |
+| [QA-183](fight/QA-183-horloge-dessine-une-seconde-aiguille-detachee.md) | P3 | fight | bug | fixed | Horloge et 46 autres visuels redessinent un symbole déjà incrusté dans leur composite |
 
 ## Sans gravité — vérifications sans défaut
 

@@ -41,6 +41,17 @@ export type SpellLevel = Omit<
    * downstream code never has to branch.
    */
   visualGfxId: number;
+  /**
+   * `sorts.spriteInfos` (migration 0068), sent with every `GA;300` the
+   * way 1.29 did. `displayType` anchors the visual on the client
+   * (VisualEffectHandler.onLoadInit); `castAnimation` is the caster's
+   * `anim<n>`; `spriteInFront` layers the effect in front of the caster.
+   * Absent for a spell the dump does not describe — the client then
+   * falls back on the visual module's own value and `anim1`.
+   */
+  displayType?: number;
+  castAnimation?: number;
+  spriteInFront?: boolean;
 };
 
 export interface MonsterSpell {

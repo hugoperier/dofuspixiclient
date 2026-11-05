@@ -134,7 +134,7 @@
     {
       "id": 104,
       "sha256": "554012f5d71c82fabae4d42fd395da597fc24f2b7250ae41ba74327f194e0c39",
-      "moduleSha256": "91cfd9b7fc562ca8a45cb0bd5b410dd2abec62e9cc31558631d8c44abd7ec7fc",
+      "moduleSha256": "7b500235bd1b95eb4bc7b709b18788d5601f8205cae339186fae37bd9ff94f7b",
       "animations": [
         {
           "name": "anim1",
@@ -151,11 +151,9 @@
       ],
       "requested": [
         "anim1",
-        "lib_sprite5",
         "lib_sprite7"
       ],
       "aliased": [
-        "lib_sprite5->sprite_5",
         "lib_sprite7->sprite_7"
       ],
       "missing": [],
@@ -216,7 +214,7 @@
     {
       "id": 109,
       "sha256": "f83319e50922d24bef8de9b3e28f7476e89986d0a286cc2d307024a2f6bb8df5",
-      "moduleSha256": "d275d49b61aa805cb981431310ab74d1f6eb620ef8486ee0906df815fde09c37",
+      "moduleSha256": "89b7669f5ae2760d591f987389660f0c540f9a2da51aa4c00b74a691117f59dd",
       "animations": [
         {
           "name": "anim1",
@@ -229,12 +227,9 @@
       ],
       "requested": [
         "anim1",
-        "lib_sprite14",
-        "lib_sprite15"
+        "lib_sprite14"
       ],
-      "aliased": [
-        "lib_sprite15->sprite_15"
-      ],
+      "aliased": [],
       "missing": [
         "lib_sprite14"
       ],
@@ -298,7 +293,7 @@
     {
       "id": 112,
       "sha256": "6429c3c72af3835af34063513bbd02261d9466b729de12d13f01d24fa78acfb8",
-      "moduleSha256": "47ffec7ed0507f45222900635e6fda687f545a03d8f80c70ba8e45f81d9cd346",
+      "moduleSha256": "950e36b7af6c7ee30a6c554e5d856c487910b668559766a1cfe44763c36adfde",
       "animations": [
         {
           "name": "lib_bulle",
@@ -331,14 +326,9 @@
       ],
       "requested": [
         "lib_bulle",
-        "lib_sprite5",
-        "sprite_10",
-        "sprite_11",
-        "sprite_9"
+        "sprite_10"
       ],
-      "aliased": [
-        "lib_sprite5->sprite_5"
-      ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -376,7 +366,7 @@
     {
       "id": 202,
       "sha256": "664cef204f68f79a4f0f92599be11e0b150e75418f8f5a8bcc392c3de788b616",
-      "moduleSha256": "439745c955a1ac4f77063feed72f91c424e9699c9c5094b515a383d9f4cddbf0",
+      "moduleSha256": "1d5e9251062e47e4a2d81256a9ebfdca3b0f28675e870e0cbd63f7f9579b57cd",
       "animations": [
         {
           "name": "etoiles",
@@ -392,12 +382,9 @@
         }
       ],
       "requested": [
-        "etoiles",
-        "lib_sprite11"
+        "etoiles"
       ],
-      "aliased": [
-        "lib_sprite11->sprite_11"
-      ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -407,7 +394,7 @@
     {
       "id": 205,
       "sha256": "89608b0b8b5aab9e6a5427e06b2f404a1805920c2dbc612f17ce90d3b3bb1c95",
-      "moduleSha256": "d5bc183a5deced270be7b7e95ec76b84e350908f55bae18eca12ea7d6a7bcba7",
+      "moduleSha256": "34ed56b8f2effed16366c66dd09dbe7a022f7bc87bd08c3eaf4ba184134378aa",
       "animations": [
         {
           "name": "sprite_15",
@@ -448,13 +435,10 @@
       ],
       "requested": [
         "lib_sprite14",
-        "lib_sprite15",
         "sprite_18",
         "sprite_22"
       ],
-      "aliased": [
-        "lib_sprite15->sprite_15"
-      ],
+      "aliased": [],
       "missing": [
         "lib_sprite14"
       ],
@@ -684,7 +668,7 @@
     {
       "id": 213,
       "sha256": "88530e6d3bba27b42c7e1fca4a1dcbf9dc0fd1cc994aa90b2069a4236492b283",
-      "moduleSha256": "50eb407793aecb52ca18c5df89fbafe60325e4bc3b087ae511fc64486b66abd2",
+      "moduleSha256": "ce3f3a33465c7817ced6f5df9916ae9147ad5f569da89268070ea1ba6a14f8f1",
       "animations": [
         {
           "name": "anim1",
@@ -703,13 +687,11 @@
         "anim1",
         "lib_sprite10",
         "lib_sprite11",
-        "lib_sprite12",
         "lib_sprite3",
         "lib_sprite4",
         "lib_sprite9"
       ],
       "aliased": [
-        "lib_sprite12->sprite_12",
         "lib_sprite4->sprite_4"
       ],
       "missing": [
@@ -760,7 +742,7 @@
     {
       "id": 301,
       "sha256": "b149dc8a066f27aab20cb7cb3555820569384f9c94ba2b41ae1ca91951f71c0a",
-      "moduleSha256": "20731445e0f084cc304f59515709013e4d4556c67dd370a0b74e23931d933df6",
+      "moduleSha256": "b5bae9ebaa869e3d40898775930bfe38eb2391e52401215f7e9674e6f98e0f49",
       "animations": [
         {
           "name": "anim1",
@@ -778,12 +760,10 @@
       "requested": [
         "anim1",
         "lib_sprite23",
-        "lib_sprite24",
         "lib_sprite3",
         "lib_sprite4"
       ],
       "aliased": [
-        "lib_sprite24->sprite_24",
         "lib_sprite4->sprite_4"
       ],
       "missing": [
@@ -798,7 +778,7 @@
     {
       "id": 302,
       "sha256": "a21e20bd12b47f72c5f8da5ff930870dec94c58eda595a3df451b4e38887e8bc",
-      "moduleSha256": "3be5be8bc3fde77266c51629ba057388fecc38cc2c601cfd3a5bea074043fe28",
+      "moduleSha256": "365e896eeb50be5882aac1b41620eddd0b73d5d4f95c72ab52e82afe4ac5d34b",
       "animations": [
         {
           "name": "etoiles",
@@ -818,12 +798,9 @@
         }
       ],
       "requested": [
-        "lib_etoiles",
-        "lib_sprite5"
+        "lib_etoiles"
       ],
-      "aliased": [
-        "lib_sprite5->sprite_5"
-      ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -988,7 +965,7 @@
     {
       "id": 306,
       "sha256": "3cae92e09b42a1a56a3474bf0960fec84730b97b369b6448d42509d84bb80211",
-      "moduleSha256": "6230de5a19bbfbc4cce08ed2633c1d6137ad9928de674b4423f48ad2b573422a",
+      "moduleSha256": "693cf74d05c8f7b422887aebeebcf934f2a655ed6bba43d4ef797237e0819a70",
       "animations": [
         {
           "name": "lib_pierres",
@@ -1119,7 +1096,7 @@
     {
       "id": 311,
       "sha256": "595155cf51ad5887c8a44e4c603a7c129b0b2b9d989e5a802be96323eed2e81d",
-      "moduleSha256": "5355c4e9cc88f42b0ba0793b5b01770f938c19e7afbf5922d2f160f5540f09dd",
+      "moduleSha256": "13773dbb9ddd7fbdc4fe047dda35f619c386c83bf017e3fcb6e66efe639e1f99",
       "animations": [
         {
           "name": "sprite_21",
@@ -1135,12 +1112,10 @@
         }
       ],
       "requested": [
-        "lib_sprite4",
         "lib_sprite9",
         "sprite_21"
       ],
       "aliased": [
-        "lib_sprite4->sprite_4",
         "lib_sprite9->sprite_9"
       ],
       "missing": [],
@@ -1184,7 +1159,7 @@
     {
       "id": 313,
       "sha256": "df6d18fbc5ba6b80d52f0cc54f24845cbc662f3fcbf5aac05830f4b4edf243fa",
-      "moduleSha256": "15210193e0939544eefd807787df2a28d1b4ded272e2aad370a5124448bf2640",
+      "moduleSha256": "dbb6d6b0619b73b87c403d138634dbe1da0a5388b5e77e8e31955c34f94600cc",
       "animations": [
         {
           "name": "sprite_12",
@@ -1209,13 +1184,10 @@
       ],
       "requested": [
         "lib_sprite12",
-        "lib_sprite7",
-        "sprite_14",
-        "sprite_3"
+        "sprite_14"
       ],
       "aliased": [
-        "lib_sprite12->sprite_12",
-        "lib_sprite7->sprite_7"
+        "lib_sprite12->sprite_12"
       ],
       "missing": [],
       "failures": [],
@@ -1226,7 +1198,7 @@
     {
       "id": 314,
       "sha256": "882637e21c35666fb3828a132c916518376290f2d7c02738a6a7cf2b3062b2b1",
-      "moduleSha256": "bab16b087f53392459186776ec309c681eddc06539c765f73fc9fafc42176228",
+      "moduleSha256": "f90822a8039b5c3b24e37810b95c632975fce30081f6202ba5c40357bcb2b60c",
       "animations": [
         {
           "name": "anim1",
@@ -1239,12 +1211,9 @@
       ],
       "requested": [
         "anim1",
-        "lib_sprite18",
-        "lib_sprite19"
+        "lib_sprite18"
       ],
-      "aliased": [
-        "lib_sprite19->sprite_19"
-      ],
+      "aliased": [],
       "missing": [
         "lib_sprite18"
       ],
@@ -1552,7 +1521,7 @@
     {
       "id": 406,
       "sha256": "83befcbee518edb895a6e29d27e143cced116b83e58134d9ba83f6ae2d0fb907",
-      "moduleSha256": "64c8ca4418f5f267c6c7433c2f189e2f687218a5748e2a94c4a619d4d52b1443",
+      "moduleSha256": "fb766419507b3b06e83c1e5be126e9b9d9ec085dd9f1b9cb207b43deddce89a4",
       "animations": [
         {
           "name": "lib_goutte",
@@ -1731,7 +1700,7 @@
     {
       "id": 412,
       "sha256": "b80bf390c1fd29fbb556d33ada46497047fa9fd205da60897377c32258089c48",
-      "moduleSha256": "e49fecd49a3ecd23c70bbee8b3dd51a2b36b6db6a94d61c1d5dac68e6dc38bf0",
+      "moduleSha256": "d4cf167f62da2736563cdd44c22d2d1180931484751f6748cae9a2ba793e5f58",
       "animations": [
         {
           "name": "sprite_14",
@@ -1754,7 +1723,7 @@
     {
       "id": 501,
       "sha256": "598b200386b0df8e958b188d86e9095e7d4c9b208425b5948a0b0336627ae7a8",
-      "moduleSha256": "02e1e9ce4115a9660df5ac9b8dabe79147bbb811a88d6311d2110790aa624058",
+      "moduleSha256": "e84f142e7e7a827e04864e95a549b7700d8fd16947548ee4ae153e0166d1b9b2",
       "animations": [
         {
           "name": "effet",
@@ -1793,7 +1762,7 @@
       "missing": [],
       "failures": [],
       "cases": 12,
-      "longestMs": 2750,
+      "longestMs": 2967,
       "visualVerified": false
     },
     {
@@ -1860,7 +1829,7 @@
     {
       "id": 504,
       "sha256": "b5f7577f5195eff57ce4d737d97073457691c2291e64b5fc45d8b309cfd890c9",
-      "moduleSha256": "9b85761b56fd2e764995234d8c28375e0d2e26f0849267a6a3a30c9c41fa5a37",
+      "moduleSha256": "68aef5105fa40e8dbde84df56eabb8c5958094c188d0fa5eec509d69a0a59930",
       "animations": [
         {
           "name": "anim1",
@@ -1879,13 +1848,11 @@
         "anim1",
         "lib_sprite10",
         "lib_sprite13",
-        "lib_sprite14",
         "lib_sprite3",
         "lib_sprite4",
         "lib_sprite9"
       ],
       "aliased": [
-        "lib_sprite14->sprite_14",
         "lib_sprite4->sprite_4"
       ],
       "missing": [
@@ -1942,7 +1909,7 @@
     {
       "id": 507,
       "sha256": "567a71dc7d55d032fb3e1b80c6aeaa67b5c158dcb49a38e1a3e1d87b777ab4a4",
-      "moduleSha256": "5b28b43e5e21020c52e45b69573bc4fd74fab8a8049c539452569593d8267a1d",
+      "moduleSha256": "58016a3dac714840c3d27fc7655e26633de20d1270edbf3a4e7b940e5c56c2b0",
       "animations": [
         {
           "name": "etoiles",
@@ -1965,12 +1932,10 @@
         "lib_etoiles",
         "lib_or",
         "lib_pierres",
-        "lib_sprite13",
         "lib_sprite15",
         "lib_terre"
       ],
       "aliased": [
-        "lib_sprite13->sprite_13",
         "lib_sprite15->sprite_15"
       ],
       "missing": [
@@ -2013,7 +1978,7 @@
     {
       "id": 509,
       "sha256": "4c51ecc6488015275b5a85c2fa3b3fc49bdb85b488bf63f584885a030b7145d7",
-      "moduleSha256": "52e477dfb14827ccd4e269d7afc1b53b4c5dd5ce0bac72bc0905c0f9bfff04f5",
+      "moduleSha256": "ac11bd866b64a63468dbc9027bba7dd29eae0ac9521b40e56e5ea413ccd37fc0",
       "animations": [
         {
           "name": "anim1",
@@ -2069,7 +2034,7 @@
     {
       "id": 511,
       "sha256": "6870ea9e3dc56e7c81b63baa3b588b208673e8f25c9f1050491722ac1f411042",
-      "moduleSha256": "955b4fec4e753cef089dc584bc17a144a8f1020b806f59bac1e369dee4b1a3d8",
+      "moduleSha256": "be3e7f2ac539e41b0da00f3bdbe087d2f470c5bf4927d5b570202b2fad1b2a5e",
       "animations": [
         {
           "name": "anim1",
@@ -2085,12 +2050,9 @@
         }
       ],
       "requested": [
-        "anim1",
-        "lib_sprite8"
+        "anim1"
       ],
-      "aliased": [
-        "lib_sprite8->sprite_8"
-      ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -2100,7 +2062,7 @@
     {
       "id": 512,
       "sha256": "5305f0200027b417061daf8dedfdc0b551d6164ae8a1e0d93825c9ab005ea70d",
-      "moduleSha256": "2274bf4608267a94ca56bf834b976a8c9b1e7e6ebc346011f83609220c39c0b6",
+      "moduleSha256": "b6c2bfd99c73e79325359e6943c259884c32b84c5474f6467e8dcf61f6276b2d",
       "animations": [
         {
           "name": "lib_pierres",
@@ -2133,7 +2095,6 @@
       ],
       "requested": [
         "lib_pierres",
-        "sprite_10",
         "sprite_27",
         "sprite_28",
         "sprite_42"
@@ -2148,7 +2109,7 @@
     {
       "id": 513,
       "sha256": "2514d528bd624b2d4cd721ce348f7eb5c287f4ee329280ed0ab9cd48265f73a0",
-      "moduleSha256": "836cd7de0493e40166034cead14b2fe67d63d6500f1b8921f340988483024d74",
+      "moduleSha256": "3f54be367c1d1b347e2297242de495d94460f4eee723059ceb91a65e8a286c4d",
       "animations": [
         {
           "name": "lib_pierres",
@@ -2230,7 +2191,7 @@
     {
       "id": 515,
       "sha256": "9fa52fe380d58bf7eb34df86c303de51efc54622ad95e74c3959086eb9b1736a",
-      "moduleSha256": "5c3196d2d45b23216d179212b721ff86bf482e96f681215b71595681d16f4e3f",
+      "moduleSha256": "c3484ae81a89954d90f47c1cce5e3b949acbc810bb2386d0d8d3dd986000a0c4",
       "animations": [
         {
           "name": "shoot",
@@ -2262,7 +2223,7 @@
     {
       "id": 601,
       "sha256": "25f40abb2d034fa825e3b1a1416836667d4c661052d7ed0286c7dca5a71c4ce0",
-      "moduleSha256": "384b0ff035f4c0381880dbda8b169111c2f59edc7effa5d2a98e17f6aa00a54c",
+      "moduleSha256": "17217b926ce27c9b20b99e8acb1c45982e91411cfe99eca4b6cba2ebd0808108",
       "animations": [
         {
           "name": "move",
@@ -2298,13 +2259,10 @@
         }
       ],
       "requested": [
-        "lib_sprite10",
         "move",
         "shoot"
       ],
-      "aliased": [
-        "lib_sprite10->sprite_10"
-      ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -2314,7 +2272,7 @@
     {
       "id": 602,
       "sha256": "aebd71fde9d06cdef8f87ff104e9cc958324c9f7f4f8ff65189474d741a9553b",
-      "moduleSha256": "8ba6586bbfe03fe8be763a128767108ec66005f782e632aee08747a233889c50",
+      "moduleSha256": "1f0b221c55e45c42f8687461cf5db17b2599b96962e6e05d2820b12646173afe",
       "animations": [
         {
           "name": "anim1",
@@ -2333,13 +2291,11 @@
         "anim1",
         "lib_sprite10",
         "lib_sprite12",
-        "lib_sprite13",
         "lib_sprite3",
         "lib_sprite4",
         "lib_sprite9"
       ],
       "aliased": [
-        "lib_sprite13->sprite_13",
         "lib_sprite4->sprite_4"
       ],
       "missing": [
@@ -2356,7 +2312,7 @@
     {
       "id": 603,
       "sha256": "072fde8ed566d224059d7ce647d3168bd962701e2243667028177fa1f547c01d",
-      "moduleSha256": "6ab3e63f18b6780ee9357e4a2c95e68ec137a06827a5efbf23b02b48bd801df0",
+      "moduleSha256": "f23512038ada1ff9e395d7995c0c5f033ce3cebd41b0f3b528dbfeca151fde84",
       "animations": [
         {
           "name": "anim1",
@@ -2374,12 +2330,10 @@
       "requested": [
         "anim1",
         "lib_sprite18",
-        "lib_sprite19",
         "lib_sprite3",
         "lib_sprite4"
       ],
       "aliased": [
-        "lib_sprite19->sprite_19",
         "lib_sprite4->sprite_4"
       ],
       "missing": [
@@ -2394,7 +2348,7 @@
     {
       "id": 604,
       "sha256": "9a0c81ca2c8e3ae1545b13606137f1746712b7f2ca2dc6e9fbde388cfb9111ae",
-      "moduleSha256": "2791927d36b383f55a47dab4b08c443066d2a5d69cdb865ad6730d6cd85b45e0",
+      "moduleSha256": "13f1058f819f815508f772861514ae1b71c23d50e8d014eb459d21e8318a0573",
       "animations": [
         {
           "name": "duplicate",
@@ -2428,16 +2382,12 @@
       "requested": [
         "duplicate",
         "lib_sprite18",
-        "lib_sprite19",
-        "lib_sprite20",
         "lib_sprite24",
         "lib_sprite25",
         "shoot"
       ],
       "aliased": [
         "lib_sprite18->sprite_18",
-        "lib_sprite19->sprite_19",
-        "lib_sprite20->sprite_20",
         "lib_sprite24->sprite_24",
         "lib_sprite25->sprite_25"
       ],
@@ -2742,7 +2692,7 @@
     {
       "id": 613,
       "sha256": "1c93ba649705b3ec32ed0c971d604e3b0adc4062fe2027ce2e019e8ba6312147",
-      "moduleSha256": "2911f3b8d221d8c2af80c2951894447d2e12e080886dce2ef5a5eb021634f2b6",
+      "moduleSha256": "8d51ea6e41b740acb2d2630cf15de7f7bc93238c143d556dcb74ef874ae6284c",
       "animations": [
         {
           "name": "anim1",
@@ -2759,12 +2709,10 @@
       ],
       "requested": [
         "anim1",
-        "lib_sprite6",
-        "lib_sprite7"
+        "lib_sprite6"
       ],
       "aliased": [
-        "lib_sprite6->sprite_6",
-        "lib_sprite7->sprite_7"
+        "lib_sprite6->sprite_6"
       ],
       "missing": [],
       "failures": [],
@@ -2775,7 +2723,7 @@
     {
       "id": 614,
       "sha256": "8648be0dcbefe76ab1ee259340945f0b150cf8cba3340bfcf9381c391c5d4dfa",
-      "moduleSha256": "98142ad237fdf63114ebce3ef1f02f13ac284a06a8a367e8b7b2778fa49079bc",
+      "moduleSha256": "b66ef13d8458a4c293645a9daa398e6dee44be2f64795b947cece281539b944c",
       "animations": [
         {
           "name": "anim1",
@@ -2788,13 +2736,10 @@
       ],
       "requested": [
         "anim1",
-        "lib_sprite10",
         "lib_sprite8",
         "lib_sprite9"
       ],
-      "aliased": [
-        "lib_sprite10->sprite_10"
-      ],
+      "aliased": [],
       "missing": [
         "lib_sprite8",
         "lib_sprite9"
@@ -2807,7 +2752,7 @@
     {
       "id": 615,
       "sha256": "ca9de3b48ef295072928b98c9b5e64604ecfc55216c838a2e0e63c3371b45a2c",
-      "moduleSha256": "a5d38822b143b62c5fdd241ce91c52b89bd3f636cf183ed657405ec5c468e804",
+      "moduleSha256": "585992b9d35ecaf091119a8df021b084e2fe3e4a1e2c5bcffcdce3cb05fb7c30",
       "animations": [
         {
           "name": "lib_pierres",
@@ -2828,12 +2773,9 @@
       ],
       "requested": [
         "lib_pierres",
-        "lib_sprite9",
         "sprite_22"
       ],
-      "aliased": [
-        "lib_sprite9->sprite_9"
-      ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -2843,7 +2785,7 @@
     {
       "id": 616,
       "sha256": "3c78f4d227b22a47d832eaf16ab1110c588bf1eb5b742444aa6cb248619f8dd1",
-      "moduleSha256": "811887c6862f89c0c11a4604ae64842384ed173ecd76833764615821ab44808d",
+      "moduleSha256": "97025faaa7663c91e3e8737dcf3bca7c80d9b4dbef94c3e94b8ed58daa5040f1",
       "animations": [
         {
           "name": "sprite_19",
@@ -2884,14 +2826,11 @@
       ],
       "requested": [
         "lib_sprite30",
-        "lib_sprite31",
         "lib_sprite32",
         "sprite_20",
-        "sprite_29",
         "sprite_33"
       ],
       "aliased": [
-        "lib_sprite31->sprite_31",
         "lib_sprite32->sprite_32"
       ],
       "missing": [
@@ -3158,7 +3097,7 @@
     {
       "id": 708,
       "sha256": "705ae8aeb108c7b61da18e667f2a50bdee77ef3590cf0e544084b6a6ab3afb5d",
-      "moduleSha256": "9127904f0acd409aeaaba5a5cffff09d987aa3cf5b6ca1cf9066deb7c6438b50",
+      "moduleSha256": "63391813e49e743a627316deacb42d2801009ffbbcd0267a56a0bfb2798e80eb",
       "animations": [
         {
           "name": "anim1",
@@ -3175,12 +3114,9 @@
       ],
       "requested": [
         "anim1",
-        "lib_sprite15",
-        "lib_sprite21"
+        "lib_sprite15"
       ],
-      "aliased": [
-        "lib_sprite21->sprite_21"
-      ],
+      "aliased": [],
       "missing": [
         "lib_sprite15"
       ],
@@ -3274,7 +3210,7 @@
     {
       "id": 711,
       "sha256": "419e7b904a0db86de193a4ccb5dd9bd59b758a94175be19ce20cb77423c2f433",
-      "moduleSha256": "91c006f641c6e8e41264e9957e72b76779fe78393cb44f48ecf6c519acdf7723",
+      "moduleSha256": "924afa6cd1905e6d6ff4617d810cec9f551badd05b9a3b84b18f01ca166af011",
       "animations": [
         {
           "name": "anim1",
@@ -3295,13 +3231,11 @@
       ],
       "requested": [
         "anim1",
-        "lib_sprite23",
         "lib_sprite28",
         "lib_sprite29",
         "lib_sprite5"
       ],
       "aliased": [
-        "lib_sprite23->sprite_23",
         "lib_sprite28->sprite_28",
         "lib_sprite29->sprite_29"
       ],
@@ -3461,7 +3395,7 @@
     {
       "id": 801,
       "sha256": "baf0b874be9feb3940e12f333ab598ad65199a618eed0c767f1d9bbc2e42d717",
-      "moduleSha256": "8a35526f586bec8b96fcd4cf966558b29f572a11a8a621eb666aa627136d397e",
+      "moduleSha256": "e689150849ecd7ba042428d0e133533ee3859b97822e52cf3fdf76115fdfa4bd",
       "animations": [
         {
           "name": "anim1",
@@ -3480,13 +3414,11 @@
         "anim1",
         "lib_sprite10",
         "lib_sprite12",
-        "lib_sprite13",
         "lib_sprite3",
         "lib_sprite4",
         "lib_sprite9"
       ],
       "aliased": [
-        "lib_sprite13->sprite_13",
         "lib_sprite4->sprite_4"
       ],
       "missing": [
@@ -3533,7 +3465,7 @@
     {
       "id": 803,
       "sha256": "7600c08c2ffba1ddf8dba939e4f7e387cbd27f7cafc1b1408840f6d90488c548",
-      "moduleSha256": "fd48a04a6ed35223765c249662120cda90320e4a57652cbe98653fde81897176",
+      "moduleSha256": "ee9a29d2c684f68919192e709f59d714eb383bfc299e59f124d22ecf08352d34",
       "animations": [
         {
           "name": "anim1",
@@ -3549,12 +3481,9 @@
         }
       ],
       "requested": [
-        "anim1",
-        "lib_sprite8"
+        "anim1"
       ],
-      "aliased": [
-        "lib_sprite8->sprite_8"
-      ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -3596,7 +3525,7 @@
     {
       "id": 805,
       "sha256": "085dd8c77cf66d59d08013c023eb229f25c20cee94a6b82ac2a4678086d9fd07",
-      "moduleSha256": "87bff95790835da70b8318bd988ef1075465e86f816b2f9e3e9107f8a27cb40c",
+      "moduleSha256": "bc1a02deb57e3b4f5827eb93e7344b93132ddeb4eb8da2a8d9522010971b9463",
       "animations": [
         {
           "name": "duplicate",
@@ -3609,12 +3538,9 @@
       ],
       "requested": [
         "duplicate",
-        "lib_sprite4",
-        "lib_sprite6"
+        "lib_sprite4"
       ],
-      "aliased": [
-        "lib_sprite6->sprite_6"
-      ],
+      "aliased": [],
       "missing": [
         "lib_sprite4"
       ],
@@ -3690,7 +3616,7 @@
     {
       "id": 808,
       "sha256": "e531a360b74911fdf25a813890ce0a7b7e5b1b629d07b6d132610a8a5de15f2e",
-      "moduleSha256": "f96f5a6981f5e8251531968af85b1b6bb3eeb5388aa5ead94a847cbeb5d1a127",
+      "moduleSha256": "56413b8dab37cae3beb6fe00a1df8fdabb433015840054a8544aa8760e60405b",
       "animations": [
         {
           "name": "anim1",
@@ -3711,12 +3637,9 @@
       ],
       "requested": [
         "anim1",
-        "lib_pierres",
-        "lib_sprite15"
+        "lib_pierres"
       ],
-      "aliased": [
-        "lib_sprite15->sprite_15"
-      ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -3725,9 +3648,13 @@
     },
     {
       "id": 809,
-      "sha256": "6da581e9605cb43bc1912c17aa3dfab0ef84c35bed922933a1bb5b5c0666ad18",
-      "moduleSha256": "a2f86926d4707dde27cef44c2843f3fbe9287a72f68b718ec6b7ef36434b7032",
+      "sha256": "7a4a19eb262ac38bb4055e9e12b96a7416f58402c846a339648a8f469e3d8a14",
+      "moduleSha256": "ccf473e387dc10268957368481f5f913e032895af75d3fd06d450b71f8b2a5b8",
       "animations": [
+        {
+          "name": "anim1",
+          "frames": 210
+        },
         {
           "name": "lib_pierres",
           "frames": 1
@@ -3746,6 +3673,7 @@
         }
       ],
       "requested": [
+        "anim1",
         "lib_pierres",
         "lib_sprite6",
         "shoot"
@@ -3756,7 +3684,7 @@
       "missing": [],
       "failures": [],
       "cases": 12,
-      "longestMs": 3450,
+      "longestMs": 2750,
       "visualVerified": false
     },
     {
@@ -4036,7 +3964,7 @@
     {
       "id": 903,
       "sha256": "bb74d53a5d604199f21bb72c8b85ec551089f707bd7066eb94912950687ee73d",
-      "moduleSha256": "82190e45531e17debe50b6aa516da4946dc6ec8b3bcd4c2913e6f37eeb802eff",
+      "moduleSha256": "3a1fd873205feae6ccab99e11356da403a06874fabf503fda20b69857e4405d7",
       "animations": [
         {
           "name": "anim1",
@@ -4052,14 +3980,9 @@
         }
       ],
       "requested": [
-        "anim1",
-        "lib_sprite7",
-        "lib_sprite8"
+        "anim1"
       ],
-      "aliased": [
-        "lib_sprite7->sprite_7",
-        "lib_sprite8->sprite_8"
-      ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -4069,7 +3992,7 @@
     {
       "id": 904,
       "sha256": "542bf8b5f7c41827ccac7d4a5df162d38160edec0d2fe730881a186e44260d3b",
-      "moduleSha256": "703123b0f6e30f1e2157543b2beabf7dfb3828d97bc95e238ab36bab093f2144",
+      "moduleSha256": "80eec0735bf51c5abcf7c261259a01027fb13f3100fd0e4e2f97df923ea8f4ab",
       "animations": [
         {
           "name": "anim1",
@@ -4088,13 +4011,11 @@
         "anim1",
         "lib_sprite10",
         "lib_sprite12",
-        "lib_sprite13",
         "lib_sprite3",
         "lib_sprite4",
         "lib_sprite9"
       ],
       "aliased": [
-        "lib_sprite13->sprite_13",
         "lib_sprite4->sprite_4"
       ],
       "missing": [
@@ -4157,7 +4078,7 @@
     {
       "id": 906,
       "sha256": "a28b11c475aa4f474a5c906755fb23a1bb24005ec77efd6b8062defb748fb57a",
-      "moduleSha256": "179ce01d31c4789cd0a8dc7ede236e7460629e11b6a51586b72fd2e2d4db2260",
+      "moduleSha256": "08103a399c8d109295343c2e5b681528e3b69be5e929ad936c65dc975b36bb56",
       "animations": [
         {
           "name": "fumee",
@@ -4204,7 +4125,7 @@
     {
       "id": 907,
       "sha256": "cb441c4792699016e962afd5f6e4dcb2ecbf51cf9d7d5a71e7cd8470b00acf66",
-      "moduleSha256": "dd967f3340ace92ebacc6a698dfc1b7251198bdfb84149d885e6e594a1530149",
+      "moduleSha256": "bb29711612ce789c4b99bdcbc5d141c17d659356579af1235f0a7f0a91645270",
       "animations": [
         {
           "name": "anim1",
@@ -4223,12 +4144,10 @@
         "anim1",
         "lib_sprite10",
         "lib_sprite13",
-        "lib_sprite14",
         "lib_sprite3",
         "lib_sprite4"
       ],
       "aliased": [
-        "lib_sprite14->sprite_14",
         "lib_sprite4->sprite_4"
       ],
       "missing": [
@@ -4304,7 +4223,7 @@
     {
       "id": 910,
       "sha256": "e15538436a6e2238983bed5fb9f1dd9549e669d38c235567999048fc9da05157",
-      "moduleSha256": "b017f05e0efc42b25fdb187e5ec947d2773981a95407bb432b21a772e87fbcc3",
+      "moduleSha256": "a187c80966bc0f5b509cb28b0f32a7cc40743a17e58e9d8445bf3fc42ba08c43",
       "animations": [
         {
           "name": "shoot",
@@ -4318,13 +4237,13 @@
       "missing": [],
       "failures": [],
       "cases": 12,
-      "longestMs": 1150,
+      "longestMs": 1483,
       "visualVerified": false
     },
     {
       "id": 911,
       "sha256": "eb7fe0784da75bf07a8d61a00418b15404aa19afd33c0aca41a866f24f234ebd",
-      "moduleSha256": "fe98bd8291a8d132e84fe58b5aadd25d47396ca31955a821197697dbedd7acb7",
+      "moduleSha256": "8a5faaab3c07d557b075b30325ddf4994582c1ff3e54a6f6e8fc73ee0dd9b84e",
       "animations": [
         {
           "name": "sprite_10",
@@ -4345,7 +4264,6 @@
       ],
       "requested": [
         "sprite_20",
-        "sprite_25",
         "sprite_29"
       ],
       "aliased": [],
@@ -4673,7 +4591,7 @@
     {
       "id": 1010,
       "sha256": "460d9142477722023ff99b0b6ae85a22a880789dc979cc23cff69e8019e30de9",
-      "moduleSha256": "928f935029266f339f57c40aa54b20aa5715ebde0a35c96e45b03d3ae7b46c72",
+      "moduleSha256": "ecbd83e8dcd076ea6303f36b7e3dfb02c824cff4f9fb4e22c596a5e5a330c4c9",
       "animations": [
         {
           "name": "sprite_11",
@@ -4694,7 +4612,6 @@
       ],
       "requested": [
         "sprite_11",
-        "sprite_14",
         "sprite_15"
       ],
       "aliased": [],
@@ -4739,7 +4656,7 @@
     {
       "id": 1012,
       "sha256": "dd89842d404e2fb74ed2e71d08a1ca84a97df20345eb876a2ae03acb97d52b10",
-      "moduleSha256": "e2c8cb79a621fa53429b63d37e25ab16326e662e9975836603b8ca904a933152",
+      "moduleSha256": "a36e791d14738d813b752bf44fd69ddf6a0ce4cac5e5ca1ede6d5c37d74b2630",
       "animations": [
         {
           "name": "sprite_16",
@@ -4768,7 +4685,7 @@
     {
       "id": 1013,
       "sha256": "3f21e2e58720c746d2b844c2a569333f0ddd759f5850b513f1d4b34d0b8315be",
-      "moduleSha256": "904d18b6a79b01e512fac9b1e156e148d5e9beae87244806c6fae1fc0bd77ecd",
+      "moduleSha256": "95a215e80ab14e39065b82713c834c7ea12d8684299d2b289e509e5e05ba95e1",
       "animations": [
         {
           "name": "sprite_14",
@@ -4804,15 +4721,11 @@
         }
       ],
       "requested": [
-        "lib_sprite14",
         "sprite_16",
-        "sprite_24",
         "sprite_25",
         "sprite_6"
       ],
-      "aliased": [
-        "lib_sprite14->sprite_14"
-      ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -4822,7 +4735,7 @@
     {
       "id": 1014,
       "sha256": "6d175d5bd13ec1a6bc0e7b986e334991d1c2ca6cd35a23b4725520433691056a",
-      "moduleSha256": "d5ac06fd2fcdc8598b8b3d1b470ee8fadc538e478e2288770bc35faa49ea23b1",
+      "moduleSha256": "d0b4036f5170c82e82c574d918d8a3bba1ac561230e50c7c9a1b243a030e8593",
       "animations": [
         {
           "name": "sprite_11",
@@ -5050,7 +4963,7 @@
     {
       "id": 1054,
       "sha256": "85fb2e047a3535bef5690494c86f41230ecf07e9be4ba3e090c1f60e043f2650",
-      "moduleSha256": "704d08eb7b26e1f0d559d49be1e2c44862e25cc91868d5e1bb450b315e8b40f6",
+      "moduleSha256": "1d79ca97b65d64baa658303a127f0c5a3dd17e1b6ef8ffd8b29e1860a58def16",
       "animations": [
         {
           "name": "anim1",
@@ -5072,12 +4985,10 @@
         "lib_sprite18",
         "lib_sprite19",
         "lib_sprite20",
-        "lib_sprite21",
         "lib_sprite4",
         "lib_sprite5"
       ],
       "aliased": [
-        "lib_sprite21->sprite_21",
         "lib_sprite5->sprite_5"
       ],
       "missing": [
@@ -5734,7 +5645,7 @@
     {
       "id": 1207,
       "sha256": "7a425a92459167f12f0179124e320cd764b9fea616a992c38191849a586ba131",
-      "moduleSha256": "a175b8ac38bded8172bd36fdd6ef0ea59520028c2e68b1a682246c0215be6668",
+      "moduleSha256": "aac958517e062f2e2b07e6db60387ff8d14b8d45ca675caca0f7d8d22a1e81fa",
       "animations": [
         {
           "name": "sprite_10",
@@ -5873,7 +5784,7 @@
     {
       "id": 1211,
       "sha256": "3237a7cb6194d600948821a4846c71f494e8d0f2bd89cb07d4b0c47a9e3871e1",
-      "moduleSha256": "48c90e3b8e3823f2d37a95886c50f96fa07a2274f626d0c1cab8babf030de2e2",
+      "moduleSha256": "b20af3f7d86aede76a2bba6b28e64117c5ab3a0062d5f4744b08563fbff36edd",
       "animations": [
         {
           "name": "anim1",
@@ -5895,12 +5806,10 @@
       "requested": [
         "anim1",
         "lib_sprite25",
-        "lib_sprite26",
-        "lib_sprite27"
+        "lib_sprite26"
       ],
       "aliased": [
-        "lib_sprite26->sprite_26",
-        "lib_sprite27->sprite_27"
+        "lib_sprite26->sprite_26"
       ],
       "missing": [
         "lib_sprite25"
@@ -5913,7 +5822,7 @@
     {
       "id": 1212,
       "sha256": "eb35fb014a60683b76c8bbd9a54f080aa6d61be46ff31477ffc8d0cd78bf2f7b",
-      "moduleSha256": "c4ce56277eaefadafca14230dddb0a821e27cf7a0e415877f6a3b4f519a508a0",
+      "moduleSha256": "405eafb5cd0243670a849fb2dd493cbf4c0702a61fdcd953a175124a02c8d2cd",
       "animations": [
         {
           "name": "anim1",
@@ -5937,12 +5846,9 @@
         }
       ],
       "requested": [
-        "anim1",
-        "lib_sprite16"
+        "anim1"
       ],
-      "aliased": [
-        "lib_sprite16->sprite_16"
-      ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -6236,7 +6142,7 @@
     {
       "id": 2001,
       "sha256": "21c738fa66486ac69d8b14bee0b8fd903702f6209112b383901cc65ed1381cd8",
-      "moduleSha256": "0f704df26d5b22b34a900e4484989fd0beab30f099a3d236d1698550c1f913c9",
+      "moduleSha256": "af580d2888769ac3743a74bbe991fef6f1980b7bd71a05153d7c2343182e9094",
       "animations": [
         {
           "name": "sprite_10",
@@ -6253,8 +6159,7 @@
       ],
       "requested": [
         "sprite_10",
-        "sprite_19",
-        "sprite_8"
+        "sprite_19"
       ],
       "aliased": [],
       "missing": [],
@@ -6346,7 +6251,7 @@
     {
       "id": 2006,
       "sha256": "19c1bf493658b384c1271eadbafc779abdf01ca449a2cfade9b6fae39ea41d71",
-      "moduleSha256": "2f4213aba602f813d002ba8afce82776987a6028e09a7e1aa2945ed128023abd",
+      "moduleSha256": "beab669ce6458a13d49a405016eb29ba5105f73693db31472b422054df0d96de",
       "animations": [
         {
           "name": "sprite_16",
@@ -6375,14 +6280,11 @@
       ],
       "requested": [
         "lib_sprite18",
-        "lib_sprite24",
         "sprite_16",
         "sprite_23",
         "sprite_26"
       ],
-      "aliased": [
-        "lib_sprite24->sprite_24"
-      ],
+      "aliased": [],
       "missing": [
         "lib_sprite18"
       ],
@@ -6414,7 +6316,7 @@
     {
       "id": 2008,
       "sha256": "f0e35043cfc3c32eb4e6355fe4403b2fc751cb7f01f4c87a0c163db97b0aa712",
-      "moduleSha256": "b9c98484c98242fdb741c9dac07f025ca4e29ed324f58fc56caebc50912f1ec5",
+      "moduleSha256": "2d96dcd2e9241029f79fcea6c2326e04119a7a4038f01e403ad7ac26829566d7",
       "animations": [
         {
           "name": "shoot",
@@ -6520,7 +6422,7 @@
     {
       "id": 2012,
       "sha256": "42fe314371c22fe8f8b3eb53f363d7610ee96087a44512d7015026b71259a6dc",
-      "moduleSha256": "5c8ee762d2039194df91f53e40ca92ac03b358af59ba4e1faf73e1acbdec2bea",
+      "moduleSha256": "c4beaa9c0ce7c81c2b1e870af73d17b0bd21795dc152f9b60d003e5d8e76f13f",
       "animations": [
         {
           "name": "fumee",
@@ -6555,12 +6457,9 @@
         "lib_fumee",
         "lib_fumee2",
         "lib_sprite7",
-        "lib_sprite8",
         "shoot"
       ],
-      "aliased": [
-        "lib_sprite8->sprite_8"
-      ],
+      "aliased": [],
       "missing": [
         "lib_sprite7"
       ],
@@ -6572,7 +6471,7 @@
     {
       "id": 2013,
       "sha256": "b8d9aa1a3b28bf97519e515ce97b96939f7e087ce5b58b7fdc5e03d05eefbf32",
-      "moduleSha256": "425406233cc241adb8ae55414360b2e48bd74c305822dd2af2ad467c77301dcc",
+      "moduleSha256": "70da74af62fa1ddb635ed0e4765003274157ab63807fd5cc16e4d9035cff1ed0",
       "animations": [
         {
           "name": "lib_bulle",
@@ -6605,15 +6504,10 @@
       ],
       "requested": [
         "lib_bulle",
-        "lib_sprite5",
         "sprite_10",
-        "sprite_11",
-        "sprite_4",
-        "sprite_9"
+        "sprite_4"
       ],
-      "aliased": [
-        "lib_sprite5->sprite_5"
-      ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -7134,7 +7028,7 @@
     {
       "id": 2045,
       "sha256": "1b3d041d6aaf81672e454076ba20ae21516232779ab12cab8612979cb195170f",
-      "moduleSha256": "c0db9f79efe68e99611018f11103e099bba1ca56bd043811cf28d6c5c9872c3e",
+      "moduleSha256": "6b4e82b964518a5295252bd7f363f198ca2b93378b0b4dd3ace9c8fd55b21b25",
       "animations": [
         {
           "name": "sprite_10",
@@ -7158,12 +7052,9 @@
         }
       ],
       "requested": [
-        "lib_sprite3",
         "sprite_10"
       ],
-      "aliased": [
-        "lib_sprite3->sprite_3"
-      ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -7268,7 +7159,7 @@
     {
       "id": 2049,
       "sha256": "27796dcc2c3a311ed70aca9c9435c13366cabd1c07146f1c1ca4a5bde785f75d",
-      "moduleSha256": "883b1c898b299a22a6cce197b3e41e9fc5c37e3c0fe2ccfa831640f707190095",
+      "moduleSha256": "243f95f65df7a0c724576fa47c77e1f14bd59e2ebcd0594afc6c075af7a39e54",
       "animations": [
         {
           "name": "lib_bulle",
@@ -7301,15 +7192,10 @@
       ],
       "requested": [
         "lib_bulle",
-        "lib_sprite5",
         "sprite_10",
-        "sprite_11",
-        "sprite_4",
-        "sprite_9"
+        "sprite_4"
       ],
-      "aliased": [
-        "lib_sprite5->sprite_5"
-      ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -7462,7 +7348,7 @@
     {
       "id": 2054,
       "sha256": "2cfe8eecdae6241735c91495c1a746400e1b17867ec258e38d97fc5686004d4d",
-      "moduleSha256": "20c73a2f648b1546bea44aa1bc814a042e90e899bf6a4bb9125b490502c8ecb2",
+      "moduleSha256": "633517b53535603a0aeacc3ee4ed0849666cd8d4bd3ac272fb4688df689f3a2d",
       "animations": [
         {
           "name": "sprite_10",
@@ -7494,15 +7380,12 @@
         }
       ],
       "requested": [
-        "lib_sprite5",
         "sprite_10",
         "sprite_12",
         "sprite_13",
         "sprite_9"
       ],
-      "aliased": [
-        "lib_sprite5->sprite_5"
-      ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -7562,7 +7445,7 @@
     {
       "id": 2057,
       "sha256": "1e755dd67d829c912fa74c4b2b3be7265a32da01a5811ce9392d828046803f3e",
-      "moduleSha256": "8aa6d790c158f0ce5909fa7f74e0dd6769e2384945c81aa9e26365e8571f6448",
+      "moduleSha256": "130927ade8d308d72cf31f2681b1903d5b74c682ada9e99d190c6b7d40ae9d5a",
       "animations": [
         {
           "name": "sprite_9",
@@ -7817,7 +7700,7 @@
     {
       "id": 2065,
       "sha256": "063426e52e51fb544924bb0553d16f82655146ecd9ad83d5e62a770e32357434",
-      "moduleSha256": "ca3548ba9f40877575d0426356a02fd1de1262ade97ae2ea9730f457977ae7a2",
+      "moduleSha256": "65daa6eedeb4e227daadea8ec98b942c0caf7dea56f182198970d32c8c4c17cd",
       "animations": [
         {
           "name": "lib_bulle",
@@ -7850,14 +7733,9 @@
       ],
       "requested": [
         "lib_bulle",
-        "lib_sprite5",
-        "sprite_10",
-        "sprite_11",
-        "sprite_9"
+        "sprite_10"
       ],
-      "aliased": [
-        "lib_sprite5->sprite_5"
-      ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -7867,7 +7745,7 @@
     {
       "id": 2066,
       "sha256": "7e9827d4b1430741216af502f57f37d1cfd3c857cad524be5c6339088ded2966",
-      "moduleSha256": "bab55f9af6af92afa0d0df9770f14f2c466f70e217280b37b5ce28606b6c4f35",
+      "moduleSha256": "28c3e614a010f3c879020e8217878d8a08d4fc0ced0e16e341802d847f595a92",
       "animations": [
         {
           "name": "lib_bulle",
@@ -7900,15 +7778,10 @@
       ],
       "requested": [
         "lib_bulle",
-        "lib_sprite5",
         "sprite_10",
-        "sprite_11",
-        "sprite_4",
-        "sprite_9"
+        "sprite_4"
       ],
-      "aliased": [
-        "lib_sprite5->sprite_5"
-      ],
+      "aliased": [],
       "missing": [],
       "failures": [],
       "cases": 12,
@@ -8093,7 +7966,7 @@
     {
       "id": 2102,
       "sha256": "afb6aaa3f2b8c9d57ec1778a8cd86a8f0ed7bcb017213a9b4f8dd08a3c94b201",
-      "moduleSha256": "6ab091258deb596d03ceed46185adb98139fbd6c93ea691a81ede76562a2373f",
+      "moduleSha256": "08e72d8cec8703a1e92be064a730a7575ccb7d39c8ce5aa08447c06640eb9abc",
       "animations": [
         {
           "name": "shoot",
@@ -8277,7 +8150,7 @@
     {
       "id": 2108,
       "sha256": "66af642814c10f9e6820e69ae92a8a76e6a1107929d8f6839379325ae49981be",
-      "moduleSha256": "c6560d1ae05221ced69acabbebf6c96aaaeaf39dda68266190418195f396b466",
+      "moduleSha256": "0ea2275dcf8b9c90dd085652ad28f6f3cd494cce193284cb85ff675cbf8c345c",
       "animations": [
         {
           "name": "anim1",
@@ -8294,12 +8167,9 @@
       ],
       "requested": [
         "anim1",
-        "lib_sprite15",
-        "lib_sprite22"
+        "lib_sprite15"
       ],
-      "aliased": [
-        "lib_sprite22->sprite_22"
-      ],
+      "aliased": [],
       "missing": [
         "lib_sprite15"
       ],
@@ -8705,7 +8575,7 @@
     {
       "id": 2200,
       "sha256": "705c86d3b29538d4af9a8cc5f20546eda3d2a0eb9bfe7939e7936773527ed0df",
-      "moduleSha256": "0c9e7d602782df505aff2a446eb60f82e629ca84ad92644952ef1ad1d6ec08d4",
+      "moduleSha256": "cd134be754f81a00396127fefc8726bade1da1924734a1565f18e72587005fc5",
       "animations": [
         {
           "name": "sprite_15",
@@ -8722,7 +8592,6 @@
       ],
       "requested": [
         "sprite_15",
-        "sprite_26",
         "sprite_28"
       ],
       "aliased": [],
@@ -9408,22 +9277,9 @@
       ],
       "aliased": [],
       "missing": [],
-      "failures": [
-        "level=1, direction=-1, seed=1: hits=1, completions=0, complete=false",
-        "level=1, direction=-1, seed=123: hits=1, completions=0, complete=false",
-        "level=1, direction=-1, seed=11259375: hits=1, completions=0, complete=false",
-        "level=1, direction=1, seed=1: hits=1, completions=0, complete=false",
-        "level=1, direction=1, seed=123: hits=1, completions=0, complete=false",
-        "level=1, direction=1, seed=11259375: hits=1, completions=0, complete=false",
-        "level=6, direction=-1, seed=1: hits=1, completions=0, complete=false",
-        "level=6, direction=-1, seed=123: hits=1, completions=0, complete=false",
-        "level=6, direction=-1, seed=11259375: hits=1, completions=0, complete=false",
-        "level=6, direction=1, seed=1: hits=1, completions=0, complete=false",
-        "level=6, direction=1, seed=123: hits=1, completions=0, complete=false",
-        "level=6, direction=1, seed=11259375: hits=1, completions=0, complete=false"
-      ],
+      "failures": [],
       "cases": 12,
-      "longestMs": 30000,
+      "longestMs": 2250,
       "visualVerified": false
     },
     {

@@ -115,7 +115,9 @@ export class Spell2001 extends RuntimeSpell {
     this.sprite8Sym = {
       name: "sprite_8",
       totalFrames: 48,
-      frames: textures.getFrames("sprite_8"),
+      // sprite_8 is baked into sprite_10's composite frames: drawing it again
+      // doubled it (QA-183, `audit-spell-display-types.ts`). Scripts kept.
+      frames: [],
       anchorX: sprite8Anchor.x,
       anchorY: sprite8Anchor.y,
 

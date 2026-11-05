@@ -2138,6 +2138,10 @@ export class GameClient {
             casterId: payload.casterId,
             spellLevel: payload.spellLevel,
             critical: payload.critical,
+            // The server's canonical anchor wins over the module's guess.
+            ...(payload.displayType === undefined
+              ? {}
+              : { displayType: payload.displayType }),
             playSound: (name) => this.audioManager.playSound(name),
             onHit: () => hitFiredResolve(),
           });

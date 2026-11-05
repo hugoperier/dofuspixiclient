@@ -116,7 +116,9 @@ export class Spell202 extends RuntimeSpell {
     const sprite11Sym: SymbolDefinition = {
       name: "sprite11",
       totalFrames: 6,
-      frames: textures.getFrames("lib_sprite11"),
+      // sprite_11 is baked into etoiles's composite frames: drawing it again
+      // doubled it (QA-183, `audit-spell-display-types.ts`). Scripts kept.
+      frames: [],
       anchorX: sprite11Anchor.x,
       anchorY: sprite11Anchor.y,
 

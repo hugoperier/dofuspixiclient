@@ -108,12 +108,14 @@ export class Spell412 extends RuntimeSpell {
           (clip, ctx) => {
             // AS: DefineSprite_14/frame_1/DoAction.as
             // _X = _parent.cellTo.x; _Y = _parent.cellTo.y; _rotation = 0;
-            // For TargetCell, the container is already anchored at cellTo by the
-            // harness (root.container at cellTo). sprite_14 is attached at root,
-            // so we position it at (0,0) in container-local coords (i.e. at the
-            // target cell) and reset rotation to 0.
-            clip.x = 0;
-            clip.y = 0;
+            // root.vars.cellTo is in the container's space (QA-182): the literal
+            // translation lands on the target under the canonical displayType as
+            // under the module's own one.
+            const cellTo = clip.parent?.vars.cellTo as
+              | { x: number; y: number }
+              | undefined;
+            clip.x = cellTo?.x ?? 0;
+            clip.y = cellTo?.y ?? 0;
             clip.rotation = 0;
 
             // Place two sprite3 instances inside sprite_14 (depths 1 and 4).

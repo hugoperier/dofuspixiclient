@@ -1,13 +1,25 @@
 /**
- * Spell 512 — Éboulement (Sadida earth-rock spell).
+ * Visual 512 — Horloge (sort 95, Xélor): a clock face rises over the
+ * target, its hand ticks, stone chips fall.
  *
  * Hand-ported against the SpellClip / SpellRuntime composition layer.
  * Canonical AS source: tools/combat-exporter/output/spell-anims/512/scripts/scripts/
  *
- * displayType=11 (TargetCell). The main animated content (sprite_42) positions
- * itself at _parent.cellTo on its own frame_1, and the outer main timeline
- * just stops. No projectile motion, no caster reference for the main clip —
- * it is an impact at target cell.
+ * displayType=51 (WorldAbsoluteAlt) — `sorts.spriteInfos` "51,1,1", sent
+ * by the server (QA-181). sprite_42 moves itself onto `_parent.cellTo` on
+ * its frame_1, which `root.vars.cellTo` (container space, QA-182) makes
+ * hold under any anchor. Under the TargetCell this module used to declare,
+ * with world coordinates in `cellTo`, the clock landed at twice the
+ * target's position.
+ *
+ * Degraded on purpose (QA-183): the clock hand (sprite_10) and the
+ * shaking glow (sprite_6) are baked into sprite_42's composite frames —
+ * `sprite_42_40.svg` shows the hand in place. Their CLIPACTIONRECORD
+ * handlers (wobble, shake) cannot move pixels that are part of the
+ * composite, and attaching them again drew a second, detached hand at
+ * sprite_42's origin. So they are not attached: the hand is frozen in the
+ * composite instead of wobbling. Making it move again takes a dynamic
+ * re-export of visual 512 (`dynamic-spells.json`, retail SWF required).
  *
  * AS layout:
  *   - Main timeline (frame_2/DoAction.as): stop(). One frame of content places
@@ -40,9 +52,8 @@
  *     PlaceObject2_10_9 enterFrame handler (gotoAndStop(1) or gotoAndStop(2)).
  *
  * The two PlaceObject2 children in sprite_42/frame_7 are "inline" authored
- * placements baked into the composite sprite_42 SVG frames.  However their
- * CLIPACTIONRECORD handlers (shaking + wobble) are purely runtime and must
- * be reproduced via live SpellClip instances attached at frame 7.
+ * placements baked into the composite sprite_42 SVG frames, so they are
+ * not attached (see the degradation note above).
  *
  * The stone-particle "pierres" container (PlaceObject2_35_12 in frame_61) is
  * a wrapper clip with no own handlers — its onClipEvent(load) fires once and
@@ -54,8 +65,6 @@
  *                   integrates drift + bounce + settle.
  *
  * Inline authored children of sprite_42 (registered as container symbols):
- *   - shake_sprite  — wobbles X/Y ±2.5px each frame (PlaceObject2_6_7).
- *   - wobble_sprite — sine-driven rotation toggling sprite_10's 2 frames (PlaceObject2_10_9).
  *   - pierres_container — spawns 7 lib_pierres particles on load (PlaceObject2_35_12).
  *
  * Sounds:
@@ -105,16 +114,9 @@ const SPRITE_42_BOUNDS = {
   offsetY: -142.55,
 };
 
-const SPRITE_10_BOUNDS = {
-  width: 33,
-  height: 44,
-  offsetX: -4.55,
-  offsetY: -22.5,
-};
-
 export class Spell512 extends RuntimeSpell {
   readonly spellId = 512;
-  readonly displayType = SpellDisplayType.TargetCell;
+  readonly displayType = SpellDisplayType.WorldAbsoluteAlt;
 
   // Capture sound callback for use in frame scripts
   private soundCallback?: (id: string) => void;
@@ -233,95 +235,6 @@ export class Spell512 extends RuntimeSpell {
       },
     };
 
-    // ---- sprite_10 — 2-frame wobble visual (toggled by wobble_sprite) ----
-    // No own scripts. Registered so wobble_sprite can gotoAndStop its frames.
-    const sprite10Anchor = calculateAnchor(SPRITE_10_BOUNDS);
-    const sprite10Sym: SymbolDefinition = {
-      name: "sprite_10",
-      totalFrames: 2,
-      frames: textures.getFrames("sprite_10"),
-      anchorX: sprite10Anchor.x,
-      anchorY: sprite10Anchor.y,
-    };
-
-    // ---- shake_sprite — shakes position ±2.5px each frame ---------------
-    // AS: DefineSprite_42/frame_7/PlaceObject2_6_7/CLIPACTIONRECORD onClipEvent(load)
-    //   y = _Y
-    // AS: DefineSprite_42/frame_7/PlaceObject2_6_7/CLIPACTIONRECORD onClipEvent(enterFrame)
-    //   _X = (Math.random() - 0.5) * 5
-    //   _Y = (Math.random() - 0.5) * 5 + y
-    // This is an inline authored placement baked into sprite_42's composite SVG
-    // visually, but its per-frame behavior must be driven live.
-    const shakeSpriteSym: SymbolDefinition = {
-      name: "shake_sprite",
-      totalFrames: 1,
-      frames: [],
-      anchorX: 0.5,
-      anchorY: 0.5,
-
-      onLoad: (clip) => {
-        // AS: DefineSprite_42/frame_7/PlaceObject2_6_7/onClipEvent(load)
-        //   y = _Y
-        clip.vars.baseY = clip.y;
-      },
-
-      onEnterFrame: (clip) => {
-        // AS: DefineSprite_42/frame_7/PlaceObject2_6_7/onClipEvent(enterFrame)
-        //   _X = (Math.random() - 0.5) * 5
-        //   _Y = (Math.random() - 0.5) * 5 + y
-        const baseY = clip.vars.baseY as number;
-        clip.x = (Math.random() - 0.5) * 5;
-        clip.y = (Math.random() - 0.5) * 5 + baseY;
-      },
-    };
-
-    // ---- wobble_sprite — sine-driven rotation, toggles sprite_10 frames ---
-    // AS: DefineSprite_42/frame_7/PlaceObject2_10_9/CLIPACTIONRECORD onClipEvent(load)
-    //   i = 0
-    // AS: DefineSprite_42/frame_7/PlaceObject2_10_9/CLIPACTIONRECORD onClipEvent(enterFrame)
-    //   _rotation = _rotation + vr
-    //   vr = 46.6 * Math.sin(i += Math.random())
-    //   if(Math.abs(vr) > 100) { gotoAndStop(2) } else { gotoAndStop(1) }
-    // The wobble_sprite itself is a container that holds a sprite_10 instance.
-    // In canonical AS the PlaceObject2_10_9 is a sprite that authors placed
-    // with a sub-sprite. We model it as a container with sprite_10 as a child.
-    const wobbleSpriteSym: SymbolDefinition = {
-      name: "wobble_sprite",
-      totalFrames: 2,
-      frames: textures.getFrames("sprite_10"),
-      anchorX: calculateAnchor(SPRITE_10_BOUNDS).x,
-      anchorY: calculateAnchor(SPRITE_10_BOUNDS).y,
-
-      onLoad: (clip) => {
-        // AS: DefineSprite_42/frame_7/PlaceObject2_10_9/onClipEvent(load)
-        //   i = 0
-        clip.vars.i = 0;
-        clip.vars.vr = 0;
-      },
-
-      onEnterFrame: (clip) => {
-        // AS: DefineSprite_42/frame_7/PlaceObject2_10_9/onClipEvent(enterFrame)
-        //   _rotation = _rotation + vr
-        //   vr = 46.6 * Math.sin(i += Math.random())
-        //   if(Math.abs(vr) > 100) { gotoAndStop(2) } else { gotoAndStop(1) }
-        let vr = clip.vars.vr as number;
-        let i = clip.vars.i as number;
-
-        clip.rotation += (vr * Math.PI) / 180;
-        i += Math.random();
-        vr = 46.6 * Math.sin(i);
-
-        if (Math.abs(vr) > 100) {
-          clip.gotoAndStop(1); // AS gotoAndStop(2) → 0-based index 1
-        } else {
-          clip.gotoAndStop(0); // AS gotoAndStop(1) → 0-based index 0
-        }
-
-        clip.vars.vr = vr;
-        clip.vars.i = i;
-      },
-    };
-
     // ---- sprite_27 — debris/dust visual (93 frames, randomised start) -----
     // AS: DefineSprite_27/frame_1/DoAction.as: gotoAndPlay(random(30))
     const sprite27Anchor = calculateAnchor(SPRITE_27_BOUNDS);
@@ -357,7 +270,8 @@ export class Spell512 extends RuntimeSpell {
     // ---- sprite_42 — main 213-frame impact timeline ----------------------
     // frame_1  DoAction.as:   SOMA.playSound("licrounch_1008")
     // frame_1  DoAction_2.as: _X = _parent.cellTo.x; _Y = _parent.cellTo.y
-    // frame_7  places shake_sprite and wobble_sprite (both with clip events)
+    // frame_7  places sprite_6 (shake) and sprite_10 (wobbling hand), both
+    //          already baked into the composite — not attached (QA-183)
     // frame_55 DoAction.as:   SOMA.playSound("many_512b")
     // frame_61 DoAction.as:   this.end() → signalHit
     //          PlaceObject2_35_12 placed → pierres_container onLoad spawns 7 pierres
@@ -373,16 +287,15 @@ export class Spell512 extends RuntimeSpell {
       frameScripts: new Map([
         [
           0,
-          (clip, ctx) => {
+          (clip) => {
             // AS: DefineSprite_42/frame_1/DoAction.as
             //   SOMA.playSound("licrounch_1008")
             this.soundCallback?.("licrounch_1008");
 
             // AS: DefineSprite_42/frame_1/DoAction_2.as
             //   _X = _parent.cellTo.x; _Y = _parent.cellTo.y
-            // For displayType=11 (TargetCell), the harness anchors the
-            // container at cellTo. sprite_42 is a direct child of root,
-            // so here _parent is root. We read cellTo from root.vars.
+            // sprite_42 is a direct child of root, so _parent is root;
+            // root.vars.cellTo is in the container's space (QA-182).
             const root = clip.parent;
             const cellTo = root?.vars.cellTo as
               | { x: number; y: number }
@@ -391,18 +304,6 @@ export class Spell512 extends RuntimeSpell {
               clip.x = cellTo.x;
               clip.y = cellTo.y;
             }
-          },
-        ],
-        [
-          6,
-          (clip, ctx) => {
-            // AS: DefineSprite_42/frame_7 places:
-            //   PlaceObject2_6_7  → shake_sprite (clip events: load seeds baseY,
-            //                        enterFrame randomises X/Y)
-            //   PlaceObject2_10_9 → wobble_sprite (clip events: load seeds i=0,
-            //                        enterFrame sine rotation + frame toggle)
-            clip.attach(shakeSpriteSym, "shake_sprite", 7, ctx);
-            clip.attach(wobbleSpriteSym, "wobble_sprite", 9, ctx);
           },
         ],
         [
@@ -439,9 +340,6 @@ export class Spell512 extends RuntimeSpell {
 
     this.registry.register(pierresSym);
     this.registry.register(pierresContainerSym);
-    this.registry.register(sprite10Sym);
-    this.registry.register(shakeSpriteSym);
-    this.registry.register(wobbleSpriteSym);
     this.registry.register(sprite27Sym);
     this.registry.register(sprite28Sym);
     this.registry.register(sprite42Sym);

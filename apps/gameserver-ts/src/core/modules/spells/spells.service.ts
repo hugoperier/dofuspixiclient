@@ -141,8 +141,10 @@ export class SpellsService implements SpellPort {
     }
     const effects = parseEffects(row.effects);
     const criticalEffects = parseEffects(row.criticalEffects);
+    const { displayType, castAnimation, spriteInFront, ...levelRow } = row;
     return {
-      ...row,
+      ...levelRow,
+      ...spriteInfos(displayType, castAnimation, spriteInFront),
       requiredStates: stateIds(row.requiredStates),
       forbiddenStates: stateIds(row.forbiddenStates),
       effects,
@@ -459,4 +461,21 @@ function parseEffects(raw: unknown): SpellEffect[] {
     targetMask: Number(e?.targetMask ?? 0),
     targetFilter: Number(e?.targetFilter ?? 0),
   }));
+}
+
+/**
+ * The template's `spriteInfos` as the optional fields of a `SpellLevel`.
+ * A NULL column is left out rather than carried as `undefined`, which
+ * `exactOptionalPropertyTypes` would refuse.
+ */
+function spriteInfos(
+  displayType: number | null,
+  castAnimation: number | null,
+  spriteInFront: boolean | null
+): Pick<SpellLevel, "displayType" | "castAnimation" | "spriteInFront"> {
+  return {
+    ...(displayType === null ? {} : { displayType }),
+    ...(castAnimation === null ? {} : { castAnimation }),
+    ...(spriteInFront === null ? {} : { spriteInFront }),
+  };
 }

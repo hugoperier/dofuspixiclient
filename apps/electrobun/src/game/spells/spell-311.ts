@@ -105,7 +105,9 @@ export class Spell311 extends RuntimeSpell {
     const sprite4Sym: SymbolDefinition = {
       name: "sprite4",
       totalFrames: 1,
-      frames: textures.getFrames("lib_sprite4"),
+      // sprite_4 is baked into sprite_21's composite frames: drawing it again
+      // doubled it (QA-183, `audit-spell-display-types.ts`). Scripts kept.
+      frames: [],
       anchorX: sprite4Anchor.x,
       anchorY: sprite4Anchor.y,
       onLoad: (clip) => {
@@ -218,15 +220,14 @@ export class Spell311 extends RuntimeSpell {
           (clip, ctx) => {
             // AS DefineSprite_21/frame_1/DoAction.as
             // _X = _parent.cellTo.x; _Y = _parent.cellTo.y;
-            // Container (root) is anchored at cellTo for TargetCell.
-            // sprite_21 positions itself at cellTo relative to its own parent (root).
-            // root.vars.cellTo holds world coords; container origin = cellTo, so
-            // local offset is (0, 0).
+            // root.vars.cellTo is in the container's space (QA-182): the literal
+            // translation lands on the target under the canonical displayType as
+            // under the module's own one.
             const root = clip.parent;
             const cellTo = root?.vars.cellTo as { x: number; y: number } | undefined;
             if (cellTo) {
-              clip.x = 0;
-              clip.y = 0;
+              clip.x = cellTo.x;
+              clip.y = cellTo.y;
             }
             // Attach sprite4 at depth 5 per the canonical placement
             // matrix: translateX=0, translateY=-340, scaleX≈0.074, scaleY≈2.734

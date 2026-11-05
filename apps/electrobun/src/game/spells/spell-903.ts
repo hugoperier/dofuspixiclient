@@ -112,7 +112,9 @@ export class Spell903 extends RuntimeSpell {
     const sprite7Sym: SymbolDefinition = {
       name: "sprite7",
       totalFrames: 12,
-      frames: textures.getFrames("lib_sprite7"),
+      // sprite_7 is baked into anim1's composite frames: drawing it again
+      // doubled it (QA-183, `audit-spell-display-types.ts`). Scripts kept.
+      frames: [],
       anchorX: sprite7Anchor.x,
       anchorY: sprite7Anchor.y,
       onLoad: (clip) => {
@@ -155,7 +157,9 @@ export class Spell903 extends RuntimeSpell {
     const sprite8Sym: SymbolDefinition = {
       name: "sprite8",
       totalFrames: 1,
-      frames: textures.getFrames("lib_sprite8"),
+      // sprite_8 is baked into anim1's composite frames: drawing it again
+      // doubled it (QA-183, `audit-spell-display-types.ts`). Scripts kept.
+      frames: [],
       anchorX: sprite8Anchor.x,
       anchorY: sprite8Anchor.y,
       frameScripts: new Map([

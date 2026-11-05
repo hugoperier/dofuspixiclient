@@ -446,6 +446,42 @@ ${ref909}
 // Per-spell context (user message)
 // ---------------------------------------------------------------------------
 
+/**
+ * The displayTypes `sorts.spriteInfos` gives a visual, with the spells
+ * that use each — the value the server sends in `GA;300`. Read from the
+ * same dump migration 0068 imports.
+ */
+let sortsRows: { id: number; name: string; gfx: number; displayType: number }[] | null =
+  null;
+async function canonicalDisplayTypes(
+  gfx: number,
+): Promise<{ displayType: number; spells: string[] }[]> {
+  if (!sortsRows) {
+    const path = join(REPO_ROOT, 'assets/sources/starloco/sorts.sql');
+    const raw = (await exists(path)) ? await readText(path) : '';
+    sortsRows = [
+      ...raw.matchAll(/^INSERT INTO `sorts` VALUES \((\d+),'((?:[^'\\]|\\.)*)',(-?\d+),'([^']*)'/gm),
+    ].map((m) => ({
+      id: Number(m[1]),
+      name: (m[2] ?? '').replace(/\\'/g, "'"),
+      gfx: Number(m[3]),
+      displayType: Number((m[4] ?? '').split(',')[0]),
+    }));
+  }
+  const byType = new Map<number, string[]>();
+  for (const row of sortsRows) {
+    if (row.gfx === gfx && row.displayType >= 10) {
+      byType.set(row.displayType, [
+        ...(byType.get(row.displayType) ?? []),
+        `${row.id} ${row.name}`,
+      ]);
+    }
+  }
+  return [...byType]
+    .sort((a, b) => b[1].length - a[1].length)
+    .map(([displayType, spells]) => ({ displayType, spells }));
+}
+
 async function loadSpellContext(spell: SpellInfo): Promise<string> {
   const manifest = await readText(spell.manifestPath);
   const asFiles = await collectASFiles(spell.scriptsDir);
@@ -588,7 +624,24 @@ falls past the last unique-or-logical bound):**
 `;
   }
 
+  const canonical = await canonicalDisplayTypes(spell.id);
   context += `
+## Canonical displayType (sorts.spriteInfos)
+
+${
+  canonical.length
+    ? canonical
+        .map((c) => `- ${c.displayType} for ${c.spells.join(", ")}`)
+        .join("\n")
+    : "- none in the dump — fall back to the AS-based detection table"
+}
+
+The server sends this value with every cast and the client plays it (QA-181).
+Declare it as the module's \`displayType\` (the first one if several), and
+write the module so it holds under each value listed. Translate
+\`_X = _parent.cellTo.x\` literally as \`clip.x = cellTo.x\` from
+\`root.vars\` — they are in the container's own space.
+
 ## Instructions
 
 Generate the complete TypeScript implementation for spell ${spell.id}.
@@ -596,7 +649,7 @@ Generate the complete TypeScript implementation for spell ${spell.id}.
 Hard requirements:
 - MUST \`extends RuntimeSpell\` from "@dofus/spell-runtime"
 - MUST declare \`readonly spellId = ${spell.id};\`
-- MUST declare \`readonly displayType = SpellDisplayType.<NAME>;\` — pick the correct one by reading the AS scripts (see displayType detection table in the guide)
+- MUST declare \`readonly displayType = SpellDisplayType.<NAME>;\` — the canonical value above; the AS-based detection table only when the dump has none
 - MUST implement \`protected registerSymbols(textures, context): void\` registering every library symbol the AS \`attachMovie\` calls reference
 - SHOULD implement \`protected onSpellStart(callbacks, context): void\` for main-timeline \`SOMA.playSound(...)\` and any explicit child attaches
 - ALL imports from "@dofus/spell-runtime" only — NO pixi.js imports, NO relative paths

@@ -435,6 +435,17 @@ export interface SpellTemplatesTable {
   id: number;
   name: string;
   sprite: number;
+  /**
+   * `sorts.spriteInfos`, imported by 0068 — what 1.29 sends after the gfx
+   * id in `GA;300`. `displayType` is how the client anchors the visual
+   * (10/12 caster, 11 target, 20/21 linear, 30/31 ballistic, 40/41 beam,
+   * 50/51 world); `castAnimation` the caster's `anim<n>` pose;
+   * `spriteInFront` the side of the caster sprite the effect is layered
+   * on. NULL for a spell the dump does not describe.
+   */
+  displayType: number | null;
+  castAnimation: number | null;
+  spriteInFront: boolean | null;
 }
 
 export type SpellTemplateRow = Selectable<SpellTemplatesTable>;

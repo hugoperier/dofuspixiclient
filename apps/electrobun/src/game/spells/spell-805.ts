@@ -120,7 +120,9 @@ export class Spell805 extends RuntimeSpell {
     this.sprite6Sym = {
       name: "sprite6",
       totalFrames: 126,
-      frames: textures.getFrames("lib_sprite6"),
+      // sprite_6 is baked into duplicate's composite frames: drawing it again
+      // doubled it (QA-183, `audit-spell-display-types.ts`). Scripts kept.
+      frames: [],
       anchorX: sprite6Anchor.x,
       anchorY: sprite6Anchor.y,
       frameScripts: new Map([

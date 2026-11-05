@@ -4,7 +4,7 @@ import type {
   SpellContext,
 } from "@dofus/spell-runtime";
 import type { Container } from "pixi.js";
-import { SpellDisplayType } from "@dofus/spell-runtime";
+import { resolveAnchor, SpellDisplayType } from "@dofus/spell-runtime";
 
 import type { SpellVelloRenderer } from "@/game/render/spell-vello-renderer";
 import type { Scene } from "@/game/scene/scene";
@@ -25,6 +25,7 @@ import {
 } from "@/game/datacenter/cell";
 import { createLogger } from "@/utils/logger";
 
+import { effectiveDisplayType } from "./display-type";
 import { PreRenderedSpell } from "./pre-rendered-spell";
 import { SpellActor } from "./spell-actor";
 
@@ -59,10 +60,11 @@ export interface SpellAnimationConfig {
   /** Optional per-cast sound sink; defaults to the active game audio session. */
   playSound?: (soundId: string) => void;
   /**
-   * AS2 displayType (10/11/12/20/21/30/31/40/41/50/51) — controls
-   * where the spell container is anchored. Defaults to 11 (TargetCell)
-   * which matches the most common impact-style behaviour in 1.29 and
-   * preserves the v1 fix's anchor for spells without explicit metadata.
+   * AS2 displayType (10/11/12/20/21/30/31/40/41/50/51) — where the spell
+   * container is anchored and how the harness drives it. Comes from the
+   * server (`GA;300`, `sorts.spriteInfos`) and wins over the module's own
+   * value, which is a generated guess — see `effectiveDisplayType` for the
+   * exceptions (QA-181). Without either, 11 (TargetCell).
    */
   displayType?: number;
   /**
@@ -189,15 +191,16 @@ export class SpellRenderer {
     spell: ISpellAnimation,
     loaded: LoadedSpell
   ): Promise<void> {
-    // RuntimeSpell instances expose their displayType so the harness
-    // can position the container at the canonical AS anchor (caster
-    // for 10/12/20/21/30/31/40/41, target for 11, world origin for
-    // 50/51). Legacy PreRenderedSpell + AI-generated spells have no
-    // displayType and fall back to TargetCell — that matches their
-    // historical "anchor at target" assumption.
-    const spellDisplayType =
-      (spell as { displayType?: number }).displayType ?? config.displayType;
-    const context = this.buildSpellContext(config, spellDisplayType);
+    // Server's canonical displayType over the module's guess, minus the
+    // pairs the audit found broken (display-type.ts, QA-181). RuntimeSpell
+    // reads the result back from `context.displayType` to configure its
+    // harness, so anchor and harness always agree.
+    const displayType = effectiveDisplayType(
+      config.spellId,
+      config.displayType,
+      (spell as { displayType?: number }).displayType
+    );
+    const context = this.buildSpellContext(config, displayType);
 
     return new Promise<void>((resolve, reject) => {
       const actor = new SpellActor(
@@ -312,9 +315,6 @@ export class SpellRenderer {
     const dy = to.y - from.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
     const angleDeg = (Math.atan2(dy, dx) * 180) / Math.PI;
-    // Per-spell instance displayType wins over the wire (the spell
-    // module knows the canonical AS displayType for its visual gfx);
-    // wire fallback handles legacy non-runtime spells.
     const displayType =
       overrideDisplayType ?? config.displayType ?? SpellDisplayType.TargetCell;
     const anchor = resolveAnchor(displayType, from, to);
@@ -363,7 +363,8 @@ export class SpellRenderer {
     };
   }
 
-  // Anchor table is in module scope — see resolveAnchor() at bottom.
+  // The anchor table is the runtime harness's own `resolveAnchor`, so the
+  // container origin and `root.vars.cellFrom/cellTo` agree by construction.
 
   private getCellPos(cellId: number): { x: number; y: number } {
     const cell = this.cellDataMap.get(cellId);
@@ -403,45 +404,5 @@ export class SpellRenderer {
   destroy(): void {
     this.clear();
     this.assetLoader.destroy();
-  }
-}
-
-/**
- * Map an AS2 displayType to the world coords where the spell
- * container's origin (0,0) lands. Mirrors VisualEffectHandler.as:85-232:
- *
- *   case 10 / 12        → anchor at caster (`mc._x = _loc12_.x`)
- *   case 11             → anchor at target (`mc._x = _loc13_.x`)
- *   case 20 / 21        → anchor at caster, container is rotated to
- *                         face target; "shoot" attached at delta(target)
- *   case 30 / 31        → anchor at caster (-10 y), parabolic motion
- *   case 40 / 41        → anchor at caster, beam of duplicates to target
- *   case 50 / 51        → anchor at world origin (0,0); script handles
- *                         its own positioning from cellFrom/cellTo
- *
- * Anything outside the documented set falls back to TargetCell (11),
- * matching the v1 default behaviour.
- */
-function resolveAnchor(
-  displayType: number,
-  caster: { x: number; y: number },
-  target: { x: number; y: number }
-): { x: number; y: number } {
-  switch (displayType) {
-    case SpellDisplayType.CasterCell:
-    case SpellDisplayType.CasterCellAlt:
-    case SpellDisplayType.ProjectileLinear:
-    case SpellDisplayType.ProjectileLinearAlt:
-    case SpellDisplayType.BeamLine:
-    case SpellDisplayType.BeamLineAlt:
-      return caster;
-    case SpellDisplayType.ProjectileBallistic:
-    case SpellDisplayType.ProjectileBallisticAlt:
-      return { x: caster.x, y: caster.y - 10 };
-    case SpellDisplayType.WorldAbsolute:
-    case SpellDisplayType.WorldAbsoluteAlt:
-      return { x: 0, y: 0 };
-    default:
-      return target;
   }
 }

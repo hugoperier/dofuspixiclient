@@ -98,6 +98,13 @@ export interface SpellCastPayload {
   critical: boolean;
   /** Cast pose hint from the server. Empty string = default ("anim1"). */
   animation: string;
+  /**
+   * How the visual is anchored — `GA;300`'s displayType, from the
+   * server's `sorts.spriteInfos` (10/12 caster, 11 target, 20/21 linear,
+   * 30/31 ballistic, 40/41 beam, 50/51 world). Absent when the server
+   * does not know it: the visual module's own value applies (QA-181).
+   */
+  displayType?: number;
 }
 
 export interface ZonePayload {
@@ -1242,5 +1249,7 @@ function spellLaunchToPayload(
     // Server-supplied cast pose; fall back to "anim1" so the caster
     // sprite always has a CAST animation to play even on legacy frames.
     animation: data.animation || "anim1",
+    // 0 is proto3's "unset": a server without spriteInfos for this spell.
+    ...(data.displayType > 0 ? { displayType: data.displayType } : {}),
   };
 }

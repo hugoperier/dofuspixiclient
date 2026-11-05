@@ -78,23 +78,32 @@ export function configureHarness(setup: HarnessSetup): void {
   const symbols = { ...DEFAULT_SYMBOLS, ...setup.symbols };
   const root = runtime.root;
 
-  // Always populate root.vars with the canonical _parent properties
-  // — per-spell scripts read these regardless of displayType.
-  root.vars.level = level;
-  root.vars.cellFrom = { x: caster.x, y: caster.y };
-  root.vars.cellTo = { x: target.x, y: target.y };
-  // AS stored angle in DEGREES; the runtime API uses RADIANS, so
-  // expose both. Compiler-emitted code reads `_parent.angle` in
-  // degrees so we mirror that convention.
-  root.vars.angle =
-    (Math.atan2(target.y - caster.y, target.x - caster.x) * 180) / Math.PI;
-
   // The container origin equals the displayType anchor in WORLD
   // coords (set by spell-view). All cell-relative deltas computed
   // below are in container-LOCAL coords.
   const anchor = resolveAnchor(displayType, caster, target);
   const casterLocal = { x: caster.x - anchor.x, y: caster.y - anchor.y };
   const targetLocal = { x: target.x - anchor.x, y: target.y - anchor.y };
+
+  // Always populate root.vars with the canonical _parent properties
+  // — per-spell scripts read these regardless of displayType.
+  //
+  // `cellFrom` / `cellTo` are in the CONTAINER's space, not the world's.
+  // That is what they are in 1.29: `mc.cellFrom = {x: sprite.mc._x, …}`
+  // is set only for 50/51 (VisualEffectHandler.as:224), where `mc` sits
+  // at the battlefield origin, so a script's `_X = _parent.cellTo.x`
+  // lands on the target. Handing out world coordinates under any other
+  // anchor put that same script at anchor + target — twice the target's
+  // position, which is where Horloge drew itself (QA-182). Under 50/51
+  // the anchor is (0,0) and nothing changes.
+  root.vars.level = level;
+  root.vars.cellFrom = casterLocal;
+  root.vars.cellTo = targetLocal;
+  // AS stored angle in DEGREES; the runtime API uses RADIANS, so
+  // expose both. Compiler-emitted code reads `_parent.angle` in
+  // degrees so we mirror that convention.
+  root.vars.angle =
+    (Math.atan2(target.y - caster.y, target.x - caster.x) * 180) / Math.PI;
 
   switch (displayType) {
     case SpellDisplayType.CasterCell:
@@ -106,13 +115,40 @@ export function configureHarness(setup: HarnessSetup): void {
 
     case SpellDisplayType.ProjectileLinear:
     case SpellDisplayType.ProjectileLinearAlt: {
-      // Root rotated to face target; "shoot" lives at target-local
-      // offset inside the rotated container so arrows / beams point
-      // along the line.
+      // VisualEffectHandler.as:96-104:
+      //   mc.rotate._rotation = mc.angle;
+      //   shoot = mc.attachMovie("shoot","shoot",10);
+      //   shoot._x = dx; shoot._y = dy;
+      // Only the SWF's `rotate` instance turns toward the target; `shoot`
+      // sits on `mc` itself, UNROTATED, on the target. The exported
+      // main-timeline composite is that `rotate` content, so the root
+      // turns — and `shoot`, its child, is counter-rotated onto the
+      // target: R(-θ)·(dx, dy) = (|d|, 0), rotation -θ. It used to be
+      // placed at (dx, dy) inside the turned root, i.e. off the target
+      // whenever the angle was not zero (QA-181).
       const dx = targetLocal.x - casterLocal.x;
       const dy = targetLocal.y - casterLocal.y;
-      root.rotation = Math.atan2(dy, dx);
-      attachIfRegistered(runtime, symbols.shoot, "shoot", 10, dx, dy);
+      const angle = Math.atan2(dy, dx);
+      const distance = Math.hypot(dx, dy);
+      root.rotation = angle;
+      // cellFrom / cellTo stay in the root's own frame, now turned (as
+      // for the anchor, QA-182): caster at the origin, target straight
+      // ahead. `angle` stays the world angle, as `mc.angle` is in 1.29 —
+      // clips inside the counter-turned `shoot` read it in world space.
+      // A main-timeline clip that turns itself (`_rotation =
+      // _parent.angle`, 406's sprite22) must subtract `root.rotation`, or
+      // it faces the target twice over.
+      root.vars.cellFrom = { x: 0, y: 0 };
+      root.vars.cellTo = { x: distance, y: 0 };
+      attachIfRegistered(
+        runtime,
+        symbols.shoot,
+        "shoot",
+        10,
+        distance,
+        0,
+        -angle
+      );
       return;
     }
 
@@ -156,11 +192,13 @@ export function configureHarness(setup: HarnessSetup): void {
       const xSign = Math.sign(dx || 1);
       let t = 0;
 
+      // The arc runs whether or not the SWF has a `move` symbol: in
+      // VisualEffectHandler.as:139-168 `this.move._x = x` on a missing
+      // clip is a no-op, and the landing branch still attaches `shoot`
+      // and calls `this.end()`. Waiting for `move` meant a visual without
+      // one (gfx 1100 under Désinvocation's 31) never signalled its hit.
       root.onEnterFrame = (clip, _ctx) => {
         const move = clip.children.get(symbols.move);
-        if (!move) {
-          return;
-        }
         const vyi = vy + g * t;
         const x = t * vx;
         const y = halfg * t * t + vy * t;
@@ -182,7 +220,7 @@ export function configureHarness(setup: HarnessSetup): void {
           // We pass the rotation via the `transform` param so
           // attach() applies it BEFORE running shoot's frame_1, which
           // matches canonical execution order.
-          move.remove();
+          move?.remove();
           attachIfRegistered(
             runtime,
             symbols.shoot,
@@ -194,7 +232,7 @@ export function configureHarness(setup: HarnessSetup): void {
           );
           runtime.signalHit();
           clip.onEnterFrame = null;
-        } else {
+        } else if (move) {
           move.x = xSign * x;
           move.y = y;
           move.rotation = Math.atan2(vyi, xSign * vx);
@@ -214,7 +252,11 @@ export function configureHarness(setup: HarnessSetup): void {
       const rot = Math.atan2(dyB, dxB);
       const fullDist = Math.sqrt(dxB * dxB + dyB * dyB);
       const dropEvery = 20; // canonical _loc24_ = 20
-      const interval = fullDist / Math.floor(fullDist / dropEvery);
+      // Caster on the target (fullDist 0) made this 0/0 = NaN in 1.29 too,
+      // and `dist > fullDist` then never held: the beam never ended. A
+      // degenerate line arrives at once.
+      const steps = Math.floor(fullDist / dropEvery);
+      const interval = steps > 0 ? fullDist / steps : Number.POSITIVE_INFINITY;
       let dist = 0;
       let inc = 1;
       const altType = displayType === SpellDisplayType.BeamLineAlt;
@@ -255,7 +297,7 @@ export function configureHarness(setup: HarnessSetup): void {
     case SpellDisplayType.WorldAbsoluteAlt:
       // Anchor is (0,0); container is at world origin; per-spell
       // scripts position children via _parent.cellFrom /
-      // _parent.cellTo in WORLD coords (already on root.vars above).
+      // _parent.cellTo, which here coincide with world coords.
       return;
 
     default:

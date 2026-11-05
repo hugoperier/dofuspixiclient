@@ -3,6 +3,7 @@ import type {
   SpellContext,
   SpellTextureProvider,
 } from "@dofus/spell-runtime";
+import { resolveAnchor, SpellDisplayType } from "@dofus/spell-runtime";
 import { Texture } from "pixi.js";
 
 import {
@@ -168,11 +169,19 @@ try {
             y: 260,
             groundLevel: 7,
           };
+          // Each module under its OWN displayType — this sweep checks the
+          // module's lifecycle as written. RuntimeSpell configures its
+          // harness from the context (QA-181), so a hard-coded 11 would
+          // play every projectile as an impact. The canonical values are
+          // audit-spell-display-types.ts's job.
+          const displayType =
+            (spell as { displayType?: number }).displayType ??
+            SpellDisplayType.TargetCell;
           const context: SpellContext = {
             cellFrom: from,
             cellTo: to,
-            displayType: 11,
-            anchor: to,
+            displayType,
+            anchor: resolveAnchor(displayType, from, to),
             angle: (Math.atan2(60, direction * 240) * 180) / Math.PI,
             distance: Math.hypot(240, 60),
             level,

@@ -107,7 +107,9 @@ export class Spell302 extends RuntimeSpell {
     this.sprite5Sym = {
       name: "sprite5",
       totalFrames: 9,
-      frames: textures.getFrames("lib_sprite5"),
+      // sprite_5 is baked into lib_etoiles's composite frames: drawing it again
+      // doubled it (QA-183, `audit-spell-display-types.ts`). Scripts kept.
+      frames: [],
       anchorX: sprite5Anchor.x,
       anchorY: sprite5Anchor.y,
       onLoad: (clip) => {

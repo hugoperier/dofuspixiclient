@@ -327,7 +327,12 @@ export class FightActionsService {
                   param3: spell.visualGfxId,
                   param4: spell.level,
                   customSprite: -1,
-                  animation: "anim1",
+                  // `sorts.spriteInfos`, as 1.29's GA;300 carried it: the
+                  // client anchors the visual from `displayType` rather
+                  // than trusting each module's guess (QA-181).
+                  displayType: spell.displayType ?? 0,
+                  animation: castAnimation(spell.castAnimation),
+                  frontOfSprite: spell.spriteInFront ?? true,
                 }),
               },
             },
@@ -407,4 +412,16 @@ export class FightActionsService {
       this.registry.getRunner(fight.id)?.requestEnd(fighter.id);
     }
   }
+}
+
+/**
+ * The caster pose a cast names, from `sorts.spriteInfos`' second field.
+ * 1.29 builds it as `"anim" + n` (GameActionsEx.as:417), so Frappe de
+ * Xélor's `0` is the contact pose `anim0`. The two negative codes do not
+ * name a pose: `-1` skips the whole visual and `-2` plays it without a
+ * pose. Neither is modelled yet (one spell with a visual uses `-1`), so
+ * they keep the cast pose, as an unknown value does.
+ */
+export function castAnimation(code: number | undefined): string {
+  return code === undefined || code < 0 ? "anim1" : `anim${code}`;
 }

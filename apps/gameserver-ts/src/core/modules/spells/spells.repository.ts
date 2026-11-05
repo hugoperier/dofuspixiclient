@@ -17,12 +17,24 @@ export class SpellsRepository {
     private readonly txHost: TransactionHost<TransactionalAdapterKysely<DB>>
   ) {}
 
+  /**
+   * One rank of a spell, with its template's `spriteInfos` (0068) — the
+   * visual's displayType, caster pose and layering travel with every cast.
+   * Left-joined: a rank whose template row is missing still casts, with
+   * the client's fallbacks.
+   */
   findLevel(spellId: number, level: number) {
     return this.txHost.tx
       .selectFrom("spellLevels")
-      .selectAll()
-      .where("spellId", "=", spellId)
-      .where("level", "=", level)
+      .leftJoin("spellTemplates", "spellTemplates.id", "spellLevels.spellId")
+      .selectAll("spellLevels")
+      .select([
+        "spellTemplates.displayType",
+        "spellTemplates.castAnimation",
+        "spellTemplates.spriteInFront",
+      ])
+      .where("spellLevels.spellId", "=", spellId)
+      .where("spellLevels.level", "=", level)
       .executeTakeFirst();
   }
 

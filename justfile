@@ -238,6 +238,11 @@ spells-coverage:
     # only resolve through the lib_/sprite_ alias. Ratchets against
     # doc/combat/spell-symbol-baseline.json — exits 1 if a count grows.
     @cd {{ root }} && bun apps/electrobun/scripts/audit-spell-animations.ts --all-graphics
+    # Then every visual under each canonical displayType of sorts.spriteInfos
+    # (QA-181): misplaced anchors, harness symbols, lifecycle. Regenerates
+    # the client's display-type-fallbacks.json and ratchets against
+    # doc/combat/display-type-baseline.json.
+    @cd {{ root }} && bun apps/electrobun/scripts/audit-spell-display-types.ts
 
 # Narrow spell audit (class-catalogue graphics) — writes animation-audit.json.
 spells-audit:

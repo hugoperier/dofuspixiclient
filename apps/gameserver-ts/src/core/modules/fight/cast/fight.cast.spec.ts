@@ -329,7 +329,9 @@ describe("authoritative casting", () => {
 });
 
 test("Ready starts one runner; validated spells emit launch before damage and finish", async () => {
-  const h = harness();
+  // Frappe de Xélor's spriteInfos ("51,0,1" in sorts) with the layering
+  // flipped, so each field is seen to travel rather than default.
+  const h = harness({ displayType: 51, castAnimation: 0, spriteInFront: false });
   const sent: DofusMessage[] = [];
   let ends = 0;
   const registry = new FightRegistryService();
@@ -398,6 +400,17 @@ test("Ready starts one runner; validated spells emit launch before damage and fi
     expect(actions.indexOf("spellLaunch")).toBeLessThan(
       actions.indexOf("damage")
     );
+    const launch = sent.flatMap((m) =>
+      m.payload.case === "gameAction" &&
+      m.payload.value.actionData.case === "spellLaunch"
+        ? [m.payload.value.actionData.value]
+        : []
+    )[0];
+    expect(launch).toMatchObject({
+      displayType: 51,
+      animation: "anim0",
+      frontOfSprite: false,
+    });
     expect(actions).toContain("death");
     expect(actions).toContain("apChange");
     expect(sent.some((m) => m.payload.case === "gameTurnMiddle")).toBe(true);

@@ -82,12 +82,13 @@ const SPRITE35_BOUNDS = {
 
 export class Spell809 extends RuntimeSpell {
   readonly spellId = 809;
-  readonly displayType = SpellDisplayType.TargetCell;
+  readonly displayType = SpellDisplayType.ProjectileLinearAlt;
 
   private pierresSym!: SymbolDefinition;
   private sprite6Sym!: SymbolDefinition;
   private sprite35Sym!: SymbolDefinition;
   private shootSym!: SymbolDefinition;
+  private anim1Sym!: SymbolDefinition;
 
   protected registerSymbols(
     textures: SpellTextureProvider,
@@ -337,22 +338,23 @@ export class Spell809 extends RuntimeSpell {
       },
     };
 
-    // ---- shoot — outer container (DefineSprite_39, 208 authored frames) ----
-    // animations[] "shoot" has 166 rendered SVG frames; DefineSprite_39 runs to
-    // frame 208 per the AS scripts. We set totalFrames=208 so the frame_58 and
-    // frame_208 scripts fire at the correct logical frames. The texture provider
-    // will clamp beyond frame 165 to the last available SVG frame automatically.
+    // ---- shoot — the impact, DefineSprite_9_shoot (166 frames) -----------
+    // Attached on the target, unturned, by the displayType 21 harness.
     //
     // frame_1 (index 0): attach sprite6 at depth 3, offset (0.45, -5.15)
     //                    attach sprite35 at depth 5 (the rotating/fading sub-sprite)
-    // frame_58 (index 57): this.end() → signalHit
-    // frame_208 (index 207): _parent.removeMovieClip() + stop() → complete
+    //   — native 809.swf: DefineSprite_14 places DefineSprite_11 at (0.45, -5.15)
+    //     and the clip-evented DefineSprite_13 at depth 5.
+    // frame_166 (index 165): _parent.removeMovieClip(); stop() → complete
+    //
+    // The impact (frame 58) and the 208-frame length this symbol used to carry
+    // are DefineSprite_39's — the `rotate` main timeline, now anim1 below.
     //
     // The alphaMult colorTransform tween on the sprite6 child (frames 117-140 in
     // placements[]) is driven per-frame via onEnterFrame on the shoot clip.
     this.shootSym = {
       name: "shoot",
-      totalFrames: 208,
+      totalFrames: 166,
       frames: textures.getFrames("shoot"),
       anchorX: shootAnchor.x,
       anchorY: shootAnchor.y,
@@ -400,6 +402,36 @@ export class Spell809 extends RuntimeSpell {
           },
         ],
         [
+          165,
+          (clip) => {
+            // AS DefineSprite_9_shoot/frame_165/DoAction.as:
+            //   _parent.removeMovieClip(); stop();  — `_parent` is the whole mc
+            clip.stop();
+            this.runtime.complete();
+          },
+        ],
+      ]),
+    };
+
+    // ---- anim1 — the `rotate` main timeline (DefineSprite_39) -------------
+    // Native 809.swf: the main timeline holds one instance, named `rotate`
+    // (DefineSprite_36, 70 frames), at (0.90, -24.60) × 0.989. 1.29 turns it
+    // toward the target (VisualEffectHandler.as:96-104); here the harness
+    // turns the root. It is the energy wave the Iop sends at the target —
+    // it was never exported (the exporter skipped the main timeline as soon
+    // as `shoot` existed) and Colère de Iop played its impact alone.
+    // Exported from the retail client and repeated ×3 (210 frames, the
+    // 60 Hz convention of the committed scripts): native end() at frame 20
+    // and removeMovieClip at 70 land on indices 57 and 207, the scripts'
+    // frame_58 and frame_208.
+    this.anim1Sym = {
+      name: "anim1",
+      totalFrames: 210,
+      frames: textures.getFrames("anim1"),
+      anchorX: 0.5,
+      anchorY: 0.5,
+      frameScripts: new Map([
+        [
           57,
           () => {
             // AS DefineSprite_39/frame_58/DoAction.as: this.end() → signalHit
@@ -411,7 +443,6 @@ export class Spell809 extends RuntimeSpell {
           (clip) => {
             // AS DefineSprite_39/frame_208/DoAction.as: _parent.removeMovieClip(); stop();
             clip.stop();
-            clip.remove();
             this.runtime.complete();
           },
         ],
@@ -422,6 +453,7 @@ export class Spell809 extends RuntimeSpell {
     this.registry.register(this.sprite6Sym);
     this.registry.register(this.sprite35Sym);
     this.registry.register(this.shootSym);
+    this.registry.register(this.anim1Sym);
   }
 
   protected onSpellStart(
@@ -431,9 +463,17 @@ export class Spell809 extends RuntimeSpell {
     // AS scripts/frame_1/DoAction.as: SOMA.playSound("lakam_405");
     callbacks.playSound("lakam_405");
 
-    // Attach the outer shoot container at the root level.
-    // displayType=11 (TargetCell): root container is already positioned at
-    // target cell — shoot attaches at local (0,0).
-    this.root.attach(this.shootSym, "shoot", 1, context);
+    // The main timeline's `rotate` instance, at its authored placement.
+    const rotate = this.root.attach(this.anim1Sym, "rotate", 1, context, {
+      x: 0.9,
+      y: -24.6,
+    });
+    rotate.scaleX = 0.989;
+    rotate.scaleY = 0.989;
+
+    // Canonical displayType 21 (QA-181): the harness attaches the library
+    // `shoot` on the target itself, unturned (VisualEffectHandler.as:96-104).
+    // Attaching it here too replaced the harness's and left it on the
+    // caster, turned with the root.
   }
 }

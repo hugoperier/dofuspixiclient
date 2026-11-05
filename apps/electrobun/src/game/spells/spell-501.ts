@@ -1,14 +1,17 @@
 /**
- * Spell 501 — Invocation de Bouftou (Enutrof / generic summon impact).
+ * Visual 501 — Gelure (sort 84, Xélor): a frost trail from the caster to
+ * the target, then a stone-throwing burst on the target.
  *
  * Hand-ported against the SpellClip / SpellRuntime composition runtime.
  * Canonical AS source: tools/combat-exporter/output/spell-anims/501/scripts/scripts/
  *
- * displayType=11 (TargetCell). No projectile motion (`move` symbol absent),
- * no caster-side content, no `_parent.cellFrom` references. The main impact
- * (`shoot`, 168 frames) lands at the target cell and contains a `duplicate`
- * sub-sprite that spawns `effet` particles and a `sprite7` clip that throws
- * 10 `pierres` stone fragments via clipEvents.
+ * displayType=41 (BeamLineAlt) — `sorts.spriteInfos` "41,0,1", the only
+ * spell using this visual (QA-181). The SWF is built for it: the harness
+ * (VisualEffectHandler.as:166-222) drops a `duplicate` every 20 px along
+ * caster → target, each puffing one `effet`, then attaches `shoot` on the
+ * target and calls `end()` (signalHit). The module only registers the
+ * symbols; it used to attach `shoot` itself at the root and signal the
+ * hit on its first frame, written against a guessed TargetCell.
  *
  * Library symbols:
  *
@@ -80,7 +83,7 @@ const SPRITE7_BOUNDS = {
 
 export class Spell501 extends RuntimeSpell {
   readonly spellId = 501;
-  readonly displayType = SpellDisplayType.TargetCell;
+  readonly displayType = SpellDisplayType.BeamLineAlt;
 
   // Hold symbol refs so shoot's frameScripts can reference them
   private pierresSym!: SymbolDefinition;
@@ -310,6 +313,7 @@ export class Spell501 extends RuntimeSpell {
     // ----------------------------------------------------------------
     // AS: DefineSprite_14_duplicate/frame_1/DoAction.as
     //   c = 0; while (c < 1) { this.attachMovie("effet","effet"+c,c); c++; }
+    // Dropped along the caster → target line by the BeamLineAlt harness.
     this.duplicateSym = {
       name: "duplicate",
       totalFrames: 1,
@@ -339,9 +343,8 @@ export class Spell501 extends RuntimeSpell {
     //     via PlaceObject2 (manifest placements: parentSpriteId=10, frame=6, kind="place")
     // AS: DefineSprite_10_shoot/frame_166/DoAction.as → _parent.removeMovieClip(); stop()
     //
-    // duplicate is attached at frame_1 per the canonical DoAction (this.attachMovie logic
-    // is in duplicate's frame_1, but shoot drives when to spawn it — the manifest shows
-    // `duplicate` in animations[], indicating it's placed on shoot's timeline at frame 1).
+    // Attached on the target by the BeamLineAlt harness once the trail
+    // arrives; the harness also signals the hit then (`this.end()`).
     this.shootSym = {
       name: "shoot",
       totalFrames: 168,
@@ -351,14 +354,10 @@ export class Spell501 extends RuntimeSpell {
       frameScripts: new Map([
         [
           0,
-          (clip, ctx) => {
+          () => {
             // AS: DefineSprite_10_shoot/frame_1/DoAction.as
             // SOMA.playSound("many_501")
             this.soundCallback?.("many_501");
-            // Signal hit at the first frame of impact
-            this.runtime.signalHit();
-            // Attach duplicate (which will spawn its own effet child)
-            clip.attach(this.duplicateSym, "duplicate0", 0, ctx);
           },
         ],
         [
@@ -394,12 +393,10 @@ export class Spell501 extends RuntimeSpell {
 
   protected onSpellStart(
     callbacks: SpellCallbacks,
-    context: SpellContext,
+    _context: SpellContext,
   ): void {
-    // Capture the sound callback for use from shoot/frame_1
+    // Capture the sound callback for use from shoot/frame_1. Nothing to
+    // attach: the BeamLineAlt harness drives `duplicate` and `shoot`.
     this.soundCallback = callbacks.playSound;
-    // Attach shoot at the root — it is the outermost impact clip for
-    // displayType=11 (TargetCell). The root is already anchored at target.
-    this.root.attach(this.shootSym, "shoot", 1, context);
   }
 }

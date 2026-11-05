@@ -80,6 +80,14 @@ You implement **two methods**: `registerSymbols` (always) and optionally `onSpel
 
 `displayType` controls how `configureHarness` anchors + animates the root clip. It must match the spell's canonical AS dispatch.
 
+**The module's value is only a fallback.** In 1.29 the displayType belongs to the *spell*, not to the visual: the server sends it in `GA;300` from `sorts.spriteInfos` (`assets/sources/starloco/sorts.sql`, 4th column, first field), and one gfx can serve several (gfx 503: 11 for Ralentissement, 10 for Protection Aveuglante). The client plays the server's value; yours applies only when the server has none, or when `scripts/audit-spell-display-types.ts` finds your module broken under the canonical one (QA-181). So: **look the gfx up in `sorts.sql` and use its canonical displayType** rather than guessing from the AS, and write the module so it holds under every displayType the dump gives that gfx.
+
+**Under 20/21/30/31/40/41 the harness owns `shoot`, `move` and `duplicate`**: it attaches them (`shoot` on the target, unturned) — never attach them yourself, or yours replaces the harness's wherever you put it (QA-181). Under 20/21 the root is turned toward the target; a main-timeline clip that turns itself (`_rotation = _parent.angle`) subtracts `root.rotation`.
+
+**Never draw a `sprite_N` whose content is already baked into a composite you draw** — a timeline child exported both on its own and inside its parent (Horloge's hand, Ronces Agressives' vines). Give it `frames: []` and keep its scripts. `scripts/audit-spell-display-types.ts` reports these as `doubleDrawn` (QA-183).
+
+**`_parent.cellFrom` / `_parent.cellTo` are `root.vars.cellFrom` / `cellTo`, in the container's own space** (world − anchor), exactly like `mc.cellFrom/cellTo` in 1.29. Translate `_X = _parent.cellTo.x` literally — `clip.x = cellTo.x` — never `0`, never minus `ctx.cellTo`. `ctx.cellFrom` / `ctx.cellTo` (the `SpellContext`) are WORLD coords: placing a child at them puts it at anchor + target (QA-182).
+
 | Const | Value | Anchor / harness behaviour | When to use |
 |---|---|---|---|
 | `CasterCell` | 10 | root at caster cell | self-buffs, caster-anchored impacts |
@@ -102,7 +110,7 @@ You implement **two methods**: `registerSymbols` (always) and optionally `onSpel
 - Single impact at target cell, no projectile, no caster reference → **11 (TargetCell)**
 - Spell stays on the caster (e.g. shield, aura) → **10 (CasterCell)**
 
-Default for spells whose AS can't be cleanly classified: **11 (TargetCell)**.
+Default for spells whose AS can't be cleanly classified: the value `sorts.sql` gives the gfx; **11 (TargetCell)** only if the dump has none.
 
 ## SymbolDefinition contract
 
@@ -429,7 +437,7 @@ this.soundCallback?.("impact_sound");
 
 ## Common mistakes to avoid
 
-1. **Wrong displayType** — read the AS scripts; pick the right one from the table above. Default to TargetCell when truly unsure.
+1. **Wrong displayType** — take it from `sorts.sql` (`spriteInfos`), not from the AS alone; 209 generated modules guessed it wrong (QA-181). Default to TargetCell only when the dump has none.
 2. **Off-by-one on frame numbers** — AS frame_N → `frameScripts.set(N - 1, ...)`.
 3. **Calling `signalHit` for displayType 30/31** — harness already does it at landing.
 4. **Using degrees / Flash units in TS** — convert to radians / 0-1 / decimal.

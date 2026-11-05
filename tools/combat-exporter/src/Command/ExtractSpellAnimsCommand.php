@@ -353,25 +353,34 @@ final class ExtractSpellAnimsCommand extends Command
                 }
             }
 
-            // If no exported animated symbols, look at sprites on the main timeline
-            if (empty($animatedSprites)) {
-                try {
-                    $mainTimeline = $swf->timeline();
-                    if (!empty($mainTimeline->frames)) {
-                        // Check sprites placed on frame 0
-                        foreach ($mainTimeline->frames[0]->objects as $obj) {
-                            if ($obj->object instanceof SpriteDefinition) {
-                                $childTimeline = $obj->object->timeline();
-                                $frameCount = $childTimeline->framesCount();
-                                if ($frameCount > 1) {
-                                    $animatedSprites['anim' . $obj->depth] = $obj->object;
-                                }
+            // The sprites placed on the main timeline, as `anim<depth>` —
+            // ALWAYS, not only when no library symbol is exported. A
+            // projectile SWF exports `shoot` (attached by the client's
+            // VisualEffectHandler on the target) AND carries its main visual
+            // on the main timeline, typically an instance named `rotate`
+            // turned toward the target (VisualEffectHandler.as:96-104).
+            // Skipping the main timeline as soon as `shoot` existed dropped
+            // that visual: Colère de Iop (809) played its impact alone.
+            $exportedSprites = array_values($animatedSprites);
+            try {
+                $mainTimeline = $swf->timeline();
+                if (!empty($mainTimeline->frames)) {
+                    // Check sprites placed on frame 0
+                    foreach ($mainTimeline->frames[0]->objects as $obj) {
+                        if (
+                            $obj->object instanceof SpriteDefinition
+                            && !in_array($obj->object, $exportedSprites, true)
+                        ) {
+                            $childTimeline = $obj->object->timeline();
+                            $frameCount = $childTimeline->framesCount();
+                            if ($frameCount > 1) {
+                                $animatedSprites['anim' . $obj->depth] = $obj->object;
                             }
                         }
                     }
-                } catch (\Throwable $e) {
-                    $io->text(sprintf('  Error checking main timeline: %s', $e->getMessage()));
                 }
+            } catch (\Throwable $e) {
+                $io->text(sprintf('  Error checking main timeline: %s', $e->getMessage()));
             }
 
             // If still no animated sprites, scan all sprites in the SWF

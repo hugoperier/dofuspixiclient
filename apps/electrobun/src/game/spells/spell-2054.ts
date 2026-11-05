@@ -130,7 +130,9 @@ export class Spell2054 extends RuntimeSpell {
     const bulleSym: SymbolDefinition = {
       name: "sprite5",
       totalFrames: 1,
-      frames: textures.getFrames("lib_sprite5"),
+      // sprite_5 is baked into sprite_10's composite frames: drawing it again
+      // doubled it (QA-183, `audit-spell-display-types.ts`). Scripts kept.
+      frames: [],
       anchorX: bulleAnchor.x,
       anchorY: bulleAnchor.y,
       // AS: DefineSprite_5_bulle/frame_1/PlaceObject2_4_1/onClipEvent(load)

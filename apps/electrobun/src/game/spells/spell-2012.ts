@@ -134,7 +134,9 @@ export class Spell2012 extends RuntimeSpell {
     const sprite8Sym: SymbolDefinition = {
       name: "sprite8",
       totalFrames: 1,
-      frames: textures.getFrames("lib_sprite8"),
+      // sprite_8 is baked into lib_fumee2's composite frames: drawing it again
+      // doubled it (QA-183, `audit-spell-display-types.ts`). Scripts kept.
+      frames: [],
       anchorX: sprite8Anchor.x,
       anchorY: sprite8Anchor.y,
       frameScripts: new Map([
