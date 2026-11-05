@@ -1,3 +1,4 @@
+import { withClipEventParent } from "../scene/fight/placed-event-symbol";
 /**
  * Spell 301 — Setag (Sadida).
  *
@@ -305,7 +306,9 @@ export class Spell301 extends RuntimeSpell {
     this.sprite24Sym = {
       name: "sprite24",
       totalFrames: 1,
-      frames: textures.getFrames("lib_sprite24"),
+      // sprite_24 is baked into anim1's composite frames: drawing it again
+      // doubled it (QA-183, `audit-spell-display-types.ts`). Scripts kept.
+      frames: [],
       anchorX: sprite24Anchor.x,
       anchorY: sprite24Anchor.y,
       onLoad: (clip, ctx) => {
@@ -411,6 +414,7 @@ export class Spell301 extends RuntimeSpell {
     this.registry.register(this.sprite4Sym);
     this.registry.register(this.sprite23Sym);
     this.registry.register(this.sprite23AltSym);
+    this.sprite24Sym = withClipEventParent(this.sprite24Sym);
     this.registry.register(this.sprite24Sym);
     this.registry.register(this.anim1Sym);
   }

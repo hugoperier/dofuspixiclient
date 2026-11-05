@@ -177,6 +177,14 @@ export function SpellDetailPanel({
           lineHeight: 1.35,
         }}
       >
+        {data.combatUnavailableReason ? (
+          <>
+            <strong style={{ color: "#9f342b" }}>
+              Indisponible en combat : {data.combatUnavailableReason}
+            </strong>
+            <br />
+          </>
+        ) : null}
         {detail.description}
       </Block>
 

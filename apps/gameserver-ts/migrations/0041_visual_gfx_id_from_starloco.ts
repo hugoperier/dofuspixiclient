@@ -17,9 +17,16 @@ import { type Kysely, sql } from "kysely";
  * once we agree on the encoding for effects/levels/zones.
  *
  * sprite = -1 means "no spell-specific visual" (e.g. Coup de Poing
- * uses the character's own basic-attack pose). We coalesce -1 → NULL
- * in the DB, and the runtime falls back to spell_id (which renders as
- * "loadSpell returned null → no visual" — matches AS2 behaviour).
+ * uses the character's own basic-attack pose).
+ *
+ * KNOWN DEFECT, fixed by 0064 — do not rely on this migration alone.
+ * The loop below does `continue` on sprite < 0, which *skips* the row
+ * instead of writing NULL, so those spells keep the `visual_gfx_id :=
+ * spell_id` placeholder that 0040 backfilled. Spells absent from the
+ * dump are never visited either. Both cases leave a positive id that
+ * the runtime happily treats as a real gfx, asking the client for a
+ * dofasset that does not exist. 0064 repairs the column; this file is
+ * left as-is so already-migrated databases replay identically.
  */
 export async function up(db: Kysely<never>): Promise<void> {
   const here = dirname(fileURLToPath(import.meta.url));

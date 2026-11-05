@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { ActiveState } from "@modules/fight/core/fight.active-state";
 import { Fight } from "@modules/fight/core/fight.entity";
 import { Fighter } from "@modules/fight/core/fight.fighter";
 import { MonsterAI } from "@modules/fight/engine/fight.ai";
@@ -41,6 +42,9 @@ function makeFight(): {
   monster.cell = 200;
   fmap.occupy(100, 1);
   fmap.occupy(200, 2);
+  const active = new ActiveState();
+  fight.transition(active);
+  while (active.turnList.advance().next?.id !== monster.id) {}
   return { fight, player, monster };
 }
 

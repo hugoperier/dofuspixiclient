@@ -8,6 +8,7 @@ import { ExtraInfoModule } from "@features/game/extra-info/extra-info.module";
 import { FightChallengeModule } from "@features/game/fight-challenge/fight-challenge.module";
 import { FightJoinModule } from "@features/game/fight-join/fight-join.module";
 import { FightLeaveModule } from "@features/game/fight-leave/fight-leave.module";
+import { FightOptionsModule } from "@features/game/fight-options/fight-options.module";
 import { FightPlacementModule } from "@features/game/fight-placement/fight-placement.module";
 import { FightStartModule } from "@features/game/fight-start/fight-start.module";
 import { FightTurnModule } from "@features/game/fight-turn/fight-turn.module";
@@ -50,6 +51,7 @@ import { Module } from "@nestjs/common";
     StatBoostModule,
     ChatModule,
     FightStartModule,
+    FightOptionsModule,
     FightPlacementModule,
     FightJoinModule,
     FightTurnModule,

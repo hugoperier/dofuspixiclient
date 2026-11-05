@@ -205,12 +205,6 @@ export class Spell1207 extends RuntimeSpell {
     // AS DefineSprite_30/frame_43/DoAction.as: this.end()   → signalHit
     // AS DefineSprite_30/frame_94/DoAction.as: _parent.removeMovieClip(); stop() → complete
     //
-    // displayType=11 (TargetCell): root container is placed AT cellTo by the
-    // spell-view. The canonical AS uses absolute world coords (_parent.cellTo.x/y)
-    // to position sprite_30. Since the container origin IS cellTo, the world
-    // coords equal (cellTo.x, cellTo.y) and the LOCAL offset within the container
-    // is (cellTo.x - anchor.x, cellTo.y - anchor.y). We read cellTo from
-    // root.vars (set by the harness) so the onLoad can resolve it at runtime.
     this.sprite30Sym = {
       name: "sprite_30",
       totalFrames: 96,
@@ -220,16 +214,15 @@ export class Spell1207 extends RuntimeSpell {
       onLoad: (clip) => {
         // AS frame_2/PlaceObject2_30_1/CLIPACTIONRECORD onClipEvent(load).as
         // _X = _parent.cellTo.x; _Y = _parent.cellTo.y
-        // clip.parent is root; root.vars.cellTo holds world coords set by harness.
-        const root = clip.parent;
-        const cellTo = root?.vars.cellTo as { x: number; y: number } | undefined;
-        const anchor = root?.vars.anchor as { x: number; y: number } | undefined;
-        // The container's world origin equals the displayType anchor (cellTo for
-        // TargetCell). World → local: subtract the container's world position.
-        const anchorX = anchor?.x ?? cellTo?.x ?? 0;
-        const anchorY = anchor?.y ?? cellTo?.y ?? 0;
-        clip.x = (cellTo?.x ?? 0) - anchorX;
-        clip.y = (cellTo?.y ?? 0) - anchorY;
+        // root.vars.cellTo is in the container's space (QA-182): the literal
+        // translation lands on the target under the canonical displayType 51
+        // as under the module's own 11. (The old code subtracted a
+        // `root.vars.anchor` that never existed, so it always wrote 0.)
+        const cellTo = clip.parent?.vars.cellTo as
+          | { x: number; y: number }
+          | undefined;
+        clip.x = cellTo?.x ?? 0;
+        clip.y = cellTo?.y ?? 0;
       },
       frameScripts: new Map([
         [

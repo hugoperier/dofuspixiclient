@@ -25,8 +25,18 @@ export class BuffList {
   each(fn: (b: Buff) => void): void {
     const snap = [...this.items];
     for (const b of snap) {
-      fn(b);
+      if (this.items.includes(b)) {
+        fn(b);
+      }
     }
+  }
+
+  all(): readonly Buff[] {
+    return [...this.items];
+  }
+
+  has(effectId: number): boolean {
+    return this.items.some((buff) => buff.effectId === effectId);
   }
 
   remove(id: number): Buff | undefined {

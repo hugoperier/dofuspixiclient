@@ -47,7 +47,7 @@ describe("EnterGameHandler — job tool snapshot", () => {
       { close: () => false } as never,
       {
         sessionsOnMap: () => [],
-        onMap: () => [],
+        worldOnMap: () => [],
         enter: () => {},
       } as never,
       { get: () => ({ characterId: "1" }) } as never,
@@ -76,7 +76,10 @@ describe("EnterGameHandler — job tool snapshot", () => {
         },
         sendAll: async () => {},
       } as never,
-      { sendAll: async () => {} } as never
+      { sendAll: async () => {} } as never,
+      { sendWelcome: async () => {} } as never,
+      { isInFight: () => false, isEntering: () => false } as never,
+      { sendMap: () => {} } as never
     );
 
     await handler.handle(

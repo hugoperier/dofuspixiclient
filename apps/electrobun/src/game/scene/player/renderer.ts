@@ -20,13 +20,13 @@ import { projectCellPosition } from "@/game/datacenter/map";
 import { PlayerActor } from "@/game/scene/player/actor";
 import {
   animCycleTriggerFrame,
-  getAnimationBaseFromType,
   getCellPositionWithSlope,
   initFrameState,
   initMovementState,
   isOneShotAnimation,
   PlayerAnimation,
   type PlayerAnimationValue,
+  spriteBaseOf,
 } from "@/game/scene/player/animation";
 import {
   applyFighterCircleTeam,
@@ -157,6 +157,7 @@ export class PlayerRenderer {
    * hidden there.
    */
   private fightMode = false;
+  private creatureMode = false;
   /**
    * Fighter id whose turn is currently active — their ground ring
    * renders in the brighter "glow" variant. null while waiting for
@@ -242,6 +243,11 @@ export class PlayerRenderer {
     const player = this.buildActivePlayer(data);
     this.players.set(data.id, player);
     this.registerPlayerActor(data.id, player);
+    // A fighter arriving mid-fight (a summon, a joiner) has to obey the
+    // creature mode already in effect.
+    if (this.creatureMode) {
+      this.applyCreatureMode(player);
+    }
 
     if (data.linkedChildren && data.linkedChildren.length > 0) {
       return this.loadWithLinkedChildren(data, player);
@@ -288,8 +294,7 @@ export class PlayerRenderer {
       player.direction = finalDir;
 
       if (player.sprite) {
-        const baseAnim = getAnimationBaseFromType(player.animation);
-        this.sprites.switch(player, baseAnim, finalDir);
+        this.sprites.switch(player, spriteBaseOf(player), finalDir);
       } else if (player.placeholderGraphics) {
         drawPlayerPlaceholder(
           player.placeholderGraphics,
@@ -393,6 +398,11 @@ export class PlayerRenderer {
        * cast/visual sequence on the same per-sprite Sequencer).
        */
       onLastFrame?: () => void;
+      /**
+       * The sprite clip to play instead of the state's default — a
+       * weapon swing is ATTACK on `anim<an>`, see `casterPose`.
+       */
+      sprite?: string;
     }
   ): void {
     const player = this.players.get(id);
@@ -402,6 +412,7 @@ export class PlayerRenderer {
     }
 
     player.animation = animation;
+    player.spriteAnimation = options?.sprite ?? null;
     // Any new explicit setAnimation call cancels a pending revert
     // — e.g. server-driven HIT mid-cast must not be overridden by the
     // queued cast→idle revert.
@@ -425,7 +436,6 @@ export class PlayerRenderer {
     if (options?.onLastFrame && isOneShotAnimation(animation)) {
       player.onAnimLastFrame = options.onLastFrame;
     }
-    const baseAnim = getAnimationBaseFromType(animation);
     // Snapshot the current animation data BEFORE delegating to
     // sprite-controller. The lifecycle gate fires hooks only after the
     // controller's `apply()` has swapped `currentAnimData` to a new
@@ -440,7 +450,7 @@ export class PlayerRenderer {
     ) {
       player.animDataAtRequest = player.currentAnimData;
     }
-    this.sprites.switch(player, baseAnim, player.direction);
+    this.sprites.switch(player, spriteBaseOf(player), player.direction);
   }
 
   /** Play an arbitrary tool animation in a loop, then restore idle exactly. */
@@ -461,6 +471,7 @@ export class PlayerRenderer {
     }
 
     player.animation = PlayerAnimation.HARVEST;
+    player.spriteAnimation = baseAnim;
     player.frameIndex = 0;
     player.frameTimer = 0;
     player.revertTo = null;
@@ -623,14 +634,172 @@ export class PlayerRenderer {
       : direction;
 
     player.direction = finalDir;
-    const baseAnim = getAnimationBaseFromType(player.animation);
-    this.sprites.switch(player, baseAnim, finalDir);
+    this.sprites.switch(player, spriteBaseOf(player), finalDir);
   }
 
   // ── Accessors ───────────────────────────────────────────────────────
 
   getPlayerCell(id: number): number | undefined {
+    if (this.combatVisibility.get(id) === 2) {
+      return undefined;
+    }
     return this.players.get(id)?.cellId;
+  }
+
+  private readonly combatVisibility = new Map<number, number>();
+  private readonly carriedParents = new Map<number, number>();
+  private readonly originalCombatLooks = new Map<number, string>();
+  private readonly throws = new Map<
+    number,
+    {
+      fromX: number;
+      fromY: number;
+      toX: number;
+      toY: number;
+      elapsed: number;
+      duration: number;
+      resolve: () => void;
+    }
+  >();
+
+  setCombatVisibility(id: number, visibility: number): void {
+    this.combatVisibility.set(id, visibility);
+    const player = this.players.get(id);
+    if (!player) {
+      return;
+    }
+    player.container.visible = visibility !== 2;
+    player.container.alpha = visibility === 1 ? 0.5 : 1;
+    if (visibility === 2) {
+      player.overhead.setVisible(false);
+      this.visibleNameplateIds.delete(id);
+      hidePlayerNameplate(id);
+      hideChatBubble(id);
+    }
+  }
+
+  setCombatAppearance(id: number, gfxId: number): void {
+    const player = this.players.get(id);
+    if (!player) {
+      return;
+    }
+    if (!this.originalCombatLooks.has(id)) {
+      this.originalCombatLooks.set(id, player.look);
+    }
+    const original = this.originalCombatLooks.get(id) ?? player.look;
+    const originalGfx = parseGfxId(original);
+    this.updatePlayer(id, {
+      look:
+        gfxId <= 0 || gfxId === originalGfx ? original : `${gfxId}|-1|-1|-1`,
+    });
+  }
+
+  carryPlayer(carrierId: number, carriedId: number): void {
+    this.carriedParents.set(carriedId, carrierId);
+    const carrier = this.players.get(carrierId);
+    if (carrier) {
+      carrier.carrying = true;
+    }
+    this.setAnimation(carrierId, PlayerAnimation.CARRY, {
+      revertTo: PlayerAnimation.IDLE,
+    });
+    const child = this.players.get(carriedId);
+    if (child?.groundCircle) {
+      child.groundCircle.visible = false;
+    }
+    this.updateCarriedPlayers();
+  }
+
+  uncarryPlayer(id: number, cellId: number, thrown: boolean): Promise<void> {
+    const child = this.players.get(id);
+    const carrier = this.carriedParents.get(id);
+    this.carriedParents.delete(id);
+    const parent =
+      carrier === undefined ? undefined : this.players.get(carrier);
+    if (parent) {
+      parent.carrying = false;
+    }
+    if (!child) {
+      return Promise.resolve();
+    }
+    const fromX = child.container.x;
+    const fromY = child.container.y;
+    this.teleportPlayer(id, cellId);
+    if (carrier !== undefined) {
+      this.setAnimation(
+        carrier,
+        thrown ? PlayerAnimation.THROW : PlayerAnimation.IDLE,
+        { revertTo: PlayerAnimation.IDLE }
+      );
+    }
+    if (!thrown) {
+      if (child.groundCircle) {
+        child.groundCircle.visible = this.fightMode;
+      }
+      return Promise.resolve();
+    }
+    const toX = child.container.x;
+    const toY = child.container.y;
+    child.container.position.set(fromX, fromY);
+    this.throws.get(id)?.resolve();
+    return new Promise((resolve) =>
+      this.throws.set(id, {
+        fromX,
+        fromY,
+        toX,
+        toY,
+        elapsed: 0,
+        duration: Math.max(
+          250,
+          Math.min(900, Math.hypot(toX - fromX, toY - fromY) * 2)
+        ),
+        resolve,
+      })
+    );
+  }
+
+  private updateCarriedPlayers(): void {
+    for (const [childId, parentId] of this.carriedParents) {
+      const child = this.players.get(childId);
+      const parent = this.players.get(parentId);
+      if (!child || !parent) {
+        continue;
+      }
+      child.cellId = parent.cellId;
+      const anchor = this.spriteLoader.getCarriedAnchor(
+        parent.gfxId,
+        parent.currentAnimName,
+        parent.frameIndex,
+        parent.currentAnimData?.fps ?? 60
+      );
+      if (anchor) {
+        child.container.position.set(
+          parent.container.x +
+            anchor.x * (parent.sprite?.scale.x ?? 1) * parent.container.scale.x,
+          parent.container.y + anchor.y * parent.container.scale.y
+        );
+      }
+      child.container.zIndex = parent.container.zIndex + 1;
+      if (child.groundCircle) {
+        child.groundCircle.visible = false;
+      }
+    }
+    for (const [id, arc] of this.throws) {
+      const player = this.players.get(id);
+      arc.elapsed += Math.min(100, Ticker.shared.deltaMS);
+      const t = Math.min(1, arc.elapsed / arc.duration);
+      player?.container.position.set(
+        arc.fromX + (arc.toX - arc.fromX) * t,
+        arc.fromY + (arc.toY - arc.fromY) * t - 100 * t * (1 - t)
+      );
+      if (t === 1 || !player) {
+        if (player?.groundCircle) {
+          player.groundCircle.visible = this.fightMode;
+        }
+        this.throws.delete(id);
+        arc.resolve();
+      }
+    }
   }
 
   getPlayerIds(): number[] {
@@ -665,12 +834,20 @@ export class PlayerRenderer {
     return this.players.get(id)?.look ?? null;
   }
 
+  /** Keep exploration NPCs out of combat without destroying their sprites. */
+  setPlayerRenderable(id: number, renderable: boolean): void {
+    const player = this.players.get(id);
+    if (player) {
+      player.container.renderable = renderable;
+    }
+  }
+
   getPlayerPickingData(
     id: number
   ): { sprite: Sprite; container: Container } | null {
     const f = this.players.get(id);
 
-    if (!f?.sprite) {
+    if (!f?.sprite || this.combatVisibility.get(id) === 2) {
       return null;
     }
 
@@ -936,6 +1113,7 @@ export class PlayerRenderer {
       maxHp: data.maxHp,
       gfxId: parseGfxId(data.look),
       animation: PlayerAnimation.IDLE,
+      spriteAnimation: null,
       currentAnimName: "",
       currentAnimData: null,
       frameIndex: frame.frameIndex,
@@ -1088,6 +1266,48 @@ export class PlayerRenderer {
           this.setDirection(player.id, clamped);
         }
       }
+    }
+  }
+
+  /**
+   * Creature mode: drop the animated artwork and leave every fighter as
+   * its team-colored ground ring plus its overhead name/HP panel. 1.29
+   * offers this to keep a crowded battlefield readable, and it costs no
+   * sprite animation while it is on.
+   *
+   * Purely visual: picking, positions and turn order are untouched, so
+   * a fighter can still be clicked and hovered on its ring.
+   */
+  setCreatureMode(enabled: boolean): void {
+    this.creatureMode = enabled;
+    for (const player of this.players.values()) {
+      this.applyCreatureMode(player);
+    }
+  }
+
+  private applyCreatureMode(player: ActivePlayer): void {
+    player.artworkHidden = this.creatureMode;
+    if (player.sprite) {
+      player.sprite.visible = !this.creatureMode;
+    }
+    if (player.placeholderGraphics) {
+      player.placeholderGraphics.visible = !this.creatureMode;
+    }
+    const mount = player.mountLayers;
+    if (mount?.mountFrontSprite) {
+      mount.mountFrontSprite.visible = !this.creatureMode;
+    }
+    if (mount?.chevauchorSprite) {
+      mount.chevauchorSprite.visible = !this.creatureMode;
+    }
+    if (player.groundCircle) {
+      // The ring is the fighter now, so it has to show even during
+      // placement, where fight mode normally keeps it hidden.
+      player.groundCircle.visible = this.fightMode || this.creatureMode;
+    }
+    player.overhead.setVisible(this.creatureMode);
+    if (this.creatureMode) {
+      player.overhead.setHp(player.hp, player.maxHp);
     }
   }
 
@@ -1262,6 +1482,11 @@ export class PlayerRenderer {
   }
 
   private cleanupPlayer(id: number): void {
+    this.combatVisibility.delete(id);
+    this.carriedParents.delete(id);
+    this.originalCombatLooks.delete(id);
+    this.throws.get(id)?.resolve();
+    this.throws.delete(id);
     const player = this.players.get(id);
 
     if (!player) {
@@ -1297,6 +1522,10 @@ export class PlayerRenderer {
   }
 
   private onPostTick(): void {
+    this.updateCarriedPlayers();
+    for (const [id, visibility] of this.combatVisibility) {
+      this.setCombatVisibility(id, visibility);
+    }
     this.perf.endAnim();
 
     const flushT0 = performance.now();

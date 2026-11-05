@@ -111,6 +111,14 @@ export interface ActivePlayer {
   maxHp: number;
   gfxId: number;
   animation: PlayerAnimationValue;
+  /**
+   * The sprite clip `animation` plays when it is not that state's
+   * default — a sword swing is ATTACK on `anim14`, a harvest is HARVEST
+   * on the tool's clip. Null means the default. Kept on the player so a
+   * direction change mid-swing re-picks the same clip.
+   */
+  spriteAnimation: string | null;
+  carrying?: boolean;
   currentAnimName: string;
   currentAnimData: CharacterAnimation | null;
   frameIndex: number;
@@ -209,6 +217,13 @@ export interface ActivePlayer {
   childIndex?: number;
   mount?: MountDisplay;
   mountLayers: PlayerMountLayers | null;
+  /**
+   * Creature mode is on and this fighter's animated artwork must stay
+   * hidden. Kept on the entry rather than read from a store because the
+   * sprite is created asynchronously, well after the toggle: whoever
+   * builds it consults this flag instead of racing the mode.
+   */
+  artworkHidden?: boolean;
 }
 
 export interface PlayerRendererConfig {

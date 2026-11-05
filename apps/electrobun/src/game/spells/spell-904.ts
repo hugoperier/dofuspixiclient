@@ -1,3 +1,4 @@
+import { withClipEventParent } from "../scene/fight/placed-event-symbol";
 /**
  * Spell 904 — Flèche de Glace / Ice Arrow (Cra).
  *
@@ -393,7 +394,9 @@ export class Spell904 extends RuntimeSpell {
     this.sprite13Sym = {
       name: "sprite13",
       totalFrames: 1,
-      frames: textures.getFrames("lib_sprite13"),
+      // sprite_13 is baked into anim1's composite frames: drawing it again
+      // doubled it (QA-183, `audit-spell-display-types.ts`). Scripts kept.
+      frames: [],
       anchorX: sprite13Anchor.x,
       anchorY: sprite13Anchor.y,
       onLoad: (clip) => {
@@ -627,6 +630,7 @@ export class Spell904 extends RuntimeSpell {
     this.registry.register(this.sprite9Sym);
     this.registry.register(this.sprite10Sym);
     this.registry.register(this.sprite12Sym);
+    this.sprite13Sym = withClipEventParent(this.sprite13Sym);
     this.registry.register(this.sprite13Sym);
     this.registry.register(this.anim1Sym);
   }

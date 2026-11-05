@@ -253,7 +253,9 @@ export class Spell2108 extends RuntimeSpell {
     this.sprite22Sym = {
       name: "sprite22",
       totalFrames: 52,
-      frames: textures.getFrames("lib_sprite22"),
+      // sprite_22 is baked into anim1's composite frames: drawing it again
+      // doubled it (QA-183, `audit-spell-display-types.ts`). Scripts kept.
+      frames: [],
       anchorX: sprite22Anchor.x,
       anchorY: sprite22Anchor.y,
 

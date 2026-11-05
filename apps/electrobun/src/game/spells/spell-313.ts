@@ -109,7 +109,9 @@ export class Spell313 extends RuntimeSpell {
     this.sprite7Sym = {
       name: "sprite7",
       totalFrames: 1,
-      frames: textures.getFrames("lib_sprite7"),
+      // sprite_7 is baked into sprite_14's composite frames: drawing it again
+      // doubled it (QA-183, `audit-spell-display-types.ts`). Scripts kept.
+      frames: [],
       anchorX: sprite7Anchor.x,
       anchorY: sprite7Anchor.y,
       onLoad: (clip) => {
@@ -221,7 +223,9 @@ export class Spell313 extends RuntimeSpell {
     const sprite3Sym1: SymbolDefinition = {
       name: "sprite3_inst1",
       totalFrames: 36,
-      frames: textures.getFrames("sprite_3"),
+      // sprite_3 is baked into sprite_14's composite frames: drawing it again
+      // doubled it (QA-183, `audit-spell-display-types.ts`). Scripts kept.
+      frames: [],
       anchorX: sprite3Anchor.x,
       anchorY: sprite3Anchor.y,
       onLoad: (clip) => {
@@ -253,7 +257,9 @@ export class Spell313 extends RuntimeSpell {
     const sprite3Sym3: SymbolDefinition = {
       name: "sprite3_inst3",
       totalFrames: 36,
-      frames: textures.getFrames("sprite_3"),
+      // sprite_3 is baked into sprite_14's composite frames: drawing it again
+      // doubled it (QA-183, `audit-spell-display-types.ts`). Scripts kept.
+      frames: [],
       anchorX: sprite3Anchor.x,
       anchorY: sprite3Anchor.y,
       onLoad: (clip) => {

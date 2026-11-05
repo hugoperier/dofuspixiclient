@@ -106,8 +106,15 @@ export class Spell2008 extends RuntimeSpell {
           (clip, ctx) => {
             // AS: DefineSprite_32/frame_1/DoAction.as → SOMA.playSound("licrounch_1003")
             // AS: DefineSprite_32/frame_1/DoAction_2.as → _X = _parent.cellTo.x; _Y = _parent.cellTo.y
-            // Container (displayType=11) is already anchored at cellTo in world space,
-            // so placing shoot at (0,0) local matches the canonical _parent.cellTo position.
+            // DefineSprite_32 itself moves onto the target, carrying shoot.
+            // root.vars.cellTo is in the container's space (QA-182): the literal
+            // translation lands on the target under the canonical displayType 51
+            // as under the module's own 11.
+            const cellTo = clip.parent?.vars.cellTo as
+              | { x: number; y: number }
+              | undefined;
+            clip.x = cellTo?.x ?? 0;
+            clip.y = cellTo?.y ?? 0;
             clip.attach(this.shootSym, "shoot", 1, ctx, { x: 0, y: 0 });
           },
         ],

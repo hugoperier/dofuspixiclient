@@ -1,4 +1,3 @@
-import { Direction, getDirOffsets } from "@dofus/grid";
 import { Container, Graphics } from "pixi.js";
 
 import {
@@ -12,6 +11,7 @@ import { type CellData, getCellPosition } from "@/game/datacenter/cell";
 
 import { Actor, type ActorId, freshActorId } from "../actor";
 import { RENDERED, type Rendered } from "../capabilities";
+import { tracePerimeterLoops } from "./perimeter-loops";
 
 /**
  * Highlight type for fight cells.
@@ -531,7 +531,9 @@ export class CellHighlighter extends Actor implements Rendered {
     // into 4 disjoint single-cell loops; an earlier version only
     // emitted the first sub-loop, so the user saw a single highlighted
     // cell where they expected the full 4-petal range.
-    const loops = this.tracePerimeterLoops(cellIds);
+    const loops = tracePerimeterLoops(cellIds, this.mapWidth, (id) =>
+      this.getCellPos(id)
+    );
     for (const perimeter of loops) {
       const flat: number[] = [];
       for (const p of perimeter) {
@@ -542,131 +544,6 @@ export class CellHighlighter extends Actor implements Rendered {
         .fill({ color, alpha })
         .stroke({ color, width: 1, alpha: 1 });
     }
-  }
-
-  /**
-   * Trace the outer perimeter(s) of the union of cells as a list of
-   * closed polygons. Algorithm:
-   *
-   *   1. For each cell, look at its 4 diagonal neighbours (NE/SE/SW/
-   *      NW — these correspond to the 4 edges of the cell's diamond
-   *      since cells are diamond-tessellated). An edge is on the
-   *      boundary iff that neighbour is NOT in the zone.
-   *   2. Each boundary edge gets a directed (start→end) pair in
-   *      clockwise order: NE = top→right, SE = right→bottom,
-   *      SW = bottom→left, NW = left→top. This guarantees that
-   *      consecutive boundary edges share an endpoint.
-   *   3. Walk the edge graph as many times as there are unvisited
-   *      starts, emitting one closed polygon per connected sub-region.
-   *
-   * Returning EVERY sub-loop (not just the first) is mandatory for
-   * Dofus melee ranges: in the iso grid the four NE/SE/SW/NW cells
-   * around the caster aren't 4-way connected to each other (each
-   * cell's four neighbours are at (±1, ±1) which doesn't include the
-   * other three), so a `rangeMin=1, rangeMax=1` spell breaks into 4
-   * disjoint single-cell perimeters. Same applies to ring shapes,
-   * cross arms, etc.
-   */
-  private tracePerimeterLoops(
-    cellIds: Set<number>
-  ): Array<{ x: number; y: number }[]> {
-    const dirOffsets = getDirOffsets(this.mapWidth);
-    const NE = dirOffsets[Direction.NORTH_EAST] ?? 0;
-    const SE = dirOffsets[Direction.SOUTH_EAST] ?? 0;
-    const SW = dirOffsets[Direction.SOUTH_WEST] ?? 0;
-    const NW = dirOffsets[Direction.NORTH_WEST] ?? 0;
-
-    // Boundary edges keyed by their start corner (rounded screen
-    // coords serialised as "x|y" so two edges can lookup the next
-    // segment cheaply without floating-point fuzziness).
-    const edges = new Map<
-      string,
-      {
-        startKey: string;
-        endKey: string;
-        start: { x: number; y: number };
-        end: { x: number; y: number };
-      }
-    >();
-    const k = (p: { x: number; y: number }): string =>
-      `${Math.round(p.x)}|${Math.round(p.y)}`;
-
-    for (const cellId of cellIds) {
-      const pos = this.getCellPos(cellId);
-      const top = { x: pos.x, y: pos.y - CELL_HALF_HEIGHT };
-      const right = { x: pos.x + CELL_HALF_WIDTH, y: pos.y };
-      const bottom = { x: pos.x, y: pos.y + CELL_HALF_HEIGHT };
-      const left = { x: pos.x - CELL_HALF_WIDTH, y: pos.y };
-
-      if (!cellIds.has(cellId + NE)) {
-        const sk = k(top);
-        edges.set(sk, {
-          startKey: sk,
-          endKey: k(right),
-          start: top,
-          end: right,
-        });
-      }
-      if (!cellIds.has(cellId + SE)) {
-        const sk = k(right);
-        edges.set(sk, {
-          startKey: sk,
-          endKey: k(bottom),
-          start: right,
-          end: bottom,
-        });
-      }
-      if (!cellIds.has(cellId + SW)) {
-        const sk = k(bottom);
-        edges.set(sk, {
-          startKey: sk,
-          endKey: k(left),
-          start: bottom,
-          end: left,
-        });
-      }
-      if (!cellIds.has(cellId + NW)) {
-        const sk = k(left);
-        edges.set(sk, { startKey: sk, endKey: k(top), start: left, end: top });
-      }
-    }
-
-    if (edges.size === 0) {
-      return [];
-    }
-
-    const loops: Array<{ x: number; y: number }[]> = [];
-    const visited = new Set<string>();
-
-    // Repeatedly seed a new walk from any unvisited edge until every
-    // edge has been emitted. Each walk produces one closed polygon —
-    // disconnected sub-regions get their own loop.
-    for (const seed of edges.values()) {
-      if (visited.has(seed.startKey)) {
-        continue;
-      }
-
-      const polygon: { x: number; y: number }[] = [];
-      let current = seed;
-      // Cap at edges.size to defend against pathological inputs (a
-      // broken neighbour graph could otherwise loop forever).
-      for (let i = 0; i <= edges.size; i++) {
-        if (visited.has(current.startKey)) {
-          break;
-        }
-        visited.add(current.startKey);
-        polygon.push(current.start);
-        const next = edges.get(current.endKey);
-        if (!next) {
-          break;
-        }
-        current = next;
-      }
-      if (polygon.length >= 3) {
-        loops.push(polygon);
-      }
-    }
-    return loops;
   }
 
   /**

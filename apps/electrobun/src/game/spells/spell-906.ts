@@ -125,7 +125,7 @@ const SHOOT_BOUNDS = {
 
 export class Spell906 extends RuntimeSpell {
   readonly spellId = 906;
-  readonly displayType = SpellDisplayType.TargetCell;
+  readonly displayType = SpellDisplayType.ProjectileLinearAlt;
 
   // Hold symbol refs for cross-symbol attaches in onSpellStart
   private cercleSym!: SymbolDefinition;
@@ -430,6 +430,7 @@ export class Spell906 extends RuntimeSpell {
           // shoot (the parent) here only if it hasn't already completed.
           (clip) => {
             clip.parent?.remove();
+            this.runtime.complete();
           },
         ],
       ]),
@@ -542,14 +543,14 @@ export class Spell906 extends RuntimeSpell {
 
   protected onSpellStart(
     callbacks: SpellCallbacks,
-    context: SpellContext
+    _context: SpellContext
   ): void {
     // AS: frame_1/DoAction.as — SOMA.playSound("jet_903")
     callbacks.playSound("jet_903");
 
-    // Attach the shoot container as the root child. For displayType=11 (TargetCell),
-    // root is at (0,0) which corresponds to the target cell in world coords. The
-    // shoot clip renders its visual content centered there.
-    this.root.attach(this.shootSym, "shoot", 1, context);
+    // Canonical displayType 21 (QA-181): the harness attaches the library
+    // `shoot` on the target itself, unturned (VisualEffectHandler.as:96-104).
+    // Attaching it here too replaced the harness's and left it on the
+    // caster, turned with the root.
   }
 }

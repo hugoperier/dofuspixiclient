@@ -111,19 +111,22 @@ export type SpellDisplayTypeValue =
  * instance is created for each target with its own context.
  */
 export interface SpellContext {
-  // ---- Position data (from AS: _parent.cellFrom, _parent.cellTo) ----
+  // ---- Position data, in WORLD coords ----
+  // The AS `_parent.cellFrom` / `_parent.cellTo` are NOT these: a clip
+  // reads them from `root.vars`, in the container's own space. Placing a
+  // child at `ctx.cellTo.x` puts it at anchor + target (QA-182).
 
-  /** Source/caster cell - where the spell originates */
+  /** Source/caster cell - where the spell originates (world coords) */
   cellFrom: CellInfo;
 
-  /** Target cell - where the spell hits */
+  /** Target cell - where the spell hits (world coords) */
   cellTo: CellInfo;
 
   /**
-   * AS2 displayType for this spell (10/11/12/20/21/30/31/40/41/50/51).
-   * The runtime has already used it to position the parent container —
-   * subclasses that match AS2 mental models should mostly read `anchor`
-   * (the resolved world coords of the container origin) instead.
+   * AS2 displayType for this cast (10/11/12/20/21/30/31/40/41/50/51) —
+   * the server's canonical value, else the module's own. The runtime has
+   * already used it to position the parent container and to configure
+   * the harness; subclasses should not branch on it.
    */
   displayType: number;
 

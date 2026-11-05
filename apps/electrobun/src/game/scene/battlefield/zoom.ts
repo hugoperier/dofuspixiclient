@@ -117,6 +117,9 @@ export class BattlefieldZoom {
         if (await mapHandler.updateTexturesForZoom(zoom)) {
           return;
         }
+        if (this.deps.currentMapData() !== mapData) {
+          return;
+        }
         // Texture swap failed — fall through to full rebuild.
       }
 
@@ -124,19 +127,20 @@ export class BattlefieldZoom {
       log.debug("Full re-render at zoom:", zoom);
 
       this.deps.onBeforeRebuild();
-      mapHandler.clearCache();
-
       await mapHandler.renderMap(
         mapData,
         mapContainer,
         zoom,
-        this.deps.getViewport()
+        this.deps.getViewport(),
+        { preserveWorldActors: true }
       );
     } catch (error) {
       log.error("Render error:", error);
     } finally {
       this.isRendering = false;
-      this.deps.onAfterRender(zoom);
+      if (this.deps.currentMapData() === mapData) {
+        this.deps.onAfterRender(zoom);
+      }
 
       if (this.pendingZoom !== null && this.pendingZoom !== zoom) {
         const nextZoom = this.pendingZoom;

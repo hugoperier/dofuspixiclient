@@ -49,6 +49,19 @@ export class PendingMovesService implements Serializable<SerializedPending> {
     this.bySession.set(move.sessionId, move);
   }
 
+  /**
+   * Look at the pending move without consuming it.
+   *
+   * The ack path checks the action id before it commits to anything: an
+   * ack naming another action — a walk that finished after the player
+   * had already asked for a different one — must leave the pending move
+   * alone rather than take the live one down with it. See
+   * `MoveAckHandler`.
+   */
+  peek(sessionId: string): PendingMove | undefined {
+    return this.bySession.get(sessionId);
+  }
+
   take(sessionId: string): PendingMove | undefined {
     const move = this.bySession.get(sessionId);
 

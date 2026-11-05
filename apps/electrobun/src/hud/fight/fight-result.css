@@ -1,0 +1,269 @@
+.fight-result-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  pointer-events: auto;
+}
+.fight-result {
+  position: absolute;
+  left: calc(50% - 2px);
+  top: 50%;
+  transform-origin: center;
+  color: #514c3c;
+  font:
+    12.4px Verdana,
+    sans-serif;
+  font-synthesis: none;
+  text-align: left;
+  outline: none;
+}
+.fight-result *,
+.fight-result *::before,
+.fight-result *::after {
+  box-sizing: border-box;
+}
+.fight-result h2,
+.fight-result h3 {
+  margin: 0;
+  font: inherit;
+}
+.fight-result-frame {
+  position: relative;
+  height: 100%;
+  border: 4px solid #fff;
+  border-radius: 16px;
+  background: #d5d0aa;
+}
+.fight-result-title {
+  height: 26px;
+  margin: 0;
+  padding: 0 7px 1px 5px;
+  border-radius: 11px 11px 0 0;
+  background: #51493c;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font:
+    13.4px DofusVerdana,
+    Verdana,
+    sans-serif;
+}
+.fight-result-body {
+  padding: 0 9px 0 8px;
+}
+.fight-result-heading {
+  position: relative;
+  font:
+    16.3px DofusVerdana,
+    Verdana,
+    sans-serif;
+  padding-left: 15px;
+}
+.fight-result-winners {
+  height: 46px;
+  padding-top: 10px;
+}
+.fight-result-losers {
+  height: 43px;
+  padding-top: 7px;
+}
+.fight-result-challenges {
+  position: absolute;
+  right: 25px;
+  bottom: 2px;
+  height: 23px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13.4px;
+}
+.fight-result-challenges > span:first-child {
+  margin-right: 0;
+}
+.fight-result-columns,
+.fight-result-row {
+  display: grid;
+  grid-template-columns: var(--result-columns);
+}
+.fight-result-columns {
+  height: 25px;
+  background: #51493c;
+  color: #fff;
+  text-align: center;
+  align-items: center;
+  padding-bottom: 2px;
+}
+.fight-result-rows {
+  overflow-y: auto;
+  overflow-x: clip;
+  scrollbar-width: thin;
+  scrollbar-color: #82785d #c4be9e;
+}
+.fight-result-row {
+  height: 24.75px;
+  background: #b5ac8d;
+  align-items: stretch;
+}
+.fight-result-row:nth-child(even) {
+  background: #c9bf9c;
+}
+.fight-result-row > td {
+  min-width: 0;
+  border-right: 1px solid #a59e8026;
+  display: flex;
+  align-items: center;
+}
+.fight-result-row > td:last-child {
+  border: 0;
+}
+.fight-result-name {
+  position: relative;
+  padding-left: 27px;
+  padding-right: 3px;
+  font:
+    12.5px DofusVerdana,
+    Verdana,
+    sans-serif;
+}
+.fight-result-name > span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.fight-result-dead {
+  position: absolute;
+  left: 4px;
+  top: 3px;
+  width: 14px;
+  height: 20px;
+}
+.fight-result-level {
+  justify-content: center;
+}
+.fight-result-number {
+  justify-content: flex-end;
+  padding-right: 7px;
+}
+.fight-result-xp {
+  justify-content: space-between;
+  padding: 0 5px 0 3px;
+}
+.fight-result-xp > span:last-child {
+  margin-left: auto;
+}
+.fight-result-gauge {
+  width: 62px;
+  height: 13px;
+  display: block;
+  padding: 2px;
+  border-radius: 8px;
+  background: #514c3c;
+  box-shadow: inset 0 1px 1px #ffffff70;
+}
+.fight-result-gauge > span {
+  height: 100%;
+  display: block;
+  border-radius: 6px;
+  background: linear-gradient(#ffae4a, #ff6800 45%, #ff6800);
+}
+.fight-result-items {
+  gap: 7px;
+  padding-left: 8px;
+}
+.fight-result-tip {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  outline: none;
+}
+.fight-result-tooltip {
+  display: none;
+  position: fixed;
+  z-index: 50;
+  width: max-content;
+  max-width: 320px;
+  padding: 2px 3px;
+  background: #272922;
+  color: white;
+  white-space: pre-line;
+  font:
+    11px Arial,
+    sans-serif;
+  pointer-events: none;
+}
+.fight-result-tip:hover > .fight-result-tooltip,
+.fight-result-tip:focus > .fight-result-tooltip {
+  display: block;
+}
+.fight-result-tip:focus-visible {
+  outline: 1px solid #ff6d00;
+}
+.fight-result-unknown,
+.fight-result-more {
+  display: block;
+  width: 20px;
+  height: 20px;
+  text-align: center;
+}
+.fight-result-more {
+  background: #51493c;
+  border-radius: 3px;
+  color: white;
+  line-height: 15px;
+}
+.fight-result-close {
+  position: absolute;
+  z-index: 0;
+  right: 78px;
+  top: calc(100% - 4px);
+  width: 146px;
+  height: 29px;
+  border: 2px solid white;
+  border-radius: 0 0 13px 13px;
+  color: white;
+  background: linear-gradient(
+    #ffb267 0%,
+    #ff6800 45%,
+    #ff6800 74%,
+    #e85800 100%
+  );
+  font:
+    14px Arial,
+    sans-serif;
+  padding: 2px 0 0;
+  cursor: pointer;
+}
+.fight-result-close:hover {
+  filter: brightness(1.08);
+}
+.fight-result-close:active {
+  padding-top: 4px;
+}
+.fight-result-close:focus-visible {
+  outline: 2px solid #51493c;
+  outline-offset: 2px;
+}
+
+.fight-result-table,
+.fight-result-table thead,
+.fight-result-rows {
+  display: block;
+  width: 100%;
+}
+.fight-result-table {
+  border-collapse: collapse;
+}
+.fight-result-columns th {
+  font: inherit;
+  padding: 0;
+}
+.fight-result-tip {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: default;
+  text-align: left;
+}

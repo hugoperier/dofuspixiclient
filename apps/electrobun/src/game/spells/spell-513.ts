@@ -1,11 +1,15 @@
 /**
- * Spell 513 — Rocaille (Sadida earth spell).
+ * Visual 513 — Frappe de Xélor (sort 91): a bandaged fist rises from the
+ * ground under the target, its rings fall, debris bounces.
  *
  * Hand-ported against the SpellClip / SpellRuntime composition runtime.
  * Canonical AS source: tools/combat-exporter/output/spell-anims/513/scripts/scripts/
  *
- * displayType=11 (TargetCell). The spell has a single `shoot` symbol (DefineSprite_64_shoot,
- * 264 frames) anchored at the target cell, plus two library symbols:
+ * Canonical displayType=51 (`sorts.spriteInfos` "51,0,1", sent by the
+ * server — QA-181); the module's own TargetCell is only the fallback.
+ * Either way `shoot` moves itself onto `_parent.cellTo` at frame_4; its
+ * frames 1-3 are empty. The spell has a single `shoot` symbol (DefineSprite_64_shoot,
+ * 264 frames), plus two library symbols:
  *   - `pierres` (DefineSprite_3) — a small rock/stone particle. Has onLoad (seeds vx, vy,
  *     position scatter, scale, alpha, v, vr) and onEnterFrame (gravity + bounce physics,
  *     removes self when settled).
@@ -72,7 +76,7 @@ const SHOOT_BOUNDS = {
 
 export class Spell513 extends RuntimeSpell {
   readonly spellId = 513;
-  readonly displayType = SpellDisplayType.TargetCell;
+  readonly displayType = SpellDisplayType.WorldAbsoluteAlt;
 
   private pierreSym!: SymbolDefinition;
   private sprite60Sym!: SymbolDefinition;
@@ -217,15 +221,15 @@ export class Spell513 extends RuntimeSpell {
             // For displayType=11, the container IS already at cellTo, so (0,0) is correct.
             // But canonical AS sets _X/_Y explicitly from _parent.cellTo — we honour that.
             this.playSound?.("many_501");
+            // root.vars.cellTo is in the container's space (QA-182): the
+            // literal translation lands on the target whether the server
+            // says 51 (canonical, container at the world origin) or the
+            // module's own 11 (container already on the target).
             const root = clip.parent;
             const cellTo = root?.vars.cellTo as { x: number; y: number } | undefined;
             if (cellTo) {
-              // Container is at cellTo (TargetCell anchor), so local (0,0) IS cellTo.
-              // The AS sets absolute coords; since the container origin = cellTo,
-              // the local offset is (cellTo.x - anchor.x, cellTo.y - anchor.y) = (0, 0).
-              // We set it explicitly to match canonical AS.
-              clip.x = 0;
-              clip.y = 0;
+              clip.x = cellTo.x;
+              clip.y = cellTo.y;
             }
           },
         ],

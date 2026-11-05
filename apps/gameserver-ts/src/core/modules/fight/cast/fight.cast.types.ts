@@ -1,12 +1,27 @@
 import type { SpellLevel } from "@modules/fight/cast/fight.spell";
 import type { ActiveState } from "@modules/fight/core/fight.active-state";
-import type { CastContext } from "@modules/fight/effects/fight.buff.types";
 import type { Fight } from "@modules/fight/core/fight.entity";
 import type { Fighter } from "@modules/fight/core/fight.fighter";
+import type { CastContext } from "@modules/fight/effects/fight.buff.types";
+import type { SummonTemplate } from "@modules/spells/combat-catalog.types";
+import type { CloseCombatAttack } from "@modules/spells/spells.service";
 
 export interface SpellPort {
+  summonTemplate?(
+    id: number,
+    grade: number
+  ): Promise<SummonTemplate | undefined>;
   spellLevel(spellId: number, level: number): Promise<SpellLevel | undefined>;
-  playerHasSpell?(playerId: string, spellId: number): Promise<boolean>;
+  playerSpellRank(
+    playerId: string,
+    spellId: number
+  ): Promise<number | undefined>;
+  /**
+   * Spell 0, built from the equipped weapon. Optional so the test
+   * harnesses that only exercise real spells need not stub it; a caster
+   * with no port for it simply cannot swing.
+   */
+  closeCombatSpell?(playerId: string): Promise<CloseCombatAttack | undefined>;
 }
 
 export interface FightRegistry {
@@ -46,6 +61,8 @@ export interface CastResult {
  * of gating behind the spell visual.
  */
 export interface CastResolution {
+  turnEpoch: number;
+  targetId: number;
   fight: Fight;
   active: ActiveState;
   caster: Fighter;
@@ -56,10 +73,17 @@ export interface CastResolution {
   critical: boolean;
   failure: boolean;
   /**
+   * Set when this is a weapon swing rather than a spell. Carries what
+   * the `GA;303` broadcast needs — which weapon, which pose — because
+   * the client holds no equipment but its own.
+   */
+  closeCombat?: CloseCombatAttack;
+  /**
    * Pre-loaded trigger spell levels for spawn effects (glyph/trap/
    * summon). Resolved here so apply() stays synchronous around the
    * per-effect handler dispatch.
    */
-  triggerCache: Map<number, SpellLevel>;
+  triggerCache: Map<string, SpellLevel>;
+  summonCache: Map<string, SummonTemplate>;
   castCtx: CastContext;
 }

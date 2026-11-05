@@ -1,0 +1,5 @@
+{
+  "_doc": "Spell IDs whose extraction must run the dynamic-symbol pipeline, even when the SWF also uses attachMovie (which otherwise disables it). Add an id here once its apps/electrobun/src/game/spells/spell-<id>.ts asks for lib_sprite<N> symbols that only that pipeline emits — then re-extract, recompile, and CHECK THE SPELL VISUALLY: exporting a sprite also strips it from the parent SVG, so a wrong entry here makes the parent render without it.",
+  "ids": [],
+  "notes": {}
+}

@@ -32,9 +32,11 @@ export class PreRenderedSpell implements ISpellAnimation {
   private fading = false;
   private done = false;
   private sounds: Array<{ frame: number; soundId: string }> = [];
-  private firedSounds = new Set<number>();
+  private firedSounds = new Set<object>();
   private callbacks!: SpellCallbacks;
   private hitSignaled = false;
+  private hitFrame: number | undefined;
+  private removeFrame: number | undefined;
 
   constructor(
     readonly spellId: number,
@@ -60,6 +62,8 @@ export class PreRenderedSpell implements ISpellAnimation {
     const animMeta = loaded.manifest.spell.animationMeta?.[mainName];
     const lastFrame = frames.length - 1;
     this.stopFrame = animMeta?.stopFrame ?? lastFrame;
+    this.hitFrame = animMeta?.hitFrame;
+    this.removeFrame = animMeta?.removeFrame;
 
     this.sounds = [...loaded.manifest.spell.sounds];
 
@@ -72,6 +76,13 @@ export class PreRenderedSpell implements ISpellAnimation {
       sprite.anchor.set(
         -animEntry.offsetX / animEntry.width,
         -animEntry.offsetY / animEntry.height
+      );
+    }
+    const actual = loaded.textures.getAnimationInfo?.(mainName);
+    if (actual && actual.frameWidth > 0 && actual.frameHeight > 0) {
+      sprite.anchor.set(
+        actual.anchorPxX / actual.frameWidth,
+        actual.anchorPxY / actual.frameHeight
       );
     }
 
@@ -87,7 +98,7 @@ export class PreRenderedSpell implements ISpellAnimation {
     for (const sound of this.sounds) {
       if (sound.frame === 0) {
         this.callbacks.playSound(sound.soundId);
-        this.firedSounds.add(sound.frame);
+        this.firedSounds.add(sound);
       }
     }
   }
@@ -142,6 +153,22 @@ export class PreRenderedSpell implements ISpellAnimation {
       this.currentFrame++;
 
       this.fireSoundsForFrame(this.currentFrame);
+      if (
+        !this.hitSignaled &&
+        this.hitFrame !== undefined &&
+        this.currentFrame >= this.hitFrame
+      ) {
+        this.hitSignaled = true;
+        this.callbacks.onHit();
+      }
+      if (
+        this.removeFrame !== undefined &&
+        this.currentFrame >= this.removeFrame
+      ) {
+        this.done = true;
+        this.callbacks.onComplete();
+        return;
+      }
 
       if (this.currentFrame >= this.stopFrame) {
         this.currentFrame = this.stopFrame;
@@ -156,8 +183,8 @@ export class PreRenderedSpell implements ISpellAnimation {
 
   private fireSoundsForFrame(frame: number): void {
     for (const sound of this.sounds) {
-      if (sound.frame === frame && !this.firedSounds.has(sound.frame)) {
-        this.firedSounds.add(sound.frame);
+      if (sound.frame === frame && !this.firedSounds.has(sound)) {
+        this.firedSounds.add(sound);
         this.callbacks.playSound(sound.soundId);
       }
     }

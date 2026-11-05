@@ -96,7 +96,8 @@ function harness(options: HarnessOptions = {}) {
     {} as never,
     {} as never,
     {} as never,
-    jobsService as never
+    jobsService as never,
+    { emit: () => true } as never
   );
 
   return { service, recorded };

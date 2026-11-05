@@ -1,10 +1,15 @@
 import type { Fighter } from "@modules/fight/core/fight.fighter";
+import { Characteristic } from "@modules/fight/fight.types";
 
 export function initiativeOf(f: Fighter): number {
-  if (f.player) {
-    return f.player.level * 2;
-  }
-  return 0;
+  const total = [
+    Characteristic.Strength,
+    Characteristic.Intelligence,
+    Characteristic.Chance,
+    Characteristic.Agility,
+    Characteristic.Initiative,
+  ].reduce((sum, stat) => sum + f.stats.get(stat), 0);
+  return Math.max(0, Math.floor((total * f.lp) / Math.max(1, f.lpMax)));
 }
 
 export class TurnList {
@@ -21,6 +26,29 @@ export class TurnList {
       }
       return a.id - b.id;
     });
+    if (fighters.every((fighter) => fighter.team !== null)) {
+      const teams: [Fighter[], Fighter[]] = [
+        this.entries.filter((fighter) => fighter.team?.side === 0),
+        this.entries.filter((fighter) => fighter.team?.side === 1),
+      ];
+      const average = (team: Fighter[]) =>
+        team.reduce((sum, fighter) => sum + initiativeOf(fighter), 0) /
+        Math.max(1, team.length);
+      const first = average(teams[0]) >= average(teams[1]) ? 0 : 1;
+      this.entries = [];
+      for (
+        let index = 0;
+        index < Math.max(teams[0]?.length, teams[1]?.length);
+        index++
+      ) {
+        for (const side of [first, 1 - first]) {
+          const fighter = teams[side]?.[index];
+          if (fighter) {
+            this.entries.push(fighter);
+          }
+        }
+      }
+    }
   }
 
   get round(): number {
@@ -70,8 +98,18 @@ export class TurnList {
       return;
     }
     this.entries.splice(idx, 1);
-    if (idx < this.currentIdx) {
+    if (idx <= this.currentIdx) {
       this.currentIdx--;
+    }
+  }
+
+  insertAfter(ownerId: number, fighter: Fighter): void {
+    this.remove(fighter.id);
+    const owner = this.entries.findIndex((entry) => entry.id === ownerId);
+    const index = owner < 0 ? this.entries.length : owner + 1;
+    this.entries.splice(index, 0, fighter);
+    if (index <= this.currentIdx) {
+      this.currentIdx++;
     }
   }
 }

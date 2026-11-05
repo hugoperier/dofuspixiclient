@@ -4,12 +4,12 @@ title: Le mode tactique n'a aucun déclencheur dans l'interface
 severity: P1
 domain: fight
 type: gap
-status: confirmed
+status: closed
 session: 1
 opened: 2026-08-20
-closed:
+closed: 2026-11-04
 fixed_in:
-related: [QA-044, QA-058]
+related: []
 files: []
 ---
 

@@ -1,13 +1,13 @@
+import type {
+  SpellAnimationInfo,
+  SpellTextureProvider,
+} from "@dofus/spell-runtime";
+import type { Texture } from "pixi.js";
 import {
   readSpellExtras,
   type SpellExtras,
   type SpellExtrasAnimation,
 } from "@dofus/dofasset-format";
-import type {
-  SpellAnimationInfo,
-  SpellTextureProvider,
-} from "@dofus/spell-runtime";
-import { Texture } from "pixi.js";
 
 import type {
   SpellAnimation,
@@ -32,6 +32,8 @@ export interface SpellMeta {
     string,
     {
       stopFrame?: number;
+      hitFrame?: number;
+      removeFrame?: number;
       fadingFrame?: number;
       isComposite?: boolean;
       hasMorphShapes?: boolean;
@@ -58,6 +60,10 @@ export interface LoadedSpell {
 
 class VelloSpellTextureProvider implements SpellTextureProvider {
   private readonly anims = new Map<string, SpellAnimation | null>();
+  /** Requested symbol name → the key that actually exists, or null. */
+  private readonly resolved = new Map<string, string | null>();
+  /** Symbols already reported missing, so the log stays readable. */
+  private readonly warned = new Set<string>();
 
   constructor(
     private readonly spellId: number,
@@ -65,6 +71,45 @@ class VelloSpellTextureProvider implements SpellTextureProvider {
     private readonly vello: SpellVelloRenderer,
     private readonly resolution: number
   ) {}
+
+  /**
+   * The exporter emits animated child sprites as `sprite_<charId>`
+   * (ExtractSpellAnimsCommand::374) but clip-event ones as
+   * `lib_sprite<charId>` (:838), and the generated modules ask for the
+   * `lib_` form in both cases. Accept either spelling rather than fail on
+   * a naming collision that is purely an artefact of the pipeline.
+   */
+  private resolveSymbol(name: string): string | null {
+    const memo = this.resolved.get(name);
+    if (memo !== undefined) {
+      return memo;
+    }
+    let hit: string | null = null;
+    if (name in this.manifest.animations) {
+      hit = name;
+    } else {
+      const numbered = /^lib_sprite(\d+)$/.exec(name);
+      const alt = numbered
+        ? `sprite_${numbered[1]}`
+        : name.startsWith("lib_")
+          ? name.slice(4)
+          : `lib_${name}`;
+      if (alt in this.manifest.animations) {
+        hit = alt;
+      }
+    }
+    this.resolved.set(name, hit);
+    return hit;
+  }
+
+  /** Logs a given missing symbol once per provider instance. */
+  private warnMissing(name: string, reason: string): void {
+    if (this.warned.has(name)) {
+      return;
+    }
+    this.warned.add(name);
+    log.warn(`spell ${this.spellId}: ${reason} (${name}) — visuel dégradé`);
+  }
 
   getTexture(name: string): Texture {
     const idx = name.lastIndexOf("_");
@@ -79,25 +124,34 @@ class VelloSpellTextureProvider implements SpellTextureProvider {
         }
       }
     }
-    return this.getFrames("anim1")[0] ?? Texture.EMPTY;
+    throw new Error(`Visuel ${this.spellId} : texture ${name} introuvable.`);
   }
 
+  /**
+   * Never throws. A symbol the compiled .dofasset does not carry yields an
+   * empty frame list: a SpellClip with zero frames still runs its
+   * frameScripts, so the spell plays its main animation and merely loses
+   * that layer. Throwing here used to abort the whole visual — one absent
+   * particle sprite meant the player saw nothing at all.
+   */
   getFrames(prefix: string): Texture[] {
-    const cached = this.anims.get(prefix);
+    const key = this.resolveSymbol(prefix);
+    if (key === null) {
+      this.warnMissing(prefix, "symbole absent du fichier compilé");
+      return [];
+    }
+    const cached = this.anims.get(key);
     if (cached !== undefined) {
       return cached?.frames ?? [];
     }
-    if (!(prefix in this.manifest.animations)) {
-      this.anims.set(prefix, null);
+    const anim = this.vello.buildAnimation(this.spellId, key, this.resolution);
+    if (!anim?.frames.length) {
+      this.anims.set(key, null);
+      this.warnMissing(prefix, "conversion vide");
       return [];
     }
-    const anim = this.vello.buildAnimation(
-      this.spellId,
-      prefix,
-      this.resolution
-    );
-    this.anims.set(prefix, anim);
-    return anim?.frames ?? [];
+    this.anims.set(key, anim);
+    return anim.frames;
   }
 
   hasTexture(name: string): boolean {
@@ -105,16 +159,20 @@ class VelloSpellTextureProvider implements SpellTextureProvider {
     if (idx <= 0) {
       return false;
     }
-    const animName = name.slice(0, idx);
-    return animName in this.manifest.animations;
+    return this.resolveSymbol(name.slice(0, idx)) !== null;
   }
 
   getAnimationInfo(name: string): SpellAnimationInfo | null {
-    const cached = this.anims.get(name);
-    const anim =
-      cached !== undefined
-        ? cached
-        : (this.getFrames(name), this.anims.get(name) ?? null);
+    // Container-only symbols are intentionally absent from the texture
+    // table, so an unknown name is not an error here.
+    const key = this.resolveSymbol(name);
+    if (key === null) {
+      return null;
+    }
+    if (!this.anims.has(key)) {
+      this.getFrames(name);
+    }
+    const anim = this.anims.get(key);
     if (!anim) {
       return null;
     }
@@ -169,14 +227,9 @@ export class SpellAssetLoader {
   }
 
   async loadSpell(spellId: number): Promise<LoadedSpell | null> {
-    // visualGfxId === 0 means "no spell-specific visual" (StarLoco's
-    // sorts.sprite=0 — common for glyphs / buffs / area effects where
-    // the canonical client just plays the cast pose + shows the
-    // server-driven GameZoneData overlay). Don't fetch /spells/0.dofasset
-    // for these — that file is the close-combat punch placeholder, not
-    // a fallback, and trying to parse it pollutes the spell-cast
-    // pipeline with an "Uncaught (in promise)" rejection.
-    if (spellId <= 0) {
+    // Callers skip pose-only catalogue spells. Graphic zero remains the
+    // existing close-combat animation when explicitly requested.
+    if (spellId < 0) {
       return null;
     }
     const cached = this.loaded.get(spellId);

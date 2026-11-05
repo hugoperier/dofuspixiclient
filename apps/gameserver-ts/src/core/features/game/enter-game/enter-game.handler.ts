@@ -1,3 +1,5 @@
+import { FightWorldService } from "@modules/fight/engine/fight.world.service";
+import { FightRegistryService } from "@modules/fight/registry/fight.registry";
 import type { HandlerContext } from "@shared/gateway-adapter/ws-router";
 import { create } from "@bufbuild/protobuf";
 import { DialogLeaveSchema } from "@dofus/proto/chat_pb";
@@ -11,6 +13,7 @@ import {
 } from "@dofus/proto/game_pb";
 import { DofusMessageSchema } from "@dofus/proto/server_messages_pb";
 import { SpellListSchema } from "@dofus/proto/spells_pb";
+import { WelcomeService } from "@modules/accounts/welcome.service";
 import { HarvestService } from "@modules/harvest/harvest.service";
 import { AccessoriesService } from "@modules/inventory/accessories.service";
 import { InventoryFramesService } from "@modules/inventory/inventory.frames.service";
@@ -58,11 +61,15 @@ export class EnterGameHandler {
     private readonly jobs: JobsService,
     private readonly inventory: InventoryService,
     private readonly harvest: HarvestService,
-    private readonly shortcuts: ShortcutsFramesService
+    private readonly shortcuts: ShortcutsFramesService,
+    private readonly welcome: WelcomeService,
+    private readonly fights: FightRegistryService,
+    private readonly fightWorld: FightWorldService
   ) {}
 
   @MessageHandler(GameCreateRequestSchema)
   async handle(ctx: HandlerContext, msg: GameCreateRequest): Promise<void> {
+    if (this.fights.isInFight(ctx.sessionId) || this.fights.isEntering(ctx.sessionId)) return;
     const session = this.sessions.get(ctx.sessionId);
 
     if (!session?.characterId) {
@@ -107,7 +114,7 @@ export class EnterGameHandler {
     };
 
     const peers = this.presence.sessionsOnMap(player.mapId, player.id);
-    const existing = this.presence.onMap(player.mapId);
+
 
     this.presence.enter(entering);
 
@@ -218,6 +225,8 @@ export class EnterGameHandler {
       );
     }
     const tNpcs = performance.now();
+    if (this.fights.isInFight(ctx.sessionId) || this.fights.isEntering(ctx.sessionId)) return;
+    const existing = this.presence.worldOnMap(player.mapId).filter((p) => p.characterId !== player.id);
 
     this.logger.log(
       `enter-game timing: acc=${(tAcc - tStart).toFixed(0)}ms ` +
@@ -262,6 +271,17 @@ export class EnterGameHandler {
         })
       );
     }
+
+    this.fightWorld.sendMap(ctx.sessionId, player.mapId);
+
+    // Last, and only once per session: every map change re-enters the
+    // game through this same handler, and the service is what keeps the
+    // greeting from repeating on each screen.
+    await this.welcome.sendWelcome(
+      ctx.sessionId,
+      session.accountId,
+      player.name
+    );
 
     this.logger.log(
       `enter-game: character=${session.characterId} map=${map.id} peers=${peers.length}`

@@ -92,6 +92,11 @@ export interface SymbolDefinition {
  * `_parent.angle`, `_parent.level`, `_parent.params`).
  */
 export interface SpellRootData {
+  /**
+   * Caster / target in the spell CONTAINER's space (world − anchor), as
+   * `mc.cellFrom/cellTo` are in 1.29: a literal `_X = _parent.cellTo.x`
+   * lands on the target whatever the displayType (QA-182).
+   */
   cellFrom: { x: number; y: number };
   cellTo: { x: number; y: number };
   /** Angle from caster to target, in RADIANS (canonical AS uses degrees). */

@@ -9,15 +9,24 @@
  *   bun tools/combat-exporter/merge-spell-manifests.ts
  */
 
-import { readdir, exists } from 'fs/promises';
-import { join, resolve } from 'path';
+import { exists, readdir } from "node:fs/promises";
+import { join, resolve } from "node:path";
 
-const ROOT = resolve(import.meta.dirname!, '../..');
-const SPELL_ANIMS_DIR = join(ROOT, 'tools/combat-exporter/output/spell-anims');
-const SPRITESHEETS_DIR = join(ROOT, 'assets/spritesheets/spells');
+import linearSpells from "./linear-spells.json";
+
+const ROOT = resolve(import.meta.dirname, "../..");
+const SPELL_ANIMS_DIR = resolve(
+  process.argv[2] ?? join(ROOT, "tools/combat-exporter/output/spell-anims")
+);
+const SPRITESHEETS_DIR = resolve(
+  process.argv[3] ?? join(ROOT, "assets/spritesheets/spells")
+);
 
 interface OriginalAnimation {
   name: string;
+  frameCount?: number;
+  hitFrame?: number;
+  removeFrame?: number;
   stopFrame?: number;
   fadingFrame?: number;
   isComposite?: boolean;
@@ -41,11 +50,21 @@ async function main() {
   let skipped = 0;
 
   for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
+    if (!entry.isDirectory()) {
+      continue;
+    }
 
     const spellId = entry.name;
-    const generatedManifestPath = join(SPRITESHEETS_DIR, spellId, 'manifest.json');
-    const originalManifestPath = join(SPELL_ANIMS_DIR, spellId, 'manifest.json');
+    const generatedManifestPath = join(
+      SPRITESHEETS_DIR,
+      spellId,
+      "manifest.json"
+    );
+    const originalManifestPath = join(
+      SPELL_ANIMS_DIR,
+      spellId,
+      "manifest.json"
+    );
 
     if (!(await exists(generatedManifestPath))) {
       skipped++;
@@ -57,7 +76,22 @@ async function main() {
     }
 
     const generated = JSON.parse(await Bun.file(generatedManifestPath).text());
-    const original: OriginalManifest = JSON.parse(await Bun.file(originalManifestPath).text());
+    const original: OriginalManifest = JSON.parse(
+      await Bun.file(originalManifestPath).text()
+    );
+    const linear = Object.entries(linearSpells).find(
+      ([id]) => id === spellId
+    )?.[1];
+    if (
+      linear &&
+      (original.fps !== linear.fps ||
+        original.animations.find((anim) => anim.name === linear.animation)
+          ?.frameCount !== linear.frameCount)
+    ) {
+      throw new Error(
+        `Linear animation ${spellId} differs from its reviewed source; inspect its frame scripts before rebuilding.`
+      );
+    }
 
     // Build per-animation metadata map (stopFrame, fadingFrame, isComposite, etc.)
     const animationMeta: Record<string, Partial<OriginalAnimation>> = {};
@@ -67,21 +101,21 @@ async function main() {
         fadingFrame: anim.fadingFrame,
         isComposite: anim.isComposite,
         hasMorphShapes: anim.hasMorphShapes,
+        ...(linear && anim.name === linear.animation
+          ? { hitFrame: linear.hitFrame, removeFrame: linear.removeFrame }
+          : {}),
       };
     }
 
     // Merge spell-specific data under `spell` key.
-    // Force requiresTypeScript: true so EVERY spell loads a bespoke
-    // TypeScript class instead of falling back to the generic
-    // PreRenderedSpell stepper. Manifest-driven fallback was too lossy
-    // — particle systems, multi-stage timing, and library symbol
-    // composition all need code, not data.
+    // Only reviewed linear clips may use the frame player. Particle systems
+    // and scripted composition keep their generated runtime modules.
     generated.spell = {
       id: original.id,
       fps: original.fps,
       mainTimelineScale: original.mainTimelineScale ?? 1,
-      requiresTypeScript: true,
-      sounds: original.sounds ?? [],
+      requiresTypeScript: !linear,
+      sounds: linear?.sounds ?? original.sounds ?? [],
       librarySymbols: original.librarySymbols ?? [],
       animationMeta,
     };

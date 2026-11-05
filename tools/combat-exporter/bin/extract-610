@@ -1,0 +1,75 @@
+#!/usr/bin/env php
+<?php
+// Independent random child timelines; the parent owns impact/removal.
+require __DIR__ . '/../vendor/autoload.php';
+use Arakne\Swf\SwfFile;
+use Arakne\Swf\Extractor\SwfExtractor;
+use Arakne\Swf\Extractor\Drawer\Converter\Converter;
+use Arakne\Swf\Extractor\Timeline\Frame;
+use Arakne\Swf\Extractor\Timeline\Timeline;
+
+if ($argc < 4 || $argc > 5) { fwrite(STDERR, "Usage: extract-610 source.swf output-dir timeline.json [610|1005|2112]\n"); exit(1); }
+$id = (int) ($argv[4] ?? 610);
+$config = [610 => [20, 9, 32, 14, 20], 1005 => [21, 20, 52, 50, 25], 2112 => [19, 17, 32, 14, 20]][$id] ?? throw new RuntimeException('Unsupported source');
+[$parentId, $childId, $parentFrames, $childFrames, $sourceFps] = $config;
+$swf = new SwfFile($argv[1]);
+$extractor = new SwfExtractor($swf);
+$parent = $extractor->character($parentId)->timeline();
+$child = $extractor->character($childId)->timeline();
+if ($swf->frameRate() !== $sourceFps || $parent->framesCount() !== $parentFrames || $child->framesCount() !== $childFrames) {
+    throw new RuntimeException('Unexpected source timeline');
+}
+$out = $argv[2];
+if (!is_dir($out)) mkdir($out, 0755, true);
+$converter = new Converter();
+$animations = [];
+$depths = [];
+$placements = [];
+foreach ($parent->frames as $index => $frame) {
+    $placements[$index] = [];
+    foreach ($frame->objects as $depth => $object) {
+        if (($object->object->id ?? null) !== $childId) { $depths[$depth] = true; continue; }
+        if ($object->clipDepth !== null) throw new RuntimeException('Unexpected dynamic mask');
+        $bounds = $object->object->bounds();
+        $m = $object->matrix->translate(-$bounds->xmin, -$bounds->ymin);
+        $placements[$index][] = [
+            'depth' => $depth,
+            'matrix' => [$m->scaleX, $m->rotateSkew0, $m->rotateSkew1, $m->scaleY, $m->translateX / 20, $m->translateY / 20],
+            'alpha' => ($object->colorTransform?->alphaMult ?? 256) / 256,
+        ];
+    }
+}
+ksort($depths);
+$childName = 'sprite_' . $childId;
+$timelines = [$childName => $child];
+foreach ($depths as $depth => $_) {
+    $frames = [];
+    foreach ($parent->frames as $frame) {
+        $objects = isset($frame->objects[$depth]) ? [$depth => $frame->objects[$depth]] : [];
+        $frames[] = new Frame($frame->bounds, $objects);
+    }
+    $timelines['depth_' . $depth] = new Timeline($parent->bounds, ...$frames);
+}
+foreach ($timelines as $name => $timeline) {
+    $bounds = $timeline->bounds;
+    $frames = [];
+    for ($i = 0; $i < $timeline->framesCount(); $i++) {
+        $svg = $converter->toSvg($timeline, $i);
+        // Match the local TRIPLEFRAMERATE AS2 timelines (three ticks per authored frame).
+        // Loaded clips share the client clock, including 1005 whose standalone header is 25 Hz.
+        for ($sub = 0; $sub < 3; $sub++) {
+            $index = $i * 3 + $sub;
+            $file = $name . '_' . $index . '.svg';
+            file_put_contents($out . '/' . $file, $svg);
+            $frames[] = ['index' => $index, 'file' => $file];
+        }
+    }
+    $animations[] = ['name' => $name, 'frameCount' => count($frames), 'width' => $bounds->width() / 20,
+        'height' => $bounds->height() / 20, 'offsetX' => $bounds->xmin / 20, 'offsetY' => $bounds->ymin / 20,
+        'frames' => $frames];
+}
+file_put_contents($out . '/manifest.json', json_encode(['id' => $id, 'fps' => 60, 'mainTimelineScale' => 1,
+    'requiresTypeScript' => true, 'animations' => $animations, 'sounds' => $id === 1005 ? [] : [['frame' => 6, 'soundId' => 'dodge_610']]], JSON_THROW_ON_ERROR));
+file_put_contents($argv[3], json_encode(['childName' => $childName, 'sourceSha256' => hash_file('sha256', $argv[1]), 'depths' => array_keys($depths),
+    'bounds' => array_combine(array_column($animations, 'name'), array_map(fn ($a) => array_diff_key($a, ['frames' => true, 'name' => true]), $animations)), 'placements' => $placements], JSON_THROW_ON_ERROR));
+echo count($animations) . " independent animations exported\n";

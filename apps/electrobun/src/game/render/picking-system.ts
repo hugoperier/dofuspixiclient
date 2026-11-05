@@ -14,6 +14,8 @@ import type { PickableObject, PickResult } from "@/game/types";
  * Total per-pick cost: ~300 AABB comparisons + 0-3 alpha lookups = <0.1ms.
  */
 export class PickingSystem {
+  private eligible: (id: number) => boolean = () => true;
+  setEligibilityFilter(eligible: (id: number) => boolean): void { this.eligible = eligible; }
   private renderer: Renderer;
   private pickableObjects: Map<number, PickableObject> = new Map();
 
@@ -67,6 +69,7 @@ export class PickingSystem {
     let bestZIndex = -Infinity;
 
     for (const [, obj] of this.pickableObjects) {
+      if (!this.eligible(obj.id)) continue;
       const sprite = obj.sprite;
       const container = obj.parentContainer;
 

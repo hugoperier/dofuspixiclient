@@ -1,3 +1,4 @@
+import { withClipEventParent } from "../scene/fight/placed-event-symbol";
 /**
  * Spell 504 — Maны (many_504).
  *
@@ -408,7 +409,9 @@ export class Spell504 extends RuntimeSpell {
     this.sprite14Sym = {
       name: "sprite14",
       totalFrames: 1,
-      frames: textures.getFrames("lib_sprite14"),
+      // sprite_14 is baked into anim1's composite frames: drawing it again
+      // doubled it (QA-183, `audit-spell-display-types.ts`). Scripts kept.
+      frames: [],
       anchorX: sprite14Anchor.x,
       anchorY: sprite14Anchor.y,
       onLoad: (clip, ctx) => {
@@ -626,6 +629,7 @@ export class Spell504 extends RuntimeSpell {
     this.registry.register(this.sprite9Sym);
     this.registry.register(this.sprite10Sym);
     this.registry.register(this.sprite13Sym);
+    this.sprite14Sym = withClipEventParent(this.sprite14Sym);
     this.registry.register(this.sprite14Sym);
     this.registry.register(this.anim1Sym);
   }

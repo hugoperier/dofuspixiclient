@@ -10,6 +10,9 @@ export class ActiveState implements FightState {
   private started = false;
 
   enter(f: unknown): void {
+    for (const fighter of (f as Fight).fighters()) {
+      fighter.initialCell = fighter.cell;
+    }
     this.turnList = new TurnList((f as Fight).fighters());
     this.started = true;
   }

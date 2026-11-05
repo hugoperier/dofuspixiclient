@@ -88,20 +88,22 @@ export class Spell2102 extends RuntimeSpell {
       frameScripts: new Map([
         [
           0,
-          (clip, ctx) => {
+          (clip) => {
             // AS DefineSprite_34/frame_1/DoAction.as
             this.soundCallback?.("licrounch_1003");
 
             // AS DefineSprite_34/frame_1/DoAction_2.as
-            // For TargetCell, container origin is already at cellTo.
-            // Apply explicitly for 1:1 canonical fidelity.
+            //   _X = _parent.cellTo.x; _Y = _parent.cellTo.y
+            // root.vars.cellTo is in the container's space (QA-182), so
+            // the literal translation lands on the target under any
+            // displayType.
             const root = clip.parent;
             const cellTo = root?.vars.cellTo as
               | { x: number; y: number }
               | undefined;
             if (cellTo) {
-              clip.x = cellTo.x - (ctx.cellTo.x);
-              clip.y = cellTo.y - (ctx.cellTo.y);
+              clip.x = cellTo.x;
+              clip.y = cellTo.y;
             } else {
               clip.x = 0;
               clip.y = 0;

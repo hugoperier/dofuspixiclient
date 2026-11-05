@@ -25,6 +25,10 @@ export class CharacteristicStack {
     this.items.clear();
   }
 
+  resetBuffs(): void {
+    this.buffs.clear();
+  }
+
   get(id: Characteristic): number {
     return (
       (this.base.get(id) ?? 0) +

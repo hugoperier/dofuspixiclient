@@ -6,6 +6,8 @@
 // Vite's prebundler will externalize those imports at runtime.
 export {
   readHeader,
+  readAnimations,
+  type ReadAnimation,
   readExtras,
   readSpellExtras,
   readTileExtras,

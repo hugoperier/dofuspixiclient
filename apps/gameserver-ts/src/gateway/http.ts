@@ -1,9 +1,10 @@
 import { timingSafeEqual } from "node:crypto";
 
+import type { Context } from "hono";
 import { fromBinary } from "@bufbuild/protobuf";
 import { ClientMessageSchema } from "@dofus/proto/client_messages_pb";
 import { Hono } from "hono";
-import { upgradeWebSocket, websocket } from "hono/bun";
+import { getConnInfo, upgradeWebSocket, websocket } from "hono/bun";
 
 import type { AccountProvisioner } from "./admin-accounts.ts";
 import type { UpstreamRegistry } from "./upstream-registry.ts";
@@ -60,6 +61,32 @@ function logConnection(
     { mod: "ws", clientId: clientId ?? "-", sessionId, role, remoteAddr },
     "client connected"
   );
+}
+
+/**
+ * Who is on the other end of this socket.
+ *
+ * `x-forwarded-for` first, because behind a proxy the socket's peer is
+ * the proxy. Falling back to the peer address is what makes the value
+ * exist at all in a direct connection: no browser sets the header, so
+ * every login was recorded from "unknown" and `accounts.last_login_ip`
+ * has been null for the life of the column.
+ */
+function remoteAddrOf(c: Context): string {
+  const forwarded = c.req.header("x-forwarded-for");
+
+  if (forwarded) {
+    // A proxy chain lists the original client first.
+    return forwarded.split(",")[0]?.trim() || "unknown";
+  }
+
+  try {
+    return getConnInfo(c).remote.address ?? "unknown";
+  } catch {
+    // The helper throws when the adapter cannot reach Bun's server —
+    // never worth failing a connection over.
+    return "unknown";
+  }
 }
 
 function isRole(raw: string): raw is Role {
@@ -156,7 +183,7 @@ export function buildHttpApp(deps: Deps) {
         role,
         accountId: "",
         characterId: "",
-        remoteAddr: c.req.header("x-forwarded-for") ?? "unknown",
+        remoteAddr: remoteAddrOf(c),
         sink: { sendBinary: () => undefined, close: () => undefined },
       });
 
@@ -212,7 +239,7 @@ export function buildHttpApp(deps: Deps) {
         role,
         accountId: auth.accountId,
         characterId: auth.characterId,
-        remoteAddr: c.req.header("x-forwarded-for") ?? "unknown",
+        remoteAddr: remoteAddrOf(c),
         sink: { sendBinary: () => undefined, close: () => undefined },
       });
 

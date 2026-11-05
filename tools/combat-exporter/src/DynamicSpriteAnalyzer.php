@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App;
 
+use Arakne\Swf\Parser\Structure\Action\Opcode;
 use Arakne\Swf\Parser\Structure\Record\ClipEventFlags;
 use Arakne\Swf\Parser\Structure\Tag\DefineSpriteTag;
+use Arakne\Swf\Parser\Structure\Tag\DoActionTag;
 use Arakne\Swf\Parser\Structure\Tag\EndTag;
 use Arakne\Swf\Parser\Structure\Tag\PlaceObject2Tag;
 use Arakne\Swf\Parser\Structure\Tag\PlaceObject3Tag;
@@ -94,7 +96,10 @@ final class DynamicSpriteAnalyzer
         $directlyDynamic = [];
         foreach ($swf->tags() as $tag) {
             if ($tag instanceof DefineSpriteTag) {
-                if ($this->ownsClipActionPlacement($tag->tags)) {
+                if (
+                    $this->ownsClipActionPlacement($tag->tags)
+                    || $this->ownsPlayheadControl($tag->tags)
+                ) {
                     $directlyDynamic[$tag->spriteId] = true;
                 }
             }
@@ -187,6 +192,49 @@ final class DynamicSpriteAnalyzer
             }
             foreach ($clipActions->records as $record) {
                 if (($record->flags->flags & $relevantFlags) !== 0) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Returns true if the sprite's own timeline drives its playhead —
+     * `stop()`, `play()`, `gotoAndStop()` or `gotoAndPlay()` in a frame
+     * DoAction.
+     *
+     * Such a sprite needs a playhead of its own at runtime: its frame
+     * index stops advancing with the parent's. Baking it into the
+     * parent's pre-rendered SVG freezes that decision at export time,
+     * which is wrong for exactly the same reason a CLIPACTIONRECORD is.
+     * AS2 compiles these to dedicated opcodes rather than method calls,
+     * so match on the opcode instead of scanning the constant pool.
+     *
+     * Example: spell 105's DefineSprite_9 carries only
+     * `frame_220/DoAction.as` with a `stop()`. Before this predicate it
+     * was never exported, yet the generated module asks for
+     * `lib_sprite9`.
+     *
+     * @param iterable<object> $tags
+     */
+    private function ownsPlayheadControl(iterable $tags): bool
+    {
+        foreach ($tags as $tag) {
+            if ($tag instanceof EndTag) {
+                break;
+            }
+            if (!($tag instanceof DoActionTag)) {
+                continue;
+            }
+            foreach ($tag->actions as $action) {
+                if (
+                    $action->opcode === Opcode::ActionStop
+                    || $action->opcode === Opcode::ActionPlay
+                    || $action->opcode === Opcode::ActionGotoFrame
+                    || $action->opcode === Opcode::ActionGotoFrame2
+                ) {
                     return true;
                 }
             }

@@ -122,7 +122,9 @@ export class Spell507 extends RuntimeSpell {
     const sprite13Sym: SymbolDefinition = {
       name: "sprite13",
       totalFrames: 24,
-      frames: textures.getFrames("lib_sprite13"),
+      // sprite_13 is baked into lib_etoiles's composite frames: drawing it again
+      // doubled it (QA-183, `audit-spell-display-types.ts`). Scripts kept.
+      frames: [],
       anchorX: sprite13Anchor.x,
       anchorY: sprite13Anchor.y,
       // AS DefineSprite_13/frame_13/PlaceObject2_12_1/CLIPACTIONRECORD onClipEvent(load).as

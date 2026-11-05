@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setSystemTime, test } from "bun:test";
 
 import { create } from "@bufbuild/protobuf";
 
@@ -178,5 +178,63 @@ describe("walk instrumentation", () => {
     expect(end).toHaveLength(1);
     expect(end[0]).toContain("cell=268");
     expect(end[0]).toContain("(expected 300)");
+  });
+});
+
+/**
+ * The lock that makes a click during a walk retarget instead of stacking a
+ * second order on top of the first (QA-092).
+ *
+ * `SELF_MOVE_TIMEOUT_MS` is a watchdog for the send → echo window: a path
+ * the server refuses outright is never echoed and must not hold the clicks
+ * hostage. It used to run from the send to the *end of the animation*, so a
+ * walk of more than two seconds dropped out of the lock mid-stride — and the
+ * click that landed in that gap was routed as a fresh move computed from the
+ * cell the walk started from.
+ */
+describe("the self-move lock", () => {
+  const START = new Date("2026-09-08T18:00:00Z");
+  const LATER = new Date("2026-09-08T18:00:05Z");
+
+  test("holds for the whole walk, however long the path is", async () => {
+    logBuffer.clear();
+    setSystemTime(START);
+
+    const h = harness();
+
+    h.setCurrentMap(7411);
+    h.handler.markSelfMoveSent();
+    h.walk([153, 168, 183, 198, 268]);
+
+    // Five seconds into an animation that is still running: well past the
+    // watchdog, and the echo came back long ago.
+    setSystemTime(LATER);
+
+    expect(h.handler.isSelfMoveInFlight()).toBe(true);
+    expect(messagesMatching(/timed out/)).toHaveLength(0);
+
+    setSystemTime();
+    h.release();
+    await h.settle();
+
+    expect(h.handler.isSelfMoveInFlight()).toBe(false);
+  });
+
+  test("still expires when the server never echoes the request back", () => {
+    logBuffer.clear();
+    setSystemTime(START);
+
+    const h = harness();
+
+    h.setCurrentMap(7411);
+    h.handler.markSelfMoveSent();
+
+    // No `walk`: this is a path the server refused, so nothing animates.
+    setSystemTime(LATER);
+
+    expect(h.handler.isSelfMoveInFlight()).toBe(false);
+    expect(messagesMatching(/^self-move timed out/)).toHaveLength(1);
+
+    setSystemTime();
   });
 });

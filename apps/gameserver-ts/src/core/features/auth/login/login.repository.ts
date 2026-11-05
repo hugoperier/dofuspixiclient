@@ -24,4 +24,19 @@ export class LoginRepository {
       .where("id", "=", accountId)
       .execute();
   }
+
+  /**
+   * Appends to the login history the welcome line reads back.
+   *
+   * Separate from `markLoggedIn` because that one *overwrites*: by the
+   * time the player finishes entering the game, the columns it sets
+   * already describe the current connection, so there is nowhere left to
+   * read the previous one from.
+   */
+  async recordLogin(accountId: string, ip: string | null): Promise<void> {
+    await this.txHost.tx
+      .insertInto("accountLogins")
+      .values({ accountId, ip })
+      .execute();
+  }
 }

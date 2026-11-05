@@ -14,10 +14,7 @@ import type { AtlasLoader } from "@/game/render/atlas-loader";
 import type { PickingSystem } from "@/game/render/picking-system";
 import type { SpellVelloRenderer } from "@/game/render/spell-vello-renderer";
 import type { SpellAnimationConfig } from "@/game/scene/fight/spell-view";
-import type {
-  MapTransition,
-  TransitionDirection,
-} from "@/game/scene/map/transition";
+import type { MapTransition } from "@/game/scene/map/transition";
 import type { DebugOverlay } from "@/game/scene/overlays/debug";
 import type { GridOverlay } from "@/game/scene/overlays/grid";
 import type { PlayerRenderer } from "@/game/scene/player/renderer";
@@ -51,12 +48,17 @@ import { MapHandler } from "@/game/scene/map/handler";
 import { Scene } from "@/game/scene/scene";
 import { characterStore } from "@/game/stores/character-store";
 import { hideContextMenu } from "@/game/stores/context-menu-store";
-import { fightActor } from "@/game/stores/fight-store";
+import { fightActor, fightStore } from "@/game/stores/fight-store";
 import { FightUI } from "@/hud/fight/fight-ui";
 import {
   setTacticalMode as setTacticalModeStore,
   tacticalModeStore,
 } from "@/hud/fight/tactical-mode-store";
+import {
+  creatureModeStore,
+  setCreatureMode,
+} from "@/hud/fight/creature-mode-store";
+import { resetFightOptions } from "@/hud/fight/fight-options-store";
 import { loadTheme } from "@/themes";
 
 extensions.add(LayoutSystem);
@@ -90,6 +92,7 @@ function projectFightMode(value: unknown): string {
 }
 
 export class Battlefield {
+  private mapLoadGeneration = 0;
   private engine: Engine;
   private app: Application | null = null;
   private mapContainer: Container | null = null;
@@ -108,6 +111,7 @@ export class Battlefield {
   private fightUI: FightUI | null = null;
   private fightActorUnsubscribe: (() => void) | null = null;
   private tacticalUnsubscribe: (() => void) | null = null;
+  private creatureUnsubscribe: (() => void) | null = null;
   private lastFightMode: string = "none";
   private tacticalMode = false;
 
@@ -152,6 +156,7 @@ export class Battlefield {
   private onResizeEndCallback?: () => void;
 
   private readonly picking = new BattlefieldPicking({
+    isCombatFighter: (id) => fightActor.getSnapshot().context.fighters.has(String(id)),
     pickingSystem: () => this.pickingSystem,
     interactiveObjects: () => this.interactiveObjectsData,
     npcLang: () => this.npcLangData,
@@ -350,6 +355,12 @@ export class Battlefield {
       // tacticalMode guard dedupe repeated calls.
       void this.setTacticalMode(tacticalModeStore.getSnapshot().tactical);
     });
+
+    this.creatureUnsubscribe = creatureModeStore.subscribe(() => {
+      this.worldActors
+        .getRenderer()
+        ?.setCreatureMode(creatureModeStore.getSnapshot().creature);
+    });
   }
 
   /**
@@ -362,6 +373,7 @@ export class Battlefield {
    * appear the moment combat actually starts.
    */
   enterFightMode(mode: string): void {
+    this.picking.setCombatMode(true);
     // Circles appear once combat actually starts; during placement we
     // show the unadorned sprites like the original client. Spectators
     // always drop into an in-progress fight, so they keep the rings.
@@ -403,6 +415,7 @@ export class Battlefield {
   }
 
   exitFightMode(): void {
+    this.picking.setCombatMode(false);
     const renderer = this.worldActors.getRenderer();
     renderer?.setActiveTurnPlayer(null);
     renderer?.setFightMode(false);
@@ -413,6 +426,10 @@ export class Battlefield {
     if (this.tacticalMode) {
       setTacticalModeStore(false);
     }
+    // Same for creature mode, and for the leader options, which belong
+    // to the fight that just ended and must not leak into the next one.
+    setCreatureMode(false);
+    resetFightOptions();
   }
 
   getFightUI(): FightUI | null {
@@ -530,10 +547,7 @@ export class Battlefield {
     });
   }
 
-  async loadMapFromData(
-    mapData: MapData,
-    direction?: TransitionDirection
-  ): Promise<void> {
+  async loadMapFromData(mapData: MapData): Promise<void> {
     if (
       !this.mapContainer ||
       !this.mapHandler ||
@@ -543,8 +557,9 @@ export class Battlefield {
       return;
     }
 
+    const generation = ++this.mapLoadGeneration;
     // Non-blocking snapshot of the old map; new tiles render behind it.
-    this.mapTransition?.startTransition(direction);
+    this.mapTransition?.startTransition();
 
     this.currentMapData = mapData;
     this.cellDataMap.clear();
@@ -596,6 +611,8 @@ export class Battlefield {
       this.getViewport()
     );
 
+    if (generation !== this.mapLoadGeneration) return;
+    this.fightUI?.updateFightMapDimensions(mapData.width);
     this.positionGridBelowObject2();
 
     this.gridOverlay?.setMapData(
@@ -672,13 +689,6 @@ export class Battlefield {
     maps: Array<{ mapId: number; dx: number; dy: number; mapData: MapData }>
   ): void {
     this.adjacentMapCache?.loadAdjacentMaps(maps);
-  }
-
-  /**
-   * Get the transition direction for a target map from the adjacent cache.
-   */
-  getAdjacentDirection(mapId: number): TransitionDirection | null {
-    return this.adjacentMapCache?.getDirection(mapId) ?? null;
   }
 
   /** Set the player character ID (used for tracking). */
@@ -953,6 +963,13 @@ export class Battlefield {
     this.onCellHoverCallback?.(cellId);
   }
 
+  hoverFightFighter(spriteId: string | null): void {
+    const fighter = spriteId
+      ? fightStore.getSnapshot().fighters.get(spriteId)
+      : undefined;
+    this.picking.setHoverByCell(fighter && !fighter.dead ? fighter.cell : null);
+  }
+
   setOnCellHover(callback: (cellId: number | null) => void): void {
     this.onCellHoverCallback = callback;
   }
@@ -1011,6 +1028,8 @@ export class Battlefield {
     this.fightActorUnsubscribe = null;
     this.tacticalUnsubscribe?.();
     this.tacticalUnsubscribe = null;
+    this.creatureUnsubscribe?.();
+    this.creatureUnsubscribe = null;
 
     this.fightUI?.destroy();
     this.fightUI = null;

@@ -40,8 +40,13 @@ import { SymbolRegistry } from "./symbol-registry.ts";
 export abstract class RuntimeSpell implements ISpellAnimation {
   abstract readonly spellId: number;
   /**
-   * Canonical Dofus 1.29 displayType (10/11/12/20/21/30/31/40/41/50/51).
-   * Drives how `configureHarness` anchors + animates the root clip.
+   * The module's own displayType (10/11/12/20/21/30/31/40/41/50/51) —
+   * only a FALLBACK. The canonical value belongs to the spell, not to the
+   * visual: 1.29 sends it in `GA;300` from `sorts.spriteInfos`, and one
+   * gfx serves several (gfx 503: 11 for Ralentissement, 10 for Protection
+   * Aveuglante). spell-view resolves server-over-module into
+   * `context.displayType`, which is what `init` configures the harness
+   * with (QA-181).
    */
   abstract readonly displayType: number;
 
@@ -85,10 +90,12 @@ export abstract class RuntimeSpell implements ISpellAnimation {
     this.applyTextureAnchors(textures);
 
     // Apply canonical displayType wiring: anchor, projectile motion,
-    // initial attachMovie of "move" / "shoot" / etc.
+    // initial attachMovie of "move" / "shoot" / etc. The context carries
+    // the resolved value (server first, module fallback) — the same one
+    // spell-view anchored the container with.
     configureHarness({
       runtime: this.runtime,
-      displayType: this.displayType,
+      displayType: context.displayType ?? this.displayType,
       caster: { x: context.cellFrom.x, y: context.cellFrom.y },
       target: { x: context.cellTo.x, y: context.cellTo.y },
       level: context.level,
@@ -106,7 +113,7 @@ export abstract class RuntimeSpell implements ISpellAnimation {
 
     // eslint-disable-next-line no-console
     console.log(
-      `[RuntimeSpell ${this.spellId}] init done — displayType=${this.displayType}, ` +
+      `[RuntimeSpell ${this.spellId}] init done — displayType=${context.displayType ?? this.displayType}, ` +
         `caster=(${context.cellFrom.x.toFixed(0)},${context.cellFrom.y.toFixed(0)}), ` +
         `target=(${context.cellTo.x.toFixed(0)},${context.cellTo.y.toFixed(0)}), ` +
         `level=${context.level}, root.children=[${[...this.root.children.keys()].join(",")}]`

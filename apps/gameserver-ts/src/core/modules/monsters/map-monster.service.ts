@@ -20,6 +20,9 @@ export interface LiveMonsterGroup {
 }
 
 export interface LiveMonsterMember {
+  initiative?: number;
+  stats?: unknown;
+  resistances?: unknown;
   templateId: number;
   level: number;
   name: string;
@@ -214,6 +217,9 @@ export class MapMonsterService {
         level: pick.level,
         name: template.name,
         gfx: template.gfx,
+        initiative: levelData?.initiative ?? 0,
+        stats: levelData?.stats,
+        resistances: levelData?.resistances,
         life: levelData?.life ?? 50,
         ap: levelData?.ap ?? 6,
         mp: levelData?.mp ?? 3,

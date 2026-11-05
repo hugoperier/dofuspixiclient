@@ -81,11 +81,14 @@ export interface BattlefieldWorldActorsDeps {
     monsterGroupBonus?: number,
     /**
      * Player IDs of every sprite that visually belongs to the same
-     * monster group as `playerId` (leader + decorative siblings).
-     * When the user rolls over ANY of these sprites the picking
-     * handler highlights ALL of them at once — that's how a group
-     * looks like a single hoverable unit instead of a pile of
-     * individually-pickable sprites.
+     * monster group as `playerId`, **leader first**, then the
+     * decorative siblings. When the user rolls over ANY of these
+     * sprites the picking handler highlights ALL of them at once —
+     * that's how a group looks like a single hoverable unit instead
+     * of a pile of individually-pickable sprites. The order matters
+     * beyond hover: a click on any member is routed to element 0's
+     * cell, because only the leader stands where the server put the
+     * group and only that cell starts the fight.
      */
     groupSpriteIds?: number[],
     /** SPRITE_TYPE_NPC only — keys the action bubble's lang lookup. */
@@ -103,6 +106,7 @@ export interface BattlefieldWorldActorsDeps {
 export class BattlefieldWorldActors {
   private container: Container | null = null;
   private renderer: PlayerRenderer | null = null;
+  private readonly npcIds = new Set<number>();
 
   constructor(private readonly deps: BattlefieldWorldActorsDeps) {}
 
@@ -112,6 +116,7 @@ export class BattlefieldWorldActors {
 
   /** Recreate the renderer (e.g. after map change, before MAP_ACTORS batch). */
   reset(): void {
+    this.npcIds.clear();
     this.init();
   }
 
@@ -143,6 +148,10 @@ export class BattlefieldWorldActors {
   async add(data: WorldActorData): Promise<void> {
     if (!this.renderer) {
       this.init();
+    }
+    const renderer = this.renderer;
+    if (!renderer) {
+      return;
     }
 
     // Prefer the server's authoritative team (fight mode sets it from
@@ -183,7 +192,7 @@ export class BattlefieldWorldActors {
           }))
         : data.linkedChildren;
 
-    await (this.renderer?.addPlayer({
+    await renderer.addPlayer({
       id: data.id,
       name: data.name,
       team,
@@ -201,7 +210,10 @@ export class BattlefieldWorldActors {
       linkedChildren,
       mount: data.mount,
       ...(data.scale !== undefined ? { scale: data.scale } : {}),
-    }) ?? Promise.resolve());
+    });
+    if (this.renderer !== renderer) {
+      return;
+    }
 
     // If the player already existed (addPlayer short-circuits on
     // duplicate ids), make sure the team mirrors whatever the server
@@ -246,7 +258,19 @@ export class BattlefieldWorldActors {
       }
     }
 
+    if (data.npcTemplateId !== undefined) {
+      this.npcIds.add(data.id);
+      this.syncNpcVisibility();
+    }
     this.deps.markPickingDirty();
+  }
+
+  private syncNpcVisibility(): void {
+    const mode = fightStore.getSnapshot().mode;
+    const visible = mode === "none" || mode === "ended";
+    for (const id of this.npcIds) {
+      this.renderer?.setPlayerRenderable(id, visible);
+    }
   }
 
   /** Look changes (equip/unequip) — re-render the actor with new accessories. */
@@ -255,6 +279,7 @@ export class BattlefieldWorldActors {
   }
 
   remove(id: number): void {
+    this.npcIds.delete(id);
     // A monster group's members are linked children of the leader, so
     // `PlayerRenderer.cleanupPlayer` already removes their sprites when the
     // leader goes. Their picking entries are ours to drop, though — the
@@ -277,6 +302,7 @@ export class BattlefieldWorldActors {
   }
 
   clear(): void {
+    this.npcIds.clear();
     this.renderer?.clear();
   }
 
@@ -338,15 +364,22 @@ export class BattlefieldWorldActors {
     // out of sync (was the user's "HP bar goes to 0 after any damage"
     // bug — onDamage's local delta computation was racing with the
     // store update fired right after).
-    let lastHpKey = new Map<string, string>();
+    const lastHpKey = new Map<string, string>();
     this.fightStoreUnsub = fightStore.subscribe(() => {
+      this.syncNpcVisibility();
       const renderer = this.renderer;
-      if (!renderer) return;
+      if (!renderer) {
+        return;
+      }
       for (const f of fightStore.getSnapshot().fighters.values()) {
         const numericId = Number(f.spriteId);
-        if (!Number.isFinite(numericId)) continue;
+        if (!Number.isFinite(numericId)) {
+          continue;
+        }
         const key = `${f.hp}/${f.maxHp}`;
-        if (lastHpKey.get(f.spriteId) === key) continue;
+        if (lastHpKey.get(f.spriteId) === key) {
+          continue;
+        }
         lastHpKey.set(f.spriteId, key);
         renderer.updatePlayer(numericId, { hp: f.hp, maxHp: f.maxHp });
       }

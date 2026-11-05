@@ -5,6 +5,7 @@ import { ChatChannel } from "@dofus/proto/common_pb";
 
 import type { Connection } from "@/game/network/connection";
 import type { MessageHandler } from "@/game/network/message-handler";
+import { playAudioEvent } from "@/game/audio/audio-events";
 import { styleFor } from "@/game/chat/chat-channels";
 import { encodeClient } from "@/game/network/protocol";
 import {
@@ -52,6 +53,14 @@ export class ChatHandler {
 
   private onMessage(msg: ChatMessage): void {
     const style = styleFor(msg.channel);
+    if (isFilterVisible(style.filter)) {
+      if (msg.channel === ChatChannel.WHISPER_FROM) {
+        playAudioEvent("whisper");
+      }
+      if (msg.channel === ChatChannel.EVENT) {
+        playAudioEvent("gameEvent");
+      }
+    }
 
     appendChatMessage({
       channel: msg.channel,

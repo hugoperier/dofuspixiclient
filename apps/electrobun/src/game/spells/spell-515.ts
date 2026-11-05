@@ -1,17 +1,15 @@
 /**
- * Spell 515 — (Sacrieur / Roublard rock-fall type spell).
+ * Visual 515 — Momification (sort 99, Xélor).
  *
  * Hand-ported against the SpellClip / SpellRuntime composition layer.
  * Canonical AS source: tools/combat-exporter/output/spell-anims/515/scripts/scripts/
  *
- * displayType=11 (TargetCell). There is no `move` or `shoot` projectile
- * symbol with a harness-driven arc, no `duplicate` for a beam, and no
- * dual-anchor worldAbsolute pattern. The single `shoot` symbol is
- * positioned at the target cell (its frame_4 script sets
- * `_X = _parent.cellFrom.x; _Y = _parent.cellFrom.y`, but that is
- * the initial splash-back position which is still relative to the
- * target anchor). The spell is a single 150-frame impact composite at
- * the target cell — TargetCell is correct.
+ * Canonical displayType=51 (`sorts.spriteInfos` "51,1,1", sent by the
+ * server — QA-181); the module's own TargetCell is only the fallback.
+ * The single `shoot` symbol moves itself onto the CASTER at frame_4
+ * (`_X = _parent.cellFrom.x; _Y = _parent.cellFrom.y`) — Momification
+ * wraps the Xélor himself — which holds under either displayType since
+ * `root.vars.cellFrom` is in the container's space (QA-182).
  *
  * Library symbols (from AS):
  *   - `shoot` (DefineSprite_55_shoot, 150 frames): the main impact
@@ -71,7 +69,7 @@ const SHOOT_BOUNDS = {
 
 export class Spell515 extends RuntimeSpell {
   readonly spellId = 515;
-  readonly displayType = SpellDisplayType.TargetCell;
+  readonly displayType = SpellDisplayType.WorldAbsoluteAlt;
 
   // Cached symbol refs for cross-symbol attaches
   private pierresInnerSym!: SymbolDefinition;
@@ -274,19 +272,16 @@ export class Spell515 extends RuntimeSpell {
             // AS: DefineSprite_55_shoot/frame_4/DoAction_2.as
             // _X = _parent.cellFrom.x;
             // _Y = _parent.cellFrom.y;
-            // For displayType=11 (TargetCell), the container is anchored
-            // at cellTo in world space. cellFrom in container-local coords
-            // is cellFrom - cellTo (the anchor). We read from root.vars.
+            // root.vars.cellFrom is in the container's space (QA-182), so
+            // the literal translation lands on the caster under the
+            // canonical 51 as under the module's own 11.
             const root = clip.parent;
             const cellFrom = root?.vars.cellFrom as
               | { x: number; y: number }
               | undefined;
-            const cellTo = root?.vars.cellTo as
-              | { x: number; y: number }
-              | undefined;
-            if (cellFrom && cellTo) {
-              clip.x = cellFrom.x - cellTo.x;
-              clip.y = cellFrom.y - cellTo.y;
+            if (cellFrom) {
+              clip.x = cellFrom.x;
+              clip.y = cellFrom.y;
             }
           },
         ],

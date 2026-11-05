@@ -102,7 +102,6 @@ function tacticWalkableTileId(
   return Number(`100${subPad}${parityMatch ? "1" : "3"}`);
 }
 
-
 interface TacticCellBackup {
   ground: number;
   layer1: number;
@@ -115,6 +114,7 @@ interface TacticBackup {
 }
 
 export class MapHandler {
+  private renderGeneration = 0;
   private atlasLoader: AtlasLoader;
   private layerBuilder: TileLayerBuilder;
 
@@ -187,41 +187,9 @@ export class MapHandler {
     viewport: Viewport | null = null,
     opts: { preserveWorldActors?: boolean } = {}
   ): Promise<void> {
-    // Opt #5: Reuse persistent layers — just clear children
-    this.backgroundLayer.removeChildren();
-    this.groundLayer.removeChildren();
-    this.objectLayer1.removeChildren();
-    if (opts.preserveWorldActors) {
-      // Tactic mode: objectLayer2 hosts both foreground tiles AND fighter
-      // containers from PlayerRenderer. We can't blanket-remove or the
-      // fighters vanish. Drop only the tile-builder-owned sprites (tracked
-      // via spriteRefs) and leave everything else attached.
-      this.layerBuilder.dropLayerSprites(2);
-    } else {
-      this.objectLayer2.removeChildren();
-    }
-    this.layerBuilder.clearAnimatedSprites();
-
+    const generation = ++this.renderGeneration;
     const { width: mapWidth, height: mapHeight, backgroundNum } = mapData;
     const mapScale = computeMapScale(mapWidth, mapHeight);
-    mapContainer.scale.set(zoom);
-
-    // Opt #5: Add layers to parent only once
-    if (!this.layersInitialized) {
-      mapContainer.addChild(this.backgroundLayer);
-      mapContainer.addChild(this.groundLayer);
-      mapContainer.addChild(this.objectLayer1);
-      mapContainer.addChild(this.objectLayer2);
-      this.layersInitialized = true;
-    } else if (this.backgroundLayer.parent !== mapContainer) {
-      // Re-parent if mapContainer changed
-      mapContainer.removeChildren();
-      mapContainer.addChild(this.backgroundLayer);
-      mapContainer.addChild(this.groundLayer);
-      mapContainer.addChild(this.objectLayer1);
-      mapContainer.addChild(this.objectLayer2);
-    }
-
     // Use cells in sequential order (CellId sequential order IS the correct isometric front-to-back order)
     const { cells } = mapData;
 
@@ -234,20 +202,58 @@ export class MapHandler {
 
     for (const cell of cells) {
       if (cell.ground > 0) {
-        uniqueTileKeys.add(this.layerBuilder.tileKeyFor(cell.id, 0, cell.ground));
+        uniqueTileKeys.add(
+          this.layerBuilder.tileKeyFor(cell.id, 0, cell.ground)
+        );
       }
 
       if (cell.layer1 > 0) {
-        uniqueTileKeys.add(this.layerBuilder.tileKeyFor(cell.id, 1, cell.layer1));
+        uniqueTileKeys.add(
+          this.layerBuilder.tileKeyFor(cell.id, 1, cell.layer1)
+        );
       }
 
       if (cell.layer2 > 0) {
-        uniqueTileKeys.add(this.layerBuilder.tileKeyFor(cell.id, 2, cell.layer2));
+        uniqueTileKeys.add(
+          this.layerBuilder.tileKeyFor(cell.id, 2, cell.layer2)
+        );
       }
     }
 
     // Prefetch all tile data and textures in parallel (the only async boundary)
     await this.atlasLoader.prefetchTiles([...uniqueTileKeys], 1);
+    if (generation !== this.renderGeneration || mapContainer.destroyed) {
+      return;
+    }
+    // Commit only after the complete tile set is available.
+    for (const layer of [0, 1, 2] as const) {
+      this.layerBuilder.dropLayerSprites(layer);
+    }
+    this.layerBuilder.clear();
+    // Opt #5: Reuse persistent layers — just clear children
+    this.backgroundLayer.removeChildren();
+    this.groundLayer.removeChildren();
+    this.objectLayer1.removeChildren();
+    if (!opts.preserveWorldActors) {
+      this.objectLayer2.removeChildren();
+    }
+
+    mapContainer.scale.set(zoom);
+
+    // Opt #5: Add layers to parent only once
+    if (!this.layersInitialized) {
+      mapContainer.addChild(this.backgroundLayer);
+      mapContainer.addChild(this.groundLayer);
+      mapContainer.addChild(this.objectLayer1);
+      mapContainer.addChild(this.objectLayer2);
+      this.layersInitialized = true;
+    } else if (this.backgroundLayer.parent !== mapContainer) {
+      // Re-parent if mapContainer changed
+      mapContainer.addChild(this.backgroundLayer);
+      mapContainer.addChild(this.groundLayer);
+      mapContainer.addChild(this.objectLayer1);
+      mapContainer.addChild(this.objectLayer2);
+    }
 
     // After prefetch, everything is in cache — render synchronously to avoid
     // thousands of microtask queue bounces from unnecessary await calls
@@ -295,6 +301,7 @@ export class MapHandler {
    * Returns true if texture swap succeeded, false if a full rebuild is needed.
    */
   async updateTexturesForZoom(zoom: number): Promise<boolean> {
+    const generation = this.renderGeneration;
     const spriteRefs = this.layerBuilder.getSpriteRefs();
 
     if (spriteRefs.length === 0) {
@@ -311,6 +318,9 @@ export class MapHandler {
     // Prefetch all new textures at the new zoom level
     this.atlasLoader.setZoom(zoom);
     await this.atlasLoader.prefetchTiles([...uniqueTileKeys], 1);
+    if (generation !== this.renderGeneration) {
+      return false;
+    }
 
     // Clear the texture cache for the new zoom (we'll re-populate it)
     const newZoom = this.atlasLoader.getZoom();
@@ -494,8 +504,12 @@ export class MapHandler {
       }
 
       const prefixEntry: TilePrefixOverride = {};
-      if (tacticLayer1 > 0) prefixEntry.layer1 = layer1Prefix;
-      if (layer2Prefix) prefixEntry.layer2 = layer2Prefix;
+      if (tacticLayer1 > 0) {
+        prefixEntry.layer1 = layer1Prefix;
+      }
+      if (layer2Prefix) {
+        prefixEntry.layer2 = layer2Prefix;
+      }
       if (Object.keys(prefixEntry).length > 0) {
         prefixes.set(cell.id, prefixEntry);
       }
@@ -532,9 +546,20 @@ export class MapHandler {
       backgroundNum: 0,
     };
 
-    await this.renderMap(tacticMapData, mapContainer, zoom, viewport, {
-      preserveWorldActors: true,
-    });
+    const rendering = this.renderMap(
+      tacticMapData,
+      mapContainer,
+      zoom,
+      viewport,
+      {
+        preserveWorldActors: true,
+      }
+    );
+    const generation = this.renderGeneration;
+    await rendering;
+    if (generation !== this.renderGeneration) {
+      return;
+    }
 
     const tacticBgId =
       mapData.backgroundNum && mapData.backgroundNum > 0 ? 631 : 632;
@@ -546,9 +571,7 @@ export class MapHandler {
     // "unknown" so decor is skipped; the tactic background still renders.
     const subareaId = mapData.subareaId ?? 0;
     const themeTileKey =
-      subareaId > 0
-        ? await this.resolveTacticThemeTileKey(subareaId)
-        : null;
+      subareaId > 0 ? await this.resolveTacticThemeTileKey(subareaId) : null;
 
     const prefetchKeys = [tacticBgTileKey];
     const themeFrameKeys: string[] = [];
@@ -559,6 +582,9 @@ export class MapHandler {
       prefetchKeys.push(...themeFrameKeys);
     }
     await this.atlasLoader.prefetchTiles(prefetchKeys, 1);
+    if (generation !== this.renderGeneration) {
+      return;
+    }
 
     this.layerBuilder.renderBackgroundByTileKey(
       tacticBgTileKey,
@@ -582,7 +608,9 @@ export class MapHandler {
   ): Promise<string | null> {
     const lang = await loadMapsLang();
     const theme = lang.subareas.get(subareaId)?.themeName;
-    if (!theme) return null;
+    if (!theme) {
+      return null;
+    }
     return `tactic_${theme}`;
   }
 
@@ -604,11 +632,19 @@ export class MapHandler {
     const stride = 2 * width - 1;
     const losCells: CellData[] = [];
     for (const cell of mapData.cells) {
-      if (!cell.active) continue;
-      if (cell.lineOfSight !== false) continue;
-      if (cell.id <= width * 3) continue;
+      if (!cell.active) {
+        continue;
+      }
+      if (cell.lineOfSight !== false) {
+        continue;
+      }
+      if (cell.id <= width * 3) {
+        continue;
+      }
       const rem = cell.id % stride;
-      if (rem === 0 || rem === width - 1) continue;
+      if (rem === 0 || rem === width - 1) {
+        continue;
+      }
       losCells.push(cell);
     }
 
@@ -620,11 +656,7 @@ export class MapHandler {
       const cell = losCells[i]!;
       const tileKey = themeFrameKeys[frameCounter % frameCount]!;
       frameCounter++;
-      const basePosition = getCellPosition(
-        cell.id,
-        width,
-        cell.groundLevel
-      );
+      const basePosition = getCellPosition(cell.id, width, cell.groundLevel);
       this.layerBuilder.renderTacticDecor(
         tileKey,
         cell.id,

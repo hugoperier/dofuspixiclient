@@ -1,4 +1,5 @@
 import type { WorldMapMarker, WorldMapTool } from "@/game/types/worldmap";
+import { playAudioEvent } from "@/game/audio/audio-events";
 import { GRID_FILTER_ID, MARKER_COLORS } from "@/game/types/worldmap";
 
 import { ExternalStore } from "./game-store";
@@ -174,6 +175,7 @@ export function setWorldMapFilter(categoryId: number, enabled: boolean): void {
 }
 
 export function addMarker(x: number, y: number, color: number): WorldMapMarker {
+  playAudioEvent("mapFlag");
   const marker: WorldMapMarker = {
     id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     x,

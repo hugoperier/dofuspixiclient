@@ -4,6 +4,7 @@ import type {
 } from "@modules/fight/core/fight.entity.types";
 import type { Fighter } from "@modules/fight/core/fight.fighter";
 import { SpellUsageTracker } from "@modules/fight/cast/fight.spell-usage";
+import { FightOptionCode } from "@modules/fight/core/fight.entity.types";
 import { NullState } from "@modules/fight/core/fight.states";
 import { FightTeam, type TeamOptions } from "@modules/fight/core/fight.team";
 import { ModuleList } from "@modules/fight/engine/fight.module-hooks";
@@ -31,12 +32,95 @@ export class Fight {
   spectators: Spectator[] = [];
   modules: ModuleList;
   readonly startedAt: number;
+  combatStartedAt = 0;
+  placementEndsAt = 0;
   readonly spellUsage = new SpellUsageTracker();
+  ending = false;
+  turnEpoch = 0;
+  turnOpen = false;
+  actionSequence = 0;
+  activeActionId: number | null = null;
+  deathSequence = 0;
+  private nextSummonId = -10000;
 
-  lockedTeam = false;
+  allocateSummonId(): number {
+    while (this.fighters().some((f) => f.id === this.nextSummonId)) {
+      this.nextSummonId--;
+    }
+    return this.nextSummonId--;
+  }
+  private actionTail: Promise<void> = Promise.resolve();
+  placementTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** All network actions, AI actions and deadlines share this queue. */
+  runAction<T>(action: () => T | Promise<T>): Promise<T> {
+    const result = this.actionTail.then(action);
+    this.actionTail = result.then(
+      () => {},
+      () => {}
+    );
+    return result;
+  }
+
+  cancelPlacementTimer(): void {
+    if (this.placementTimer !== null) {
+      clearTimeout(this.placementTimer);
+    }
+    this.placementTimer = null;
+  }
+
+  // Fight options, toggled by a team leader during placement and
+  // mirrored to every client as `GameFightOption` (`Go` in 1.29). The
+  // wire carries a single char per option; `enabled` always means "the
+  // button is lit", i.e. help requested / fight locked / party only /
+  // spectators blocked.
+  get lockedTeam(): boolean { return this.teams[0].locked; }
+  set lockedTeam(value: boolean) { this.teams[0].locked = value; }
   lockedSpectators = false;
-  partyOnly = false;
-  helpAllowed = false;
+  get partyOnly(): boolean { return this.teams[0].partyOnly; }
+  set partyOnly(value: boolean) { this.teams[0].partyOnly = value; }
+  get helpAllowed(): boolean { return this.teams[0].needHelp; }
+  set helpAllowed(value: boolean) { this.teams[0].needHelp = value; }
+
+  /** True when `fighterId` leads either team. */
+  isLeader(fighterId: number): boolean {
+    return this.teams.some((t) => t.leaderId === fighterId);
+  }
+
+  optionEnabled(code: FightOptionCode, side = 0): boolean {
+    const team = this.teams[side === 1 ? 1 : 0];
+    switch (code) {
+      case FightOptionCode.NeedHelp:
+        return team.needHelp;
+      case FightOptionCode.BlockJoin:
+        return team.locked;
+      case FightOptionCode.PartyOnly:
+        return team.partyOnly;
+      case FightOptionCode.BlockSpectators:
+        return this.lockedSpectators;
+    }
+  }
+
+  /** Flip one option and return its new value. */
+  toggleOption(code: FightOptionCode, side = 0): boolean {
+    const next = !this.optionEnabled(code, side);
+    const team = this.teams[side === 1 ? 1 : 0];
+    switch (code) {
+      case FightOptionCode.NeedHelp:
+        team.needHelp = next;
+        break;
+      case FightOptionCode.BlockJoin:
+        team.locked = next;
+        break;
+      case FightOptionCode.PartyOnly:
+        team.partyOnly = next;
+        break;
+      case FightOptionCode.BlockSpectators:
+        this.lockedSpectators = next;
+        break;
+    }
+    return next;
+  }
 
   private currentState: FightState;
   private spellBonus = new Map<number, Map<number, number>>();
@@ -46,7 +130,8 @@ export class Fight {
     type: FightType,
     mapId: number,
     fightMap: FightMap,
-    teamOpts: [TeamOptions, TeamOptions]
+    teamOpts: [TeamOptions, TeamOptions],
+    readonly random: () => number = Math.random
   ) {
     fightIdCounter++;
     this.id = fightIdCounter;

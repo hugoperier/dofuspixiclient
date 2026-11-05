@@ -169,6 +169,7 @@ export function WorldMapToolbar({
       <div style={{ display: "flex", gap: p(2) }}>
         {TOOLS.map((entry) => (
           <button
+            data-audio="click3"
             key={entry.id}
             type="button"
             title={entry.label}
@@ -183,6 +184,7 @@ export function WorldMapToolbar({
           </button>
         ))}
         <button
+          data-audio="click3"
           type="button"
           title="Centrer sur ma position"
           onClick={onCenterOnPlayer}
@@ -197,6 +199,7 @@ export function WorldMapToolbar({
         <div style={{ display: "flex", gap: p(2) }}>
           {MARKER_COLORS.map((entry) => (
             <button
+              data-audio="click3"
               key={entry.value}
               type="button"
               title={entry.name}
@@ -223,6 +226,7 @@ export function WorldMapToolbar({
       <div style={{ display: "flex", alignItems: "center", gap: p(4) }}>
         <span style={{ fontSize: p(11) }}>Zoom</span>
         <button
+          data-audio="click3"
           type="button"
           title="Dézoomer"
           onClick={() => onZoomChange(mapZoom - ZOOM_STEP)}
@@ -241,6 +245,7 @@ export function WorldMapToolbar({
           style={{ width: p(70), cursor: "pointer" }}
         />
         <button
+          data-audio="click3"
           type="button"
           title="Zoomer"
           onClick={() => onZoomChange(mapZoom + ZOOM_STEP)}
@@ -328,6 +333,7 @@ export function WorldMapToolbar({
       </div>
 
       <button
+        data-audio="click3"
         type="button"
         onClick={onClose}
         aria-label="Fermer"

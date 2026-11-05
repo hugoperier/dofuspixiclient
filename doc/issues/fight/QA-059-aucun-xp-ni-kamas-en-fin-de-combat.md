@@ -9,7 +9,7 @@ session: 2
 opened: 2026-08-23
 closed:
 fixed_in:
-related: [QA-060, QA-058]
+related: [QA-060]
 files:
   - apps/gameserver-ts/src/core/features/game/fight-start/fight-start.service.ts:306-325
   - apps/gameserver-ts/src/core/modules/monsters/map-monster.service.ts:22-34

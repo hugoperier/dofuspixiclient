@@ -40,6 +40,14 @@ export class PlayerPresenceService
   readonly name = "player-presence.players";
 
   private readonly logger = new Logger(PlayerPresenceService.name);
+  private worldFilter: (sessionId: string) => boolean = () => true;
+
+  setWorldFilter(filter: (sessionId: string) => boolean): void { this.worldFilter = filter; }
+
+  worldOnMap(mapId: number): PlayerPresenceEntry[] {
+    return this.onMap(mapId).filter((p) => this.worldFilter(p.sessionId));
+  }
+
   private readonly byMap = new Map<number, Map<string, PlayerPresenceEntry>>();
   private readonly byCharacter = new Map<string, number>();
   private readonly bySession = new Map<string, string>();
@@ -146,7 +154,7 @@ export class PlayerPresenceService
     const ids: string[] = [];
 
     for (const p of bucket.values()) {
-      if (p.characterId !== exceptCharacterId) {
+      if (p.characterId !== exceptCharacterId && this.worldFilter(p.sessionId)) {
         ids.push(p.sessionId);
       }
     }

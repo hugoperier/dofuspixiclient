@@ -4,6 +4,7 @@ import { describe, expect, test } from "bun:test";
 
 import { create } from "@bufbuild/protobuf";
 import { GameActionRequestSchema, GameActionType } from "@dofus/proto/game_pb";
+import { FightRegistryService } from "@modules/fight/registry/fight.registry";
 
 import { MoveHandler } from "./move.handler";
 
@@ -21,7 +22,8 @@ describe("MoveHandler — active harvest", () => {
       { blocksMovement: () => false } as never,
       { isRunning: () => true } as never,
       { get: () => ({ characterId: "char-1" }) } as never,
-      {} as never
+      {} as never,
+      new FightRegistryService()
     );
 
     await handler.handle(

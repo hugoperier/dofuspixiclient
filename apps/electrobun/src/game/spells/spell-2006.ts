@@ -191,7 +191,9 @@ export class Spell2006 extends RuntimeSpell {
     const sprite24Sym: SymbolDefinition = {
       name: "sprite24",
       totalFrames: 1,
-      frames: textures.getFrames("lib_sprite24"),
+      // sprite_24 is baked into sprite_26's composite frames: drawing it again
+      // doubled it (QA-183, `audit-spell-display-types.ts`). Scripts kept.
+      frames: [],
       anchorX: sprite24Anchor.x,
       anchorY: sprite24Anchor.y,
       frameScripts: new Map([
@@ -287,12 +289,14 @@ export class Spell2006 extends RuntimeSpell {
     sprite26FrameScripts.set(0, (clip) => {
       // AS: DefineSprite_26/frame_1/DoAction_2.as
       // _X = _parent.cellTo.x; _Y = _parent.cellTo.y;
-      // The container is already positioned at cellTo by the TargetCell harness
-      // (root is anchored at cellTo). sprite_26 is attached as a child of root,
-      // so its local (0,0) is the target cell. No adjustment needed.
-      // However, for correctness we explicitly set to 0,0 relative to root.
-      clip.x = 0;
-      clip.y = 0;
+      // root.vars.cellTo is in the container's space (QA-182): the literal
+      // translation lands on the target under the canonical displayType 51
+      // as under the module's own 11.
+      const cellTo = clip.parent?.vars.cellTo as
+        | { x: number; y: number }
+        | undefined;
+      clip.x = cellTo?.x ?? 0;
+      clip.y = cellTo?.y ?? 0;
     });
 
     // frame_25 (index 24): play sound + attach sprite24

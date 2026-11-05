@@ -1,5 +1,6 @@
 import type { Fight } from "@modules/fight/core/fight.entity";
 import type { Fighter } from "@modules/fight/core/fight.fighter";
+import { totalCells } from "@dofus/grid";
 import { FightObjectKind as FOK } from "@modules/fight/fight.types";
 import { ObjectRegistry } from "@modules/fight/map/fight.object";
 
@@ -10,6 +11,7 @@ export class FightMap {
   readonly objects: ObjectRegistry;
   private occupiedById = new Map<number, number>();
   private walkableSet: Set<number> | null = null;
+  private sightBlocked = new Set<number>();
 
   constructor(
     width: number,
@@ -28,7 +30,26 @@ export class FightMap {
   }
 
   isWalkable(cell: number): boolean {
-    return this.walkableSet ? this.walkableSet.has(cell) : true;
+    return (
+      this.contains(cell) &&
+      (this.walkableSet ? this.walkableSet.has(cell) : true)
+    );
+  }
+
+  contains(cell: number): boolean {
+    return (
+      Number.isInteger(cell) &&
+      cell >= 0 &&
+      cell < totalCells(this.width, this.height)
+    );
+  }
+
+  setSightBlockedCells(cells: number[]): void {
+    this.sightBlocked = new Set(cells);
+  }
+
+  losBlocked(cell: number): boolean {
+    return !this.contains(cell) || this.sightBlocked.has(cell);
   }
 
   /**
@@ -89,7 +110,7 @@ export class FightMap {
   }
 
   isFree(cell: number): boolean {
-    return !this.occupiedById.has(cell);
+    return this.contains(cell) && !this.occupiedById.has(cell);
   }
 }
 

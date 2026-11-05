@@ -1,5 +1,7 @@
 import type { TransactionalAdapterKysely } from "@nestjs-cls/transactional-adapter-kysely";
 import type { DB } from "@shared/db/schema";
+import { WEAPON_POSITION } from "@modules/inventory/equip-rules";
+import { playerOwner } from "@modules/items/item-owner";
 import { Injectable } from "@nestjs/common";
 import { TransactionHost } from "@nestjs-cls/transactional";
 
@@ -15,12 +17,62 @@ export class SpellsRepository {
     private readonly txHost: TransactionHost<TransactionalAdapterKysely<DB>>
   ) {}
 
+  /**
+   * One rank of a spell, with its template's `spriteInfos` (0068) — the
+   * visual's displayType, caster pose and layering travel with every cast.
+   * Left-joined: a rank whose template row is missing still casts, with
+   * the client's fallbacks.
+   */
   findLevel(spellId: number, level: number) {
     return this.txHost.tx
       .selectFrom("spellLevels")
-      .selectAll()
-      .where("spellId", "=", spellId)
-      .where("level", "=", level)
+      .leftJoin("spellTemplates", "spellTemplates.id", "spellLevels.spellId")
+      .selectAll("spellLevels")
+      .select([
+        "spellTemplates.displayType",
+        "spellTemplates.castAnimation",
+        "spellTemplates.spriteInFront",
+      ])
+      .where("spellLevels.spellId", "=", spellId)
+      .where("spellLevels.level", "=", level)
+      .executeTakeFirst();
+  }
+
+  /**
+   * The template of whatever sits in the weapon slot, or undefined for
+   * bare hands.
+   *
+   * Read here rather than through `InventoryRepository` on purpose:
+   * `PlayersModule` already imports `SpellsModule`, and inventory
+   * depends on players, so a module edge from spells to inventory would
+   * close a cycle. One join is a smaller price than a `forwardRef`, and
+   * the close-combat attack is the only thing on this side that ever
+   * needs to know what the player is holding.
+   */
+  findEquippedWeapon(playerId: string) {
+    return this.txHost.tx
+      .selectFrom("items")
+      .innerJoin("itemTemplates", "itemTemplates.id", "items.templateId")
+      .select([
+        "itemTemplates.id as id",
+        "itemTemplates.name as name",
+        "itemTemplates.description as description",
+        "itemTemplates.effects as effects",
+        "itemTemplates.weaponInfo as weaponInfo",
+        "itemTemplates.animationId as animationId",
+      ])
+      .where("items.ownerKind", "=", playerOwner(playerId).kind)
+      .where("items.ownerId", "=", playerId)
+      .where("items.position", "=", WEAPON_POSITION)
+      .executeTakeFirst();
+  }
+
+  findSummonGrade(templateId: number, grade: number) {
+    return this.txHost.tx
+      .selectFrom("summonGrades")
+      .select("data")
+      .where("templateId", "=", templateId)
+      .where("grade", "=", grade)
       .executeTakeFirst();
   }
 
@@ -103,6 +155,9 @@ export class SpellsRepository {
           "spellLevels.criticalRate",
           "spellLevels.failureRate",
           "spellLevels.effects",
+          "spellLevels.criticalEffects",
+          "spellLevels.requiredStates",
+          "spellLevels.forbiddenStates",
           "firstLevel.minPlayerLevel as learnLevel",
           // Fallback display name when the lang bundle has no entry for this
           // spell (e.g. new spells without translations). The localized name

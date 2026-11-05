@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import type { SpellLevel } from "@modules/fight/cast/fight.spell.types";
 import type { Scope } from "@modules/fight/effects/fight.effect-registry.types";
 import { Fight } from "@modules/fight/core/fight.entity";
 import { Fighter } from "@modules/fight/core/fight.fighter";
@@ -16,6 +17,10 @@ import {
   TeamSide,
 } from "@modules/fight/fight.types";
 import { FightMap } from "@modules/fight/map/fight.map";
+import { combatCatalog } from "@modules/spells/combat-catalog";
+
+import { combatHarness } from "./combat-test-harness";
+import { executeSpellEffects } from "./fight.effect-executor";
 
 function makeScope(overrides: Partial<Scope> = {}): Scope {
   const caster = new Fighter(1, FighterKind.Player, "caster", 100, 6, 3, 3);
@@ -179,5 +184,63 @@ describe("healTarget", () => {
     scope.target?.setLp(90);
     healTarget(scope, 50);
     expect(scope.target?.lp).toBe(100);
+  });
+});
+
+describe("absorbed hits", () => {
+  // Picore (626) rank 1: 1d5 earth. A target with 5 flat earth resistance
+  // absorbs every normal roll.
+  function picore() {
+    const h = combatHarness(3, 6);
+    const base = combatCatalog.levels["3:6"];
+    if (!base) {
+      throw new Error("Missing fixture 3:6");
+    }
+    const [effect] = base.effects;
+    if (!effect) {
+      throw new Error("Fixture 3:6 has no effects");
+    }
+    const spell: SpellLevel = {
+      ...base,
+      spellId: 626,
+      level: 1,
+      effects: [{ ...effect, id: 97, min: 1, max: 5 }],
+      criticalEffects: [],
+    };
+    h.enemy.stats.setBase(Characteristic.ResistEarth, 5);
+    return { ...h, spell };
+  }
+
+  test("a hit fully absorbed by resistance is reported as 0", () => {
+    const h = picore();
+    executeSpellEffects(
+      h.registry,
+      { ...h.scope, target: h.enemy, targetCell: h.enemy.cell },
+      h.spell
+    );
+    const damage = h.events.filter((e) => e.type === "damage");
+    expect(damage).toHaveLength(1);
+    expect(damage[0]?.values.slice(1, 4)).toEqual([h.caster.id, h.enemy.id, 0]);
+    expect(h.enemy.lp).toBe(5000);
+  });
+
+  test("a cast on an empty cell reports nothing", () => {
+    const h = picore();
+    executeSpellEffects(
+      h.registry,
+      { ...h.scope, target: null, targetCell: 0 },
+      h.spell
+    );
+    expect(h.events.filter((e) => e.type === "damage")).toHaveLength(0);
+  });
+
+  test("a zero life cost is not reported", () => {
+    const h = picore();
+    applyDamageToTarget(
+      { ...h.scope, target: h.caster, cause: "life-cost" },
+      0,
+      Element.Neutral
+    );
+    expect(h.events.filter((e) => e.type === "damage")).toHaveLength(0);
   });
 });

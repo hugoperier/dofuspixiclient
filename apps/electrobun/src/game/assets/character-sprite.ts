@@ -10,10 +10,17 @@ import {
 import { parseLook } from "@/game/assets/look-parser";
 import { acquireStripSlot } from "@/game/assets/strip-throttle";
 import { VelloAssetRegistry } from "@/game/assets/vello-asset-registry";
+import {
+  loadSpriteSounds,
+  type SpriteSoundCue,
+} from "@/game/audio/sprite-sounds";
 import { Direction } from "@/game/fight/types";
 import { FrameAtlas } from "@/game/render/frame-atlas";
 
+import { type CarriedAnchors, carriedAnchorAt } from "./carried-anchors";
+
 export interface CharacterAnimation {
+  sounds?: readonly SpriteSoundCue[];
   textures: Texture[];
   fps: number;
   offsetX: number;
@@ -133,6 +140,7 @@ interface VelloAnimInfo {
 type ApplyEndCache = Map<string, number>;
 
 export class CharacterSpriteLoader {
+  private readonly carriedAnchors = new Map<number, CarriedAnchors>();
   private cache = new Map<string, CharacterAnimation>();
   private pending = new Map<string, Promise<CharacterAnimation | null>>();
   private currentZoom = 1;
@@ -218,7 +226,11 @@ export class CharacterSpriteLoader {
         }
         const json = (await res.json()) as {
           applyEndFrames?: Record<string, number>;
+          carriedAnchors?: CarriedAnchors;
         };
+        if (json.carriedAnchors) {
+          this.carriedAnchors.set(gfxId, json.carriedAnchors);
+        }
         const frames = json.applyEndFrames;
         if (!frames || typeof frames !== "object") {
           this.applyEndByGfx.set(gfxId, null);
@@ -255,6 +267,20 @@ export class CharacterSpriteLoader {
       return null;
     }
     return cache.get(animName) ?? null;
+  }
+
+  getCarriedAnchor(
+    gfxId: number,
+    animName: string,
+    frame: number,
+    fps: number
+  ) {
+    return carriedAnchorAt(
+      this.carriedAnchors.get(gfxId),
+      animName,
+      frame,
+      fps
+    );
   }
 
   /**
@@ -408,6 +434,11 @@ export class CharacterSpriteLoader {
       animName
     );
 
+    // Optional audio metadata must not hold up the visible character if its
+    // request is slow. Cached animation objects receive cues once available.
+    void loadSpriteSounds().then((index) => {
+      animation.sounds = index[String(gfxId)]?.[animName] ?? [];
+    });
     this.cache.set(cacheKey(gfxId, animName, look), animation);
     return animation;
   }

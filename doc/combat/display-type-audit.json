@@ -1,0 +1,308 @@
+{
+  "_doc": "bun apps/electrobun/scripts/audit-spell-display-types.ts — every visual played under each canonical displayType of sorts.spriteInfos (QA-181), and under the module's own one. translationError: px a visual strays from a pure translation of the cast (QA-182).",
+  "doubleDrawnGraphics": 1,
+  "fallbackPairs": 9,
+  "brokenFallbacks": 6,
+  "offsetPairs": 3,
+  "symbolPairs": 1,
+  "lifecyclePairs": 7,
+  "skippedGraphics": [],
+  "flagged": [
+    {
+      "gfx": 406,
+      "displayType": 21,
+      "source": "canonical",
+      "moduleDisplayType": 11,
+      "spells": [
+        {
+          "id": 70,
+          "name": "Arnaque"
+        },
+        {
+          "id": 238,
+          "name": "Persécution"
+        }
+      ],
+      "translationError": 0,
+      "translationAt": null,
+      "missingSymbols": [
+        "shoot"
+      ],
+      "duplicateSymbols": [],
+      "shootOffTarget": null,
+      "doubleDrawn": [],
+      "lifecycle": []
+    },
+    {
+      "gfx": 1202,
+      "displayType": 51,
+      "source": "canonical",
+      "moduleDisplayType": 30,
+      "spells": [
+        {
+          "id": 233,
+          "name": "Sacrifice"
+        }
+      ],
+      "translationError": 0,
+      "translationAt": null,
+      "missingSymbols": [],
+      "duplicateSymbols": [],
+      "shootOffTarget": null,
+      "doubleDrawn": [],
+      "lifecycle": [
+        "direction=1: hits=0, completions=0, complete=false",
+        "direction=-1: hits=0, completions=0, complete=false"
+      ]
+    },
+    {
+      "gfx": 1208,
+      "displayType": 51,
+      "source": "canonical",
+      "moduleDisplayType": 11,
+      "spells": [
+        {
+          "id": 1052,
+          "name": "Mauvaise Herbe"
+        }
+      ],
+      "translationError": 1166.2,
+      "translationAt": "root/sprite36 @0",
+      "missingSymbols": [],
+      "duplicateSymbols": [],
+      "shootOffTarget": null,
+      "doubleDrawn": [],
+      "lifecycle": []
+    },
+    {
+      "gfx": 2016,
+      "displayType": 20,
+      "source": "module",
+      "moduleDisplayType": 20,
+      "spells": [],
+      "translationError": 0,
+      "translationAt": null,
+      "missingSymbols": [],
+      "duplicateSymbols": [],
+      "shootOffTarget": 0,
+      "doubleDrawn": [],
+      "lifecycle": [
+        "direction=1: hits=0, completions=1, complete=true",
+        "direction=-1: hits=0, completions=1, complete=true"
+      ]
+    },
+    {
+      "gfx": 2021,
+      "displayType": 51,
+      "source": "canonical",
+      "moduleDisplayType": 11,
+      "spells": [
+        {
+          "id": 1744,
+          "name": "La Pierre Philosophale"
+        }
+      ],
+      "translationError": 1166.2,
+      "translationAt": "root/sprite19/shoot @0",
+      "missingSymbols": [],
+      "duplicateSymbols": [],
+      "shootOffTarget": null,
+      "doubleDrawn": [],
+      "lifecycle": [
+        "direction=1: hits=1, completions=0, complete=false",
+        "direction=-1: hits=1, completions=0, complete=false"
+      ]
+    },
+    {
+      "gfx": 2021,
+      "displayType": 11,
+      "source": "module",
+      "moduleDisplayType": 11,
+      "spells": [],
+      "translationError": 0,
+      "translationAt": null,
+      "missingSymbols": [],
+      "duplicateSymbols": [],
+      "shootOffTarget": null,
+      "doubleDrawn": [],
+      "lifecycle": [
+        "direction=1: hits=1, completions=0, complete=false",
+        "direction=-1: hits=1, completions=0, complete=false"
+      ]
+    },
+    {
+      "gfx": 2050,
+      "displayType": 20,
+      "source": "canonical",
+      "moduleDisplayType": 20,
+      "spells": [
+        {
+          "id": 288,
+          "name": "Aspiration"
+        }
+      ],
+      "translationError": 0,
+      "translationAt": null,
+      "missingSymbols": [],
+      "duplicateSymbols": [],
+      "shootOffTarget": null,
+      "doubleDrawn": [],
+      "lifecycle": [
+        "direction=1: hits=1, completions=0, complete=false",
+        "direction=-1: hits=1, completions=0, complete=false"
+      ]
+    },
+    {
+      "gfx": 2051,
+      "displayType": 51,
+      "source": "canonical",
+      "moduleDisplayType": 50,
+      "spells": [
+        {
+          "id": 293,
+          "name": "Marteau de Moon"
+        },
+        {
+          "id": 364,
+          "name": "Boomerang Perfide"
+        },
+        {
+          "id": 366,
+          "name": "Marteau de Moon"
+        }
+      ],
+      "translationError": 0,
+      "translationAt": null,
+      "missingSymbols": [],
+      "duplicateSymbols": [],
+      "shootOffTarget": null,
+      "doubleDrawn": [],
+      "lifecycle": [
+        "direction=1: hits=1, completions=0, complete=false",
+        "direction=-1: hits=1, completions=0, complete=false"
+      ]
+    },
+    {
+      "gfx": 2051,
+      "displayType": 50,
+      "source": "module",
+      "moduleDisplayType": 50,
+      "spells": [],
+      "translationError": 0,
+      "translationAt": null,
+      "missingSymbols": [],
+      "duplicateSymbols": [],
+      "shootOffTarget": null,
+      "doubleDrawn": [],
+      "lifecycle": [
+        "direction=1: hits=1, completions=0, complete=false",
+        "direction=-1: hits=1, completions=0, complete=false"
+      ]
+    },
+    {
+      "gfx": 2060,
+      "displayType": 51,
+      "source": "canonical",
+      "moduleDisplayType": 11,
+      "spells": [
+        {
+          "id": 458,
+          "name": "Percepteur : Rocher"
+        }
+      ],
+      "translationError": 1166.2,
+      "translationAt": "root/sprite22/shoot @0",
+      "missingSymbols": [],
+      "duplicateSymbols": [],
+      "shootOffTarget": null,
+      "doubleDrawn": [],
+      "lifecycle": [
+        "direction=1: hits=0, completions=0, complete=false",
+        "direction=-1: hits=0, completions=0, complete=false"
+      ]
+    },
+    {
+      "gfx": 2060,
+      "displayType": 11,
+      "source": "module",
+      "moduleDisplayType": 11,
+      "spells": [],
+      "translationError": 0,
+      "translationAt": null,
+      "missingSymbols": [],
+      "duplicateSymbols": [],
+      "shootOffTarget": null,
+      "doubleDrawn": [],
+      "lifecycle": [
+        "direction=1: hits=0, completions=0, complete=false",
+        "direction=-1: hits=0, completions=0, complete=false"
+      ]
+    },
+    {
+      "gfx": 2067,
+      "displayType": 51,
+      "source": "canonical",
+      "moduleDisplayType": 51,
+      "spells": [
+        {
+          "id": 503,
+          "name": "Roblochon Ancestral"
+        }
+      ],
+      "translationError": 0,
+      "translationAt": null,
+      "missingSymbols": [],
+      "duplicateSymbols": [],
+      "shootOffTarget": null,
+      "doubleDrawn": [],
+      "lifecycle": [
+        "direction=1: hits=1, completions=0, complete=false",
+        "direction=-1: hits=1, completions=0, complete=false"
+      ]
+    },
+    {
+      "gfx": 2068,
+      "displayType": 51,
+      "source": "canonical",
+      "moduleDisplayType": 50,
+      "spells": [
+        {
+          "id": 502,
+          "name": "Émmental"
+        }
+      ],
+      "translationError": 0,
+      "translationAt": null,
+      "missingSymbols": [],
+      "duplicateSymbols": [],
+      "shootOffTarget": null,
+      "doubleDrawn": [],
+      "lifecycle": [
+        "direction=1: hits=0, completions=1, complete=true",
+        "direction=-1: hits=0, completions=1, complete=true"
+      ]
+    },
+    {
+      "gfx": 2068,
+      "displayType": 50,
+      "source": "module",
+      "moduleDisplayType": 50,
+      "spells": [],
+      "translationError": 0,
+      "translationAt": null,
+      "missingSymbols": [],
+      "duplicateSymbols": [],
+      "shootOffTarget": null,
+      "doubleDrawn": [],
+      "lifecycle": [
+        "direction=1: hits=0, completions=1, complete=true",
+        "direction=-1: hits=0, completions=1, complete=true"
+      ]
+    }
+  ],
+  "doubleDrawn": {
+    "809": [
+      "sprite_6 ⊂ shoot"
+    ]
+  }
+}

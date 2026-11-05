@@ -126,7 +126,9 @@ export class Spell616 extends RuntimeSpell {
     this.sprite29Sym = {
       name: "sprite29",
       totalFrames: 4,
-      frames: textures.getFrames("sprite_29"),
+      // sprite_29 is baked into sprite_32's composite frames: drawing it again
+      // doubled it (QA-183, `audit-spell-display-types.ts`). Scripts kept.
+      frames: [],
       anchorX: sprite29Anchor.x,
       anchorY: sprite29Anchor.y,
       onLoad: (clip) => {
@@ -244,7 +246,9 @@ export class Spell616 extends RuntimeSpell {
     this.sprite31Sym = {
       name: "sprite31",
       totalFrames: 1,
-      frames: textures.getFrames("lib_sprite31"),
+      // sprite_31 is baked into sprite_32's composite frames: drawing it again
+      // doubled it (QA-183, `audit-spell-display-types.ts`). Scripts kept.
+      frames: [],
       anchorX: sprite31Anchor.x,
       anchorY: sprite31Anchor.y,
       onLoad: (clip, ctx) => {

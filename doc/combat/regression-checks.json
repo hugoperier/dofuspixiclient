@@ -1,0 +1,42 @@
+{
+  "client": {
+    "passed": 524,
+    "failed": 0,
+    "logSha256": "ee49dea4d51244d5e4497201710788a4495c60c70c049cbb1e226db4862dc7af"
+  },
+  "server": {
+    "passed": 2273,
+    "failed": 0,
+    "logSha256": "4ca3cf732cf9a40bcf008a927727509b27005d15ee5f7d21c0ae44459547f3f8"
+  },
+  "grid": {
+    "passed": 48,
+    "failed": 0,
+    "logSha256": "e4bcdb3252f772c839fb7f3283d1d7602cc827be91fa6296ef8cb778a7c10dc6"
+  },
+  "dofasset": {
+    "passed": 1,
+    "failed": 0,
+    "logSha256": "00e8d32231e149bbee10ba971237d79dc3e778000f94ac47262b2da0aecaf41d"
+  },
+  "checks": {
+    "clientTypeScript": true,
+    "serverTypeScript": true,
+    "contracts": true,
+    "diffWhitespace": true
+  },
+  "browser": {
+    "entriesCompleted": 0,
+    "entriesRequired": 20,
+    "spellsVerified": 0,
+    "spellsRequired": 264,
+    "blockedBy": "Mac locked; browser control unavailable"
+  },
+  "presentation": {
+    "graphics": 145,
+    "lifecycleCases": 1740,
+    "lifecycleFailures": 0,
+    "graphicsWithMissingSymbols": 68,
+    "report": "animation-audit.json"
+  }
+}

@@ -1,26 +1,26 @@
 import type {
-  ParsedSvg,
-  ParsedNode,
-  PathSegment,
-  DrawCommand,
-  DrawCommandType,
-  FillDrawCommand,
-  StrokeDrawCommand,
-  PatternFillDrawCommand,
-  GradientFillDrawCommand,
-  GradientStop,
-  BodyPart,
-  AffineTransform,
-  FillRule,
-  StrokeWidthMode,
-  Frame,
-  PartInstance,
   AccessorySlot,
+  AffineTransform,
   Animation,
   AtlasJson,
-  ExtractedImage,
-  CompiledAsset,
+  BodyPart,
   ClipMask,
+  CompiledAsset,
+  DrawCommand,
+  DrawCommandType,
+  ExtractedImage,
+  FillDrawCommand,
+  FillRule,
+  Frame,
+  GradientFillDrawCommand,
+  GradientStop,
+  ParsedNode,
+  ParsedSvg,
+  PartInstance,
+  PathSegment,
+  PatternFillDrawCommand,
+  StrokeDrawCommand,
+  StrokeWidthMode,
 } from "./types.js";
 import { IDENTITY_TRANSFORM } from "./types.js";
 
@@ -39,17 +39,30 @@ function fnvFloat(h: number, v: number): number {
 
 function hashTransform(t: AffineTransform): number {
   let h = 2166136261;
-  h = fnvFloat(h, t[0]); h = fnvFloat(h, t[1]); h = fnvFloat(h, t[2]);
-  h = fnvFloat(h, t[3]); h = fnvFloat(h, t[4]); h = fnvFloat(h, t[5]);
+  h = fnvFloat(h, t[0]);
+  h = fnvFloat(h, t[1]);
+  h = fnvFloat(h, t[2]);
+  h = fnvFloat(h, t[3]);
+  h = fnvFloat(h, t[4]);
+  h = fnvFloat(h, t[5]);
   return h;
 }
 
 function transformsEqual(a: AffineTransform, b: AffineTransform): boolean {
-  return a[0] === b[0] && a[1] === b[1] && a[2] === b[2] &&
-         a[3] === b[3] && a[4] === b[4] && a[5] === b[5];
+  return (
+    a[0] === b[0] &&
+    a[1] === b[1] &&
+    a[2] === b[2] &&
+    a[3] === b[3] &&
+    a[4] === b[4] &&
+    a[5] === b[5]
+  );
 }
 
-function composeTransforms(a: AffineTransform, b: AffineTransform): AffineTransform {
+function composeTransforms(
+  a: AffineTransform,
+  b: AffineTransform
+): AffineTransform {
   // Use Math.fround to match usvg's f32 transform composition precision.
   // Without this, JavaScript f64 intermediate results produce different f32 values
   // than usvg's native f32 composition, causing sub-pixel rendering differences.
@@ -66,15 +79,35 @@ function composeTransforms(a: AffineTransform, b: AffineTransform): AffineTransf
 
 /** CSS named colors → hex */
 const CSS_COLORS: Record<string, string> = {
-  black: "#000000", white: "#ffffff", red: "#ff0000", green: "#008000", blue: "#0000ff",
-  yellow: "#ffff00", cyan: "#00ffff", magenta: "#ff00ff", orange: "#ffa500", purple: "#800080",
-  pink: "#ffc0cb", brown: "#a52a2a", gray: "#808080", grey: "#808080",
-  lime: "#00ff00", navy: "#000080", teal: "#008080", maroon: "#800000", olive: "#808000",
-  aqua: "#00ffff", fuchsia: "#ff00ff", silver: "#c0c0c0",
+  black: "#000000",
+  white: "#ffffff",
+  red: "#ff0000",
+  green: "#008000",
+  blue: "#0000ff",
+  yellow: "#ffff00",
+  cyan: "#00ffff",
+  magenta: "#ff00ff",
+  orange: "#ffa500",
+  purple: "#800080",
+  pink: "#ffc0cb",
+  brown: "#a52a2a",
+  gray: "#808080",
+  grey: "#808080",
+  lime: "#00ff00",
+  navy: "#000080",
+  teal: "#008080",
+  maroon: "#800000",
+  olive: "#808000",
+  aqua: "#00ffff",
+  fuchsia: "#ff00ff",
+  silver: "#c0c0c0",
 };
 
 /** Parse fill color string to RGBA */
-function parseColor(fill: string, opacity: number): { r: number; g: number; b: number; a: number } {
+function parseColor(
+  fill: string,
+  opacity: number
+): { r: number; g: number; b: number; a: number } {
   let hex: string | undefined;
   if (fill.startsWith("#")) {
     hex = fill.slice(1);
@@ -82,7 +115,9 @@ function parseColor(fill: string, opacity: number): { r: number; g: number; b: n
     hex = CSS_COLORS[fill.toLowerCase()]!.slice(1);
   }
   if (hex) {
-    if (hex.length === 3) hex = hex[0]! + hex[0]! + hex[1]! + hex[1]! + hex[2]! + hex[2]!;
+    if (hex.length === 3) {
+      hex = hex[0]! + hex[0]! + hex[1]! + hex[1]! + hex[2]! + hex[2]!;
+    }
     return {
       r: parseInt(hex.slice(0, 2), 16),
       g: parseInt(hex.slice(2, 4), 16),
@@ -95,17 +130,23 @@ function parseColor(fill: string, opacity: number): { r: number; g: number; b: n
 
 function lineCapToNum(cap: string): number {
   switch (cap) {
-    case "round": return 1;
-    case "square": return 2;
-    default: return 0; // butt
+    case "round":
+      return 1;
+    case "square":
+      return 2;
+    default:
+      return 0; // butt
   }
 }
 
 function lineJoinToNum(join: string): number {
   switch (join) {
-    case "round": return 1;
-    case "bevel": return 2;
-    default: return 0; // miter
+    case "round":
+      return 1;
+    case "bevel":
+      return 2;
+    default:
+      return 0; // miter
   }
 }
 
@@ -118,7 +159,7 @@ function lineJoinToNum(join: string): number {
  */
 function resolveStrokeMode(
   strokeWidth: string | null,
-  vectorEffect: string | null,
+  vectorEffect: string | null
 ): { widthMode: StrokeWidthMode; width: number } {
   if (strokeWidth === "__RESOLUTION__") {
     return { widthMode: 1 as StrokeWidthMode, width: 1.0 };
@@ -148,10 +189,15 @@ interface GradientLookup {
   stops: GradientStop[];
 }
 
-function parseGradientStopColor(color: string, opacity: number): { r: number; g: number; b: number; a: number } {
+function parseGradientStopColor(
+  color: string,
+  opacity: number
+): { r: number; g: number; b: number; a: number } {
   if (color.startsWith("#")) {
     let hex = color.slice(1);
-    if (hex.length === 3) hex = hex[0]! + hex[0]! + hex[1]! + hex[1]! + hex[2]! + hex[2]!;
+    if (hex.length === 3) {
+      hex = hex[0]! + hex[0]! + hex[1]! + hex[1]! + hex[2]! + hex[2]!;
+    }
     return {
       r: parseInt(hex.slice(0, 2), 16),
       g: parseInt(hex.slice(2, 4), 16),
@@ -170,7 +216,7 @@ function tryCreateUrlFill(
   transform: AffineTransform,
   patternLookup: Map<string, PatternLookup>,
   gradientLookup: Map<string, GradientLookup>,
-  clipMaskId: number,
+  clipMaskId: number
 ): DrawCommand | null {
   const refId = fillRef.match(/url\(#([^)]+)\)/)?.[1] ?? "";
   const pat = patternLookup.get(refId);
@@ -230,9 +276,11 @@ function resolveToDrawCommands(
   allPaths: PathSegment[][],
   visited: Set<string>,
   clipMaskIds: Map<string, number>,
-  activeClipMaskId: number,
+  activeClipMaskId: number
 ): DrawCommand[] {
-  if (visited.has(nodeId)) return []; // prevent cycles
+  if (visited.has(nodeId)) {
+    return []; // prevent cycles
+  }
   visited.add(nodeId);
 
   const node = definitions.get(nodeId);
@@ -255,9 +303,25 @@ function resolveToDrawCommands(
       const h = hashPath(p.segments);
       const cands = pathDedup.get(h);
       let found = -1;
-      if (cands) { for (const c of cands) { if (pathsEqual(allPaths[c]!, p.segments)) { found = c; break; } } }
-      if (found >= 0) { pathId = found; }
-      else { pathId = allPaths.length; allPaths.push(p.segments); if (cands) cands.push(pathId); else pathDedup.set(h, [pathId]); }
+      if (cands) {
+        for (const c of cands) {
+          if (pathsEqual(allPaths[c]!, p.segments)) {
+            found = c;
+            break;
+          }
+        }
+      }
+      if (found >= 0) {
+        pathId = found;
+      } else {
+        pathId = allPaths.length;
+        allPaths.push(p.segments);
+        if (cands) {
+          cands.push(pathId);
+        } else {
+          pathDedup.set(h, [pathId]);
+        }
+      }
     }
 
     const transform = composeTransforms(parentTransform, p.transform);
@@ -265,8 +329,18 @@ function resolveToDrawCommands(
     // Fill command
     if (p.fill && p.fill !== "none") {
       if (p.fill.startsWith("url(#")) {
-        const cmd = tryCreateUrlFill(p.fill, pathId, p.fillRule, transform, patternLookup, gradientLookup, activeClipMaskId);
-        if (cmd) commands.push(cmd);
+        const cmd = tryCreateUrlFill(
+          p.fill,
+          pathId,
+          p.fillRule,
+          transform,
+          patternLookup,
+          gradientLookup,
+          activeClipMaskId
+        );
+        if (cmd) {
+          commands.push(cmd);
+        }
       } else {
         const color = parseColor(p.fill, p.fillOpacity);
         commands.push({
@@ -284,7 +358,10 @@ function resolveToDrawCommands(
     // Stroke command
     if (p.stroke && p.stroke !== "none" && p.strokeWidth) {
       const color = parseColor(p.stroke, p.strokeOpacity);
-      const { widthMode, width } = resolveStrokeMode(p.strokeWidth, p.vectorEffect);
+      const { widthMode, width } = resolveStrokeMode(
+        p.strokeWidth,
+        p.vectorEffect
+      );
       commands.push({
         type: 1 as DrawCommandType.Stroke,
         pathId,
@@ -310,30 +387,58 @@ function resolveToDrawCommands(
     // parent's active mask so frame-rect clips don't accidentally
     // override an authored SWF mask.
     const groupClipId = g.clipPathRef
-      ? clipMaskIds.get(g.clipPathRef) ?? activeClipMaskId
+      ? (clipMaskIds.get(g.clipPathRef) ?? activeClipMaskId)
       : activeClipMaskId;
     for (const child of g.children) {
       if (child.type === "path") {
         // Inline path in group
         const p = child.data;
-        if (p.segments.length === 0) continue;
+        if (p.segments.length === 0) {
+          continue;
+        }
 
         let pathId: number;
         {
           const h = hashPath(p.segments);
           const cands = pathDedup.get(h);
           let found = -1;
-          if (cands) { for (const c of cands) { if (pathsEqual(allPaths[c]!, p.segments)) { found = c; break; } } }
-          if (found >= 0) { pathId = found; }
-          else { pathId = allPaths.length; allPaths.push(p.segments); if (cands) cands.push(pathId); else pathDedup.set(h, [pathId]); }
+          if (cands) {
+            for (const c of cands) {
+              if (pathsEqual(allPaths[c]!, p.segments)) {
+                found = c;
+                break;
+              }
+            }
+          }
+          if (found >= 0) {
+            pathId = found;
+          } else {
+            pathId = allPaths.length;
+            allPaths.push(p.segments);
+            if (cands) {
+              cands.push(pathId);
+            } else {
+              pathDedup.set(h, [pathId]);
+            }
+          }
         }
 
         const transform = composeTransforms(groupTransform, p.transform);
 
         if (p.fill && p.fill !== "none") {
           if (p.fill.startsWith("url(#")) {
-            const cmd = tryCreateUrlFill(p.fill, pathId, p.fillRule, transform, patternLookup, gradientLookup, groupClipId);
-            if (cmd) commands.push(cmd);
+            const cmd = tryCreateUrlFill(
+              p.fill,
+              pathId,
+              p.fillRule,
+              transform,
+              patternLookup,
+              gradientLookup,
+              groupClipId
+            );
+            if (cmd) {
+              commands.push(cmd);
+            }
           } else {
             const color = parseColor(p.fill, p.fillOpacity);
             commands.push({
@@ -350,7 +455,10 @@ function resolveToDrawCommands(
 
         if (p.stroke && p.stroke !== "none" && p.strokeWidth) {
           const color = parseColor(p.stroke, p.strokeOpacity);
-          const { widthMode, width } = resolveStrokeMode(p.strokeWidth, p.vectorEffect);
+          const { widthMode, width } = resolveStrokeMode(
+            p.strokeWidth,
+            p.vectorEffect
+          );
           commands.push({
             type: 1 as DrawCommandType.Stroke,
             pathId,
@@ -367,64 +475,123 @@ function resolveToDrawCommands(
           } satisfies StrokeDrawCommand);
         }
       } else if (child.type === "use") {
-        const useTransform = composeTransforms(groupTransform, child.data.transform);
+        const useTransform = composeTransforms(
+          groupTransform,
+          child.data.transform
+        );
         const resolved = resolveToDrawCommands(
-          child.data.href, definitions, useTransform, patternLookup, gradientLookup, pathDedup, allPaths, visited,
-          clipMaskIds, groupClipId,
+          child.data.href,
+          definitions,
+          useTransform,
+          patternLookup,
+          gradientLookup,
+          pathDedup,
+          allPaths,
+          visited,
+          clipMaskIds,
+          groupClipId
         );
         commands.push(...resolved);
       } else if (child.type === "group") {
-        const nestedTransform = composeTransforms(groupTransform, child.data.transform);
+        const nestedTransform = composeTransforms(
+          groupTransform,
+          child.data.transform
+        );
         // Nested group: its own clipPathRef shadows the enclosing group's.
         const nestedClipId = child.data.clipPathRef
-          ? clipMaskIds.get(child.data.clipPathRef) ?? groupClipId
+          ? (clipMaskIds.get(child.data.clipPathRef) ?? groupClipId)
           : groupClipId;
         // Process nested group children
         for (const nested of child.data.children) {
           if (nested.type === "path") {
             const p = nested.data;
-            if (p.segments.length === 0) continue;
+            if (p.segments.length === 0) {
+              continue;
+            }
             let pathId: number;
             {
               const h = hashPath(p.segments);
               const cands = pathDedup.get(h);
               let found = -1;
-              if (cands) { for (const c of cands) { if (pathsEqual(allPaths[c]!, p.segments)) { found = c; break; } } }
-              if (found >= 0) { pathId = found; }
-              else { pathId = allPaths.length; allPaths.push(p.segments); if (cands) cands.push(pathId); else pathDedup.set(h, [pathId]); }
+              if (cands) {
+                for (const c of cands) {
+                  if (pathsEqual(allPaths[c]!, p.segments)) {
+                    found = c;
+                    break;
+                  }
+                }
+              }
+              if (found >= 0) {
+                pathId = found;
+              } else {
+                pathId = allPaths.length;
+                allPaths.push(p.segments);
+                if (cands) {
+                  cands.push(pathId);
+                } else {
+                  pathDedup.set(h, [pathId]);
+                }
+              }
             }
             const transform = composeTransforms(nestedTransform, p.transform);
             if (p.fill && p.fill !== "none") {
               if (p.fill.startsWith("url(#")) {
-                const cmd = tryCreateUrlFill(p.fill, pathId, p.fillRule, transform, patternLookup, gradientLookup, nestedClipId);
-                if (cmd) commands.push(cmd);
+                const cmd = tryCreateUrlFill(
+                  p.fill,
+                  pathId,
+                  p.fillRule,
+                  transform,
+                  patternLookup,
+                  gradientLookup,
+                  nestedClipId
+                );
+                if (cmd) {
+                  commands.push(cmd);
+                }
               } else {
                 commands.push({
-                  type: 0 as DrawCommandType.Fill, pathId, fillRule: p.fillRule,
-                  color: parseColor(p.fill, p.fillOpacity), colorZoneId: 0, transform,
+                  type: 0 as DrawCommandType.Fill,
+                  pathId,
+                  fillRule: p.fillRule,
+                  color: parseColor(p.fill, p.fillOpacity),
+                  colorZoneId: 0,
+                  transform,
                   clipMaskId: nestedClipId,
                 } satisfies FillDrawCommand);
               }
             }
             if (p.stroke && p.stroke !== "none" && p.strokeWidth) {
-              const { widthMode, width } = resolveStrokeMode(p.strokeWidth, p.vectorEffect);
+              const { widthMode, width } = resolveStrokeMode(
+                p.strokeWidth,
+                p.vectorEffect
+              );
               commands.push({
-                type: 1 as DrawCommandType.Stroke, pathId, fillRule: p.fillRule,
-                color: parseColor(p.stroke, p.strokeOpacity), colorZoneId: 0,
+                type: 1 as DrawCommandType.Stroke,
+                pathId,
+                fillRule: p.fillRule,
+                color: parseColor(p.stroke, p.strokeOpacity),
+                colorZoneId: 0,
                 widthMode,
                 width,
                 opacity: p.strokeOpacity,
-                lineCap: lineCapToNum(p.strokeLinecap), lineJoin: lineJoinToNum(p.strokeLinejoin),
+                lineCap: lineCapToNum(p.strokeLinecap),
+                lineJoin: lineJoinToNum(p.strokeLinejoin),
                 transform,
                 clipMaskId: nestedClipId,
               } satisfies StrokeDrawCommand);
             }
           } else if (nested.type === "use") {
             const resolved = resolveToDrawCommands(
-              nested.data.href, definitions,
+              nested.data.href,
+              definitions,
               composeTransforms(nestedTransform, nested.data.transform),
-              patternLookup, gradientLookup, pathDedup, allPaths, visited,
-              clipMaskIds, nestedClipId,
+              patternLookup,
+              gradientLookup,
+              pathDedup,
+              allPaths,
+              visited,
+              clipMaskIds,
+              nestedClipId
             );
             commands.push(...resolved);
           }
@@ -433,10 +600,21 @@ function resolveToDrawCommands(
     }
   } else if (node.type === "use") {
     // Alias: resolve the target
-    const useTransform = composeTransforms(parentTransform, node.data.transform);
+    const useTransform = composeTransforms(
+      parentTransform,
+      node.data.transform
+    );
     const resolved = resolveToDrawCommands(
-      node.data.href, definitions, useTransform, patternLookup, gradientLookup, pathDedup, allPaths, visited,
-      clipMaskIds, activeClipMaskId,
+      node.data.href,
+      definitions,
+      useTransform,
+      patternLookup,
+      gradientLookup,
+      pathDedup,
+      allPaths,
+      visited,
+      clipMaskIds,
+      activeClipMaskId
     );
     commands.push(...resolved);
   }
@@ -449,18 +627,31 @@ function hashPath(segments: PathSegment[]): number {
   let h = 2166136261;
   for (const seg of segments) {
     h = fnv1a(h, seg.type.charCodeAt(0));
-    for (const c of seg.coords) h = fnvFloat(h, c);
+    for (const c of seg.coords) {
+      h = fnvFloat(h, c);
+    }
   }
   return h;
 }
 
 function pathsEqual(a: PathSegment[], b: PathSegment[]): boolean {
-  if (a.length !== b.length) return false;
+  if (a.length !== b.length) {
+    return false;
+  }
   for (let i = 0; i < a.length; i++) {
-    if (a[i]!.type !== b[i]!.type) return false;
-    const ac = a[i]!.coords, bc = b[i]!.coords;
-    if (ac.length !== bc.length) return false;
-    for (let j = 0; j < ac.length; j++) if (ac[j] !== bc[j]) return false;
+    if (a[i]!.type !== b[i]!.type) {
+      return false;
+    }
+    const ac = a[i]!.coords,
+      bc = b[i]!.coords;
+    if (ac.length !== bc.length) {
+      return false;
+    }
+    for (let j = 0; j < ac.length; j++) {
+      if (ac[j] !== bc[j]) {
+        return false;
+      }
+    }
   }
   return true;
 }
@@ -476,52 +667,106 @@ function hashDrawCommand(cmd: DrawCommand): number {
   // isn't, so the pool must keep them distinct.
   h = fnv1a(h, cmd.clipMaskId);
   if (cmd.type === 0) {
-    h = fnv1a(h, cmd.color.r); h = fnv1a(h, cmd.color.g);
-    h = fnv1a(h, cmd.color.b); h = fnv1a(h, cmd.color.a);
+    h = fnv1a(h, cmd.color.r);
+    h = fnv1a(h, cmd.color.g);
+    h = fnv1a(h, cmd.color.b);
+    h = fnv1a(h, cmd.color.a);
     h = fnv1a(h, cmd.colorZoneId);
   } else if (cmd.type === 1) {
-    h = fnv1a(h, cmd.color.r); h = fnv1a(h, cmd.color.g);
-    h = fnv1a(h, cmd.color.b); h = fnv1a(h, cmd.color.a);
+    h = fnv1a(h, cmd.color.r);
+    h = fnv1a(h, cmd.color.g);
+    h = fnv1a(h, cmd.color.b);
+    h = fnv1a(h, cmd.color.a);
     h = fnv1a(h, cmd.colorZoneId);
-    h = fnvFloat(h, cmd.width); h = fnvFloat(h, cmd.opacity);
+    h = fnvFloat(h, cmd.width);
+    h = fnvFloat(h, cmd.opacity);
   } else if (cmd.type === 2) {
     h = fnv1a(h, cmd.imageId);
     h = fnv1a(h, hashTransform(cmd.patternTransform));
   } else if (cmd.type === 3) {
     h = fnv1a(h, cmd.gradientType);
-    h = fnvFloat(h, cmd.cx); h = fnvFloat(h, cmd.cy);
-    h = fnvFloat(h, cmd.fx); h = fnvFloat(h, cmd.fy);
+    h = fnvFloat(h, cmd.cx);
+    h = fnvFloat(h, cmd.cy);
+    h = fnvFloat(h, cmd.fx);
+    h = fnvFloat(h, cmd.fy);
     h = fnvFloat(h, cmd.r);
     h = fnv1a(h, hashTransform(cmd.gradientTransform));
     for (const s of cmd.stops) {
       h = fnvFloat(h, s.offset);
-      h = fnv1a(h, s.color.r); h = fnv1a(h, s.color.g);
-      h = fnv1a(h, s.color.b); h = fnv1a(h, s.color.a);
+      h = fnv1a(h, s.color.r);
+      h = fnv1a(h, s.color.g);
+      h = fnv1a(h, s.color.b);
+      h = fnv1a(h, s.color.a);
     }
   }
   return h;
 }
 
 function drawCommandsEqual(a: DrawCommand, b: DrawCommand): boolean {
-  if (a.type !== b.type || a.pathId !== b.pathId || a.fillRule !== b.fillRule) return false;
-  if (a.clipMaskId !== b.clipMaskId) return false;
-  if (!transformsEqual(a.transform, b.transform)) return false;
+  if (a.type !== b.type || a.pathId !== b.pathId || a.fillRule !== b.fillRule) {
+    return false;
+  }
+  if (a.clipMaskId !== b.clipMaskId) {
+    return false;
+  }
+  if (!transformsEqual(a.transform, b.transform)) {
+    return false;
+  }
   if (a.type === 0 && b.type === 0) {
-    return a.color.r === b.color.r && a.color.g === b.color.g && a.color.b === b.color.b && a.color.a === b.color.a && a.colorZoneId === b.colorZoneId;
+    return (
+      a.color.r === b.color.r &&
+      a.color.g === b.color.g &&
+      a.color.b === b.color.b &&
+      a.color.a === b.color.a &&
+      a.colorZoneId === b.colorZoneId
+    );
   }
   if (a.type === 1 && b.type === 1) {
-    return a.color.r === b.color.r && a.color.g === b.color.g && a.color.b === b.color.b && a.color.a === b.color.a && a.colorZoneId === b.colorZoneId && a.width === b.width && a.opacity === b.opacity;
+    return (
+      a.color.r === b.color.r &&
+      a.color.g === b.color.g &&
+      a.color.b === b.color.b &&
+      a.color.a === b.color.a &&
+      a.colorZoneId === b.colorZoneId &&
+      a.width === b.width &&
+      a.opacity === b.opacity
+    );
   }
   if (a.type === 2 && b.type === 2) {
-    return a.imageId === b.imageId && transformsEqual(a.patternTransform, b.patternTransform);
+    return (
+      a.imageId === b.imageId &&
+      transformsEqual(a.patternTransform, b.patternTransform)
+    );
   }
   if (a.type === 3 && b.type === 3) {
-    if (a.gradientType !== b.gradientType || a.cx !== b.cx || a.cy !== b.cy || a.fx !== b.fx || a.fy !== b.fy || a.r !== b.r) return false;
-    if (!transformsEqual(a.gradientTransform, b.gradientTransform)) return false;
-    if (a.stops.length !== b.stops.length) return false;
+    if (
+      a.gradientType !== b.gradientType ||
+      a.cx !== b.cx ||
+      a.cy !== b.cy ||
+      a.fx !== b.fx ||
+      a.fy !== b.fy ||
+      a.r !== b.r
+    ) {
+      return false;
+    }
+    if (!transformsEqual(a.gradientTransform, b.gradientTransform)) {
+      return false;
+    }
+    if (a.stops.length !== b.stops.length) {
+      return false;
+    }
     for (let i = 0; i < a.stops.length; i++) {
-      const sa = a.stops[i]!, sb = b.stops[i]!;
-      if (sa.offset !== sb.offset || sa.color.r !== sb.color.r || sa.color.g !== sb.color.g || sa.color.b !== sb.color.b || sa.color.a !== sb.color.a) return false;
+      const sa = a.stops[i]!,
+        sb = b.stops[i]!;
+      if (
+        sa.offset !== sb.offset ||
+        sa.color.r !== sb.color.r ||
+        sa.color.g !== sb.color.g ||
+        sa.color.b !== sb.color.b ||
+        sa.color.a !== sb.color.a
+      ) {
+        return false;
+      }
     }
     return true;
   }
@@ -541,7 +786,7 @@ export interface AnimationInput {
 export function deduplicate(
   assetId: number,
   animations: AnimationInput[],
-  images: ExtractedImage[],
+  images: ExtractedImage[]
 ): CompiledAsset {
   // Shared dedup tables — use numeric hashing for fast lookups
   const pathDedup = new Map<number, number[]>(); // hash → candidate pathIds
@@ -568,26 +813,36 @@ export function deduplicate(
 
   function clipMaskShapesEqual(
     a: { segments: PathSegment[]; transform: AffineTransform },
-    b: { segments: PathSegment[]; transform: AffineTransform },
+    b: { segments: PathSegment[]; transform: AffineTransform }
   ): boolean {
-    if (!transformsEqual(a.transform, b.transform)) return false;
+    if (!transformsEqual(a.transform, b.transform)) {
+      return false;
+    }
     return pathsEqual(a.segments, b.segments);
   }
 
-  function getOrAddClipMask(segments: PathSegment[], transform: AffineTransform): number {
+  function getOrAddClipMask(
+    segments: PathSegment[],
+    transform: AffineTransform
+  ): number {
     let h = hashPath(segments);
     h = fnv1a(h, hashTransform(transform));
     const candidates = clipMaskDedup.get(h);
     if (candidates) {
       for (const cid of candidates) {
         const existing = allClipMasks[cid - 1]!;
-        if (clipMaskShapesEqual(existing, { segments, transform })) return cid;
+        if (clipMaskShapesEqual(existing, { segments, transform })) {
+          return cid;
+        }
       }
     }
     const id = allClipMasks.length + 1; // 1-based
     allClipMasks.push({ id, segments, transform });
-    if (candidates) candidates.push(id);
-    else clipMaskDedup.set(h, [id]);
+    if (candidates) {
+      candidates.push(id);
+    } else {
+      clipMaskDedup.set(h, [id]);
+    }
     return id;
   }
 
@@ -598,29 +853,38 @@ export function deduplicate(
     const candidates = transformDedup.get(h);
     if (candidates) {
       for (const cid of candidates) {
-        if (transformsEqual(allTransforms[cid]!, t)) return cid;
+        if (transformsEqual(allTransforms[cid]!, t)) {
+          return cid;
+        }
       }
     }
     const id = allTransforms.length;
     allTransforms.push(t);
-    if (candidates) candidates.push(id);
-    else transformDedup.set(h, [id]);
+    if (candidates) {
+      candidates.push(id);
+    } else {
+      transformDedup.set(h, [id]);
+    }
     return id;
   }
-
 
   function getOrAddDrawCommand(cmd: DrawCommand): number {
     const h = hashDrawCommand(cmd);
     const candidates = drawCmdDedup.get(h);
     if (candidates) {
       for (const cid of candidates) {
-        if (drawCommandsEqual(allDrawCommands[cid]!, cmd)) return cid;
+        if (drawCommandsEqual(allDrawCommands[cid]!, cmd)) {
+          return cid;
+        }
       }
     }
     const id = allDrawCommands.length;
     allDrawCommands.push(cmd);
-    if (candidates) candidates.push(id);
-    else drawCmdDedup.set(h, [id]);
+    if (candidates) {
+      candidates.push(id);
+    } else {
+      drawCmdDedup.set(h, [id]);
+    }
     return id;
   }
 
@@ -643,7 +907,10 @@ export function deduplicate(
     const patternLookup = new Map<string, PatternLookup>();
     for (const pattern of svg.patterns) {
       const imageIdx = images.findIndex((img) => {
-        const b64 = pattern.imageDataUri.replace(/^data:image\/\w+;base64,/, "");
+        const b64 = pattern.imageDataUri.replace(
+          /^data:image\/\w+;base64,/,
+          ""
+        );
         const buf = Buffer.from(b64, "base64");
         return buf.equals(Buffer.from(img.pngBytes));
       });
@@ -686,7 +953,11 @@ export function deduplicate(
     }
 
     // For each frame in the SVG, resolve body parts
-    const svgFrameData: { bodyPartIds: PartInstance[]; accSlots: AccessorySlot[]; frameTransformId: number }[] = [];
+    const svgFrameData: {
+      bodyPartIds: PartInstance[];
+      accSlots: AccessorySlot[];
+      frameTransformId: number;
+    }[] = [];
 
     for (const frame of svg.frames) {
       const parts: PartInstance[] = [];
@@ -699,9 +970,16 @@ export function deduplicate(
         // `<g clip-path>` rect (which is the atlas tile boundary,
         // already stripped by the parser).
         const drawCmds = resolveToDrawCommands(
-          use.href, svg.definitions, [...IDENTITY_TRANSFORM] as AffineTransform,
-          patternLookup, gradientLookup, pathDedup, allPaths, new Set(),
-          clipMaskIds, 0,
+          use.href,
+          svg.definitions,
+          [...IDENTITY_TRANSFORM] as AffineTransform,
+          patternLookup,
+          gradientLookup,
+          pathDedup,
+          allPaths,
+          new Set(),
+          clipMaskIds,
+          0
         );
 
         // Dedup draw commands
@@ -713,7 +991,10 @@ export function deduplicate(
         // Compose frame offset transform with the use element's transform
         // The SVG frame has: <g transform="translate(x,y)"> → <use transform="matrix(...)">
         // We need: frameOffset * useTransform
-        const composedTransform = composeTransforms(frame.offsetTransform, use.transform);
+        const composedTransform = composeTransforms(
+          frame.offsetTransform,
+          use.transform
+        );
         const transformId = getOrAddTransform(composedTransform);
         parts.push({ bodyPartId, transformId });
       }
@@ -723,7 +1004,7 @@ export function deduplicate(
         // The renderer will compose the full transform at render time
         // using the accessory's offsetX/offsetY for pivot-point rotation.
         const rawMatrix: AffineTransform = slot.matrix
-          ? [...slot.matrix] as AffineTransform
+          ? ([...slot.matrix] as AffineTransform)
           : [1, 0, 0, 1, slot.tx, slot.ty];
         const transformId = getOrAddTransform(rawMatrix);
         // depthIndex = insertion position: render this slot after parts[0..depthIndex-1]
@@ -747,11 +1028,13 @@ export function deduplicate(
     const atlasFrameById = new Map<string, (typeof atlas.frames)[0]>();
     for (const af of atlas.frames) {
       atlasFrameById.set(af.id, af);
-      const svgIdx = svg.frames.findIndex((f) =>
-        Math.abs(f.clipRect.x - af.x) < 1 &&
-        Math.abs(f.clipRect.y - af.y) < 1 &&
-        Math.abs(f.clipRect.width - af.width) < 1 &&
-        Math.abs(f.clipRect.height - af.height) < 1
+      const svgIdx = svg.frames.findIndex(
+        (f) =>
+          (f.page ?? 0) === (af.page ?? 0) &&
+          Math.abs(f.clipRect.x - af.x) < 1 &&
+          Math.abs(f.clipRect.y - af.y) < 1 &&
+          Math.abs(f.clipRect.width - af.width) < 1 &&
+          Math.abs(f.clipRect.height - af.height) < 1
       );
       if (svgIdx >= 0) {
         atlasIdToSvgIdx.set(af.id, svgIdx);
@@ -767,7 +1050,11 @@ export function deduplicate(
       const resolvedId = atlas.duplicates[frameId] ?? frameId;
       const svgFrameIdx = atlasIdToSvgIdx.get(resolvedId);
       const atlasFrame = atlasFrameById.get(resolvedId);
-      if (svgFrameIdx === undefined || atlasFrame === undefined || svgFrameIdx >= svgFrameData.length) {
+      if (
+        svgFrameIdx === undefined ||
+        atlasFrame === undefined ||
+        svgFrameIdx >= svgFrameData.length
+      ) {
         // Fallback: use first frame
         animFrameIds.push(0);
         continue;
@@ -779,7 +1066,12 @@ export function deduplicate(
         const frameData = svgFrameData[svgFrameIdx]!;
 
         const frame: Frame = {
-          clipRect: [atlasFrame.x, atlasFrame.y, atlasFrame.width, atlasFrame.height],
+          clipRect: [
+            atlasFrame.x,
+            atlasFrame.y,
+            atlasFrame.width,
+            atlasFrame.height,
+          ],
           offsetX: atlasFrame.offsetX,
           offsetY: atlasFrame.offsetY,
           parts: frameData.bodyPartIds,
@@ -809,16 +1101,23 @@ export function deduplicate(
     if (baseFrameMeta && svg.frames.length > 0) {
       // The base frame is the first <g clip-path> in the SVG that matches baseFrame coordinates
       // It's at index 0 before the animation-specific delta frames
-      const baseIdx = svg.frames.findIndex((f) =>
-        Math.abs(f.clipRect.x - baseFrameMeta.x) < 1 &&
-        Math.abs(f.clipRect.y - baseFrameMeta.y) < 1 &&
-        Math.abs(f.clipRect.width - baseFrameMeta.width) < 1 &&
-        Math.abs(f.clipRect.height - baseFrameMeta.height) < 1
+      const baseIdx = svg.frames.findIndex(
+        (f) =>
+          (f.page ?? 0) === (baseFrameMeta.page ?? 0) &&
+          Math.abs(f.clipRect.x - baseFrameMeta.x) < 1 &&
+          Math.abs(f.clipRect.y - baseFrameMeta.y) < 1 &&
+          Math.abs(f.clipRect.width - baseFrameMeta.width) < 1 &&
+          Math.abs(f.clipRect.height - baseFrameMeta.height) < 1
       );
       if (baseIdx >= 0 && baseIdx < svgFrameData.length) {
         const baseData = svgFrameData[baseIdx]!;
         const baseFrame: Frame = {
-          clipRect: [baseFrameMeta.x, baseFrameMeta.y, baseFrameMeta.width, baseFrameMeta.height],
+          clipRect: [
+            baseFrameMeta.x,
+            baseFrameMeta.y,
+            baseFrameMeta.width,
+            baseFrameMeta.height,
+          ],
           offsetX: baseFrameMeta.offsetX,
           offsetY: baseFrameMeta.offsetY,
           parts: baseData.bodyPartIds,

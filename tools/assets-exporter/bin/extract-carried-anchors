@@ -1,0 +1,26 @@
+#!/usr/bin/env php
+<?php
+require_once __DIR__ . '/../vendor/autoload.php';
+
+use App\CarriedAnchors;
+use Arakne\Swf\SwfFile;
+use Arakne\Swf\Extractor\SwfExtractor;
+use Arakne\Swf\Extractor\Sprite\SpriteDefinition;
+
+if ($argc !== 3) { fwrite(STDERR, "Usage: php extract-carried-anchors source.swf existing-metadata.json\n"); exit(1); }
+$swf = new SwfFile($argv[1]);
+$extractor = new SwfExtractor($swf);
+$reader = new CarriedAnchors();
+$metadata = json_decode(file_get_contents($argv[2]), true, flags: JSON_THROW_ON_ERROR);
+$anchors = [];
+foreach ($extractor->exported() as $name => $id) {
+    if (!str_contains($name, '_C')) continue;
+    $sprite = $extractor->character($id);
+    if (!$sprite instanceof SpriteDefinition) continue;
+    $points = $reader->extract($sprite);
+    if ($points) $anchors[$name] = $points;
+}
+if (!$anchors) throw new RuntimeException('No GAC.registerCarried anchors in source');
+$metadata['carriedAnchors'] = ['fps' => $swf->frameRate(), 'animations' => $anchors, 'sourceSha256' => hash_file('sha256', $argv[1])];
+file_put_contents($argv[2], json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
+echo count($anchors) . " carrying animations enriched; existing metadata preserved\n";

@@ -73,7 +73,7 @@ const SHOOT_BOUNDS = {
 
 export class Spell306 extends RuntimeSpell {
   readonly spellId = 306;
-  readonly displayType = SpellDisplayType.TargetCell;
+  readonly displayType = SpellDisplayType.ProjectileLinearAlt;
 
   private pierresSym!: SymbolDefinition;
   private sprite5Sym!: SymbolDefinition;
@@ -255,15 +255,16 @@ export class Spell306 extends RuntimeSpell {
 
   protected onSpellStart(
     callbacks: SpellCallbacks,
-    context: SpellContext
+    _context: SpellContext
   ): void {
     // AS: scripts/frame_1/DoAction.as
     // SOMA.playSound("lakam_405");
     // level = 5;   ← root.vars.level already set by harness from context.level
     callbacks.playSound("lakam_405");
 
-    // Attach the shoot animation at root (displayType=11 → container
-    // is already positioned at the target cell by the harness).
-    this.root.attach(this.shootSym, "shoot", 1, context);
+    // Canonical displayType 21 (QA-181): the harness attaches the library
+    // `shoot` on the target itself, unturned (VisualEffectHandler.as:96-104).
+    // Attaching it here too replaced the harness's and left it on the
+    // caster, turned with the root.
   }
 }

@@ -77,6 +77,7 @@ import { basename } from "node:path";
 import { CamelCasePlugin, Kysely, PostgresDialect, sql } from "kysely";
 import pg from "pg";
 
+import { parseWeaponInfo } from "../src/core/modules/inventory/weapon-info.ts";
 import {
   filterDialogGraph,
   type ImportedDialogAction,
@@ -739,7 +740,16 @@ const itemTemplates = Object.entries(langItems).map(([id, item]) => ({
   // `Item.superType` reads it off `getItemTypeText(type).t`.
   superType: langItemTypes[String(item.t)]?.t ?? 0,
   description: item.d ?? "",
-  animationId: item.an ?? 3,
+  // Absent stays absent: the default is `anim3` for a harvest but
+  // `anim0` for a swing, so only the reader can pick it.
+  animationId: item.an ?? null,
+  // Close-combat statistics for anything that can be swung. Null for
+  // the rest; `migrations/0065` seeds the same field from the same
+  // bundle, and a re-import must not wipe it.
+  weaponInfo: (() => {
+    const info = parseWeaponInfo(item.e);
+    return info === null ? null : JSON.stringify(info);
+  })(),
 }));
 
 await upsert("itemTemplates", ["id"], itemTemplates);

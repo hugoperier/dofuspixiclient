@@ -1,12 +1,6 @@
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-import { writeBinary } from "./binary-writer.ts";
-import { applyColorZones } from "./color-mapper.ts";
-import { deduplicate, type AnimationInput } from "./deduplicator.ts";
-import { parseFrameSvg } from "./frame-svg.ts";
-import { extractImages } from "./image-extractor.ts";
-import { parseSvg } from "./svg-parser.ts";
 import type {
   AffineTransform,
   AtlasFrame,
@@ -19,6 +13,12 @@ import type {
   ParsedSvg,
   SpriteMetadata,
 } from "./types.ts";
+import { writeBinary } from "./binary-writer.ts";
+import { applyColorZones } from "./color-mapper.ts";
+import { type AnimationInput, deduplicate } from "./deduplicator.ts";
+import { namespaceSvgIds, parseFrameSvg } from "./frame-svg.ts";
+import { extractImages } from "./image-extractor.ts";
+import { parseSvg } from "./svg-parser.ts";
 import { TintMode } from "./types.ts";
 
 export interface CompileSpriteOptions {
@@ -66,7 +66,8 @@ export function compileSprite(
   const rootManifestPath = join(spriteDir, "manifest.json");
   const rootAtlasSvgPath = join(spriteDir, "atlas.svg");
   const isSingleAtlas =
-    existsSync(rootManifestPath) && existsSync(rootAtlasSvgPath);
+    existsSync(rootManifestPath) &&
+    (existsSync(rootAtlasSvgPath) || existsSync(join(spriteDir, "atlas.json")));
 
   const allPatterns: ParsedPattern[] = [];
   const animationInputs: AnimationInput[] = [];
@@ -74,15 +75,14 @@ export function compileSprite(
 
   if (isSingleAtlas) {
     const manifest = JSON.parse(readFileSync(rootManifestPath, "utf-8"));
-    const svgContent = readFileSync(rootAtlasSvgPath, "utf-8");
-    totalSvgBytes += svgContent.length;
-    const svg = parseSvg(svgContent);
-    allPatterns.push(...svg.patterns);
-
     const atlasJsonPath = join(spriteDir, "atlas.json");
     const sidecar = existsSync(atlasJsonPath)
       ? (JSON.parse(readFileSync(atlasJsonPath, "utf-8")) as Partial<AtlasJson>)
       : null;
+    const loaded = loadAtlasPages(spriteDir, sidecar);
+    const svg = loaded.svg;
+    totalSvgBytes += loaded.sourceBytes;
+    allPatterns.push(...svg.patterns);
 
     for (const [animName, animDataRaw] of Object.entries(
       manifest.animations ?? {}
@@ -93,8 +93,8 @@ export function compileSprite(
       const atlas: AtlasJson = {
         version: manifest.version ?? sidecar?.version ?? 1,
         animation: animName,
-        width: (sidecar?.width ?? animData.width) ?? 0,
-        height: (sidecar?.height ?? animData.height) ?? 0,
+        width: sidecar?.width ?? animData.width ?? 0,
+        height: sidecar?.height ?? animData.height ?? 0,
         offsetX: sidecar?.offsetX ?? animData.offsetX ?? 0,
         offsetY: sidecar?.offsetY ?? animData.offsetY ?? 0,
         frames,
@@ -110,16 +110,15 @@ export function compileSprite(
     const animNames = discoverAnimationDirs(spriteDir);
     for (const animName of animNames) {
       const animDir = join(spriteDir, animName);
-      const svgPath = join(animDir, "atlas.svg");
       const jsonPath = join(animDir, "atlas.json");
-      if (!existsSync(svgPath) || !existsSync(jsonPath)) continue;
-
-      const svgContent = readFileSync(svgPath, "utf-8");
+      if (!existsSync(jsonPath)) {
+        continue;
+      }
       const atlasContent = readFileSync(jsonPath, "utf-8");
-      totalSvgBytes += svgContent.length;
-
-      const svg = parseSvg(svgContent);
       const atlas = JSON.parse(atlasContent) as AtlasJson;
+      const loaded = loadAtlasPages(animDir, atlas);
+      const svg = loaded.svg;
+      totalSvgBytes += loaded.sourceBytes;
       allPatterns.push(...svg.patterns);
       animationInputs.push({ name: animName, svg, atlas });
     }
@@ -136,7 +135,9 @@ export function compileSprite(
     applyColorZones(asset, metadata, opts.tintMode ?? TintMode.Player);
   }
 
-  if (opts.extras) asset.extras = opts.extras;
+  if (opts.extras) {
+    asset.extras = opts.extras;
+  }
 
   const bytes = writeBinary(asset);
 
@@ -154,6 +155,44 @@ export function compileSprite(
       totalSvgBytes,
     },
   };
+}
+
+/** Atlas pages have local definition IDs and overlapping frame rectangles. */
+function loadAtlasPages(
+  dir: string,
+  atlas: Partial<AtlasJson> | null
+): { svg: ParsedSvg; sourceBytes: number } {
+  const pages = atlas?.pages?.length ? atlas.pages : [{ file: "atlas.svg" }];
+  let combined: ParsedSvg | undefined;
+  let sourceBytes = 0;
+  for (const [page, entry] of pages.entries()) {
+    const source = readFileSync(join(dir, entry.file), "utf8");
+    sourceBytes += source.length;
+    const parsed = parseSvg(namespaceSvgIds(source, `page${page}_`));
+    for (const frame of parsed.frames) {
+      frame.page = page;
+    }
+    if (!combined) {
+      combined = parsed;
+      continue;
+    }
+    for (const [id, value] of parsed.definitions) {
+      combined.definitions.set(id, value);
+    }
+    for (const [id, value] of parsed.clipPaths) {
+      combined.clipPaths.set(id, value);
+    }
+    for (const [id, value] of parsed.clipShapes) {
+      combined.clipShapes.set(id, value);
+    }
+    combined.patterns.push(...parsed.patterns);
+    combined.gradients.push(...parsed.gradients);
+    combined.frames.push(...parsed.frames);
+  }
+  if (!combined) {
+    throw new Error(`No atlas pages in ${dir}`);
+  }
+  return { svg: combined, sourceBytes };
 }
 
 function discoverAnimationDirs(spriteDir: string): string[] {
@@ -335,15 +374,25 @@ export function compileSpriteFromFrames(
         });
       }
 
-      for (const [id, def] of parsed.svg.definitions) definitions.set(id, def);
-      for (const [id, rect] of parsed.svg.clipPaths) clipPaths.set(id, rect);
-      for (const [id, shape] of parsed.svg.clipShapes) clipShapes.set(id, shape);
+      for (const [id, def] of parsed.svg.definitions) {
+        definitions.set(id, def);
+      }
+      for (const [id, rect] of parsed.svg.clipPaths) {
+        clipPaths.set(id, rect);
+      }
+      for (const [id, shape] of parsed.svg.clipShapes) {
+        clipShapes.set(id, shape);
+      }
       patterns.push(...parsed.svg.patterns);
       gradients.push(...parsed.svg.gradients);
       frames.push(parsed.frame);
 
-      if (parsed.width > maxWidth) maxWidth = parsed.width;
-      if (parsed.height > maxHeight) maxHeight = parsed.height;
+      if (parsed.width > maxWidth) {
+        maxWidth = parsed.width;
+      }
+      if (parsed.height > maxHeight) {
+        maxHeight = parsed.height;
+      }
     }
 
     allPatterns.push(...patterns);
@@ -384,7 +433,9 @@ export function compileSpriteFromFrames(
   if (opts.metadata) {
     applyColorZones(asset, opts.metadata, opts.tintMode ?? TintMode.Player);
   }
-  if (opts.extras) asset.extras = opts.extras;
+  if (opts.extras) {
+    asset.extras = opts.extras;
+  }
 
   const bytes = writeBinary(asset);
 
@@ -411,14 +462,22 @@ export function compileSpriteFromFrames(
 function discoverFrameGroups(spriteDir: string): AnimationGroup[] {
   const byName = new Map<string, FrameSvgFile[]>();
   for (const entry of readdirSync(spriteDir)) {
-    if (!entry.endsWith(".svg")) continue;
-    if (entry.startsWith(".")) continue;
+    if (!entry.endsWith(".svg")) {
+      continue;
+    }
+    if (entry.startsWith(".")) {
+      continue;
+    }
     const stem = entry.slice(0, -4);
     const match = stem.match(/^(.+)_(\d+)$/);
-    if (!match) continue;
+    if (!match) {
+      continue;
+    }
     const animName = match[1]!;
     const frameIndex = Number(match[2]);
-    if (!Number.isFinite(frameIndex)) continue;
+    if (!Number.isFinite(frameIndex)) {
+      continue;
+    }
     let list = byName.get(animName);
     if (!list) {
       list = [];

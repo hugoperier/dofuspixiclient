@@ -11,7 +11,7 @@
  */
 
 /** The weapon and shield equipment positions, per `I.ss` in the 1.29 bundle. */
-const WEAPON_POSITION = 1;
+export const WEAPON_POSITION = 1;
 const SHIELD_POSITION = 15;
 
 /** Every equipment position the client can address (`-1` is "unequip"). */

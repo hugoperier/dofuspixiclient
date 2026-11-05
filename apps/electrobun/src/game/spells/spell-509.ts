@@ -1,10 +1,13 @@
 /**
- * Spell 509 — Maîtrise des Sorts (Osamodas / generic animation).
+ * Visual 509 — Sablier de Xélor (sort 100).
  *
  * Hand-ported against the SpellClip / SpellRuntime composition runtime.
  * Canonical AS source: tools/combat-exporter/output/spell-anims/509/scripts/scripts/
  *
- * displayType=11 (TargetCell). The spell has a single authored sprite
+ * Canonical displayType=51 (`sorts.spriteInfos` "51,1,1", sent by the
+ * server — QA-181); the module's own TargetCell is only the fallback.
+ * The clip moves itself onto `_parent.cellTo` at frame_4, which holds
+ * under either. The spell has a single authored sprite
  * (DefineSprite_14) with no library symbols and no attachMovie calls.
  * The animation is a self-contained 120-frame timeline anchored at the
  * target cell. The manifest's `animations` list contains only "anim1"
@@ -49,7 +52,7 @@ const ANIM1_BOUNDS = {
 
 export class Spell509 extends RuntimeSpell {
   readonly spellId = 509;
-  readonly displayType = SpellDisplayType.TargetCell;
+  readonly displayType = SpellDisplayType.WorldAbsoluteAlt;
 
   private anim1Sym!: SymbolDefinition;
   private playSound!: (id: string) => void;
@@ -77,21 +80,17 @@ export class Spell509 extends RuntimeSpell {
             // AS: DefineSprite_14/frame_4/DoAction.as
             // _X = _parent.cellTo.x;
             // _Y = _parent.cellTo.y;
-            // For displayType=11 (TargetCell), the container is already
-            // anchored at cellTo in world coords. Setting the clip's
-            // local position to the world cellTo coords would offset it
-            // from center. We honour the canonical intent: the clip
-            // positions itself at the absolute world coords of cellTo,
-            // expressed locally relative to the container's own origin.
-            // Since the container IS at cellTo, the local offset is (0,0).
-            // We still perform the lookup to stay 1:1 with AS semantics.
+            // root.vars.cellTo is in the container's space (QA-182): the
+            // literal translation lands on the target whether the server
+            // says 51 (canonical) or the module's own 11. Frames 1-3 are
+            // empty, so nothing shows before this move.
             const root = clip.parent;
             const cellTo = root?.vars.cellTo as
               | { x: number; y: number }
               | undefined;
             if (cellTo) {
-              clip.x = 0;
-              clip.y = 0;
+              clip.x = cellTo.x;
+              clip.y = cellTo.y;
             }
           },
         ],
@@ -142,9 +141,8 @@ export class Spell509 extends RuntimeSpell {
     // from within the anim1 timeline, not the main timeline).
     this.playSound = callbacks.playSound;
 
-    // Attach the single authored timeline at depth 1. For displayType=11
-    // (TargetCell) the container is already at cellTo; the clip starts
-    // at local (0,0) and frame_4 will confirm/set that position.
+    // Attach the single authored timeline at depth 1. It starts at the
+    // container origin; frame_4 moves it onto the target.
     this.root.attach(this.anim1Sym, "anim1", 1, context);
   }
 }

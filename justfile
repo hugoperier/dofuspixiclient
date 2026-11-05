@@ -74,6 +74,12 @@ db-migrate: langs-link
 db-seed:
     cd apps/gameserver-ts && bun run db:seed:dev
 
+# Roster of locally seeded accounts for the dev login screen's quick connect.
+# Reads the passwords from the environment, writes only derived keys.
+#   COMBAT_VALIDATION_PASSWORD=… just dev-accounts
+dev-accounts:
+    cd apps/gameserver-ts && bun run scripts/dev-accounts.ts
+
 # Show which migrations have run
 db-status:
     cd apps/gameserver-ts && bun run db:status
@@ -225,6 +231,22 @@ tiles-build:
 spells-build:
     @{{pipeline}} compile spells
     @{{pipeline}} publish spells
+
+# Check every published spell .dofasset against its generated module.
+spells-coverage:
+    # Reports missing symbols, unreadable animation tables, and refs that
+    # only resolve through the lib_/sprite_ alias. Ratchets against
+    # doc/combat/spell-symbol-baseline.json — exits 1 if a count grows.
+    @cd {{ root }} && bun apps/electrobun/scripts/audit-spell-animations.ts --all-graphics
+    # Then every visual under each canonical displayType of sorts.spriteInfos
+    # (QA-181): misplaced anchors, harness symbols, lifecycle. Regenerates
+    # the client's display-type-fallbacks.json and ratchets against
+    # doc/combat/display-type-baseline.json.
+    @cd {{ root }} && bun apps/electrobun/scripts/audit-spell-display-types.ts
+
+# Narrow spell audit (class-catalogue graphics) — writes animation-audit.json.
+spells-audit:
+    @cd {{ root }} && bun apps/electrobun/scripts/audit-spell-animations.ts
 
 # Tactic-view dofassets (gfx.tactic + gfx.cell) — single-frame SVGs repackaged
 # as tile-shaped dofassets so the client's atlas loader can pull them.

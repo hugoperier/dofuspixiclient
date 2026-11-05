@@ -421,9 +421,11 @@ export class Spell406 extends RuntimeSpell {
           3,
           (clip) => {
             // AS DefineSprite_22/frame_4/DoAction.as: _rotation = _parent.angle
+            // `_parent` is 1.29's unturned `mc`; under 20/21 the harness turns
+            // the root itself, so the turn already applied is subtracted.
             const rootClip = clip.parent;
             const angleDeg = (rootClip?.vars.angle as number) ?? 0;
-            clip.rotation = (angleDeg * Math.PI) / 180;
+            clip.rotation = (angleDeg * Math.PI) / 180 - (rootClip?.rotation ?? 0);
           },
         ],
         [

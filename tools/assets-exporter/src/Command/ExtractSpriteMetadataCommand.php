@@ -116,6 +116,8 @@ class ExtractSpriteMetadataCommand extends Command
         $colorZones = []; // zone => [hex colors]
         $animations = [];
         $applyEndFrames = []; // animName => frame index (0-based) where GAC.applyEnd fires
+        $carriedAnchors = [];
+        $carriedReader = new \App\CarriedAnchors();
         $converter = new Converter(subpixelStrokeWidth: false);
 
         // First pass: extract color zones from a single animation (staticR or first available)
@@ -156,6 +158,11 @@ class ExtractSpriteMetadataCommand extends Command
                 $applyEndFrames[$animName] = $applyEnd;
             }
 
+            if (str_contains($animName, '_C')) {
+                $points = $carriedReader->extract($character);
+                if ($points) $carriedAnchors[$animName] = $points;
+            }
+
             $ext->releaseIfOutOfMemory();
         }
 
@@ -185,6 +192,9 @@ class ExtractSpriteMetadataCommand extends Command
             // for the last frame OR the 1000ms canonical Sequencer
             // fallback. Per AS frame numbering, AS `frame_31` = index 30.
             $payload['applyEndFrames'] = $applyEndFrames;
+        }
+        if ($carriedAnchors) {
+            $payload['carriedAnchors'] = ['fps' => $swf->frameRate(), 'animations' => $carriedAnchors, 'sourceSha256' => hash_file('sha256', $swfPath)];
         }
         return $payload;
     }

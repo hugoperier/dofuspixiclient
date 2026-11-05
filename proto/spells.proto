@@ -68,6 +68,7 @@ message SpellEffectData {
   int32  area_kind = 7;
   int32  area_size = 8;
   string param = 9;        // Raw lang `param` slot (target filter, state name...)
+  int32 target_filter = 10;
 }
 
 // Everything the spell book needs about ONE level of a spell. Mirrors a
@@ -91,6 +92,9 @@ message SpellLevelDetail {
   bool  crit_failure_ends_turn = 15;
   repeated SpellEffectData effects = 16;
   repeated SpellEffectData critical_effects = 17;
+  repeated int32 required_states = 18;
+  repeated int32 forbidden_states = 19;
+  string combat_unavailable_reason = 20;
 }
 
 // Sd - Spell details: every level of one spell, sent on demand when the

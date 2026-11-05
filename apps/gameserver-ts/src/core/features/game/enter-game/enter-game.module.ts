@@ -1,4 +1,5 @@
 import { EnterGameHandler } from "@features/game/enter-game/enter-game.handler";
+import { AccountsModule } from "@modules/accounts/accounts.module";
 import { HarvestModule } from "@modules/harvest/harvest.module";
 import { InventoryModule } from "@modules/inventory/inventory.module";
 import { JobsModule } from "@modules/jobs/jobs.module";
@@ -14,6 +15,7 @@ import { Module } from "@nestjs/common";
 
 @Module({
   imports: [
+    AccountsModule,
     HarvestModule,
     InventoryModule,
     JobsModule,

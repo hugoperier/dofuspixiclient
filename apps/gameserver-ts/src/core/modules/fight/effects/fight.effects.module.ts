@@ -24,7 +24,7 @@ import {
   Reflector,
 } from "@nestjs/core";
 
-const HANDLER_PROVIDERS = [
+export const HANDLER_PROVIDERS = [
   DamageEffectHandler,
   LifeStealEffectHandler,
   HealEffectHandler,

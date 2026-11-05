@@ -8,13 +8,13 @@ import type { ISpellAnimation } from "@dofus/spell-runtime";
 const spellModules = (
   import.meta as unknown as {
     glob: (
-      pattern: string
+      pattern: string | string[]
     ) => Record<
       string,
       () => Promise<Record<string, new () => ISpellAnimation>>
     >;
   }
-).glob("../../spells/spell-*.ts");
+).glob(["../../spells/spell-*.ts", "!../../spells/*.spec.ts"]);
 
 /**
  * Dynamically import a spell's module + return its animation class.

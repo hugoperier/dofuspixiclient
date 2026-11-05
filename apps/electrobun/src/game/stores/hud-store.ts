@@ -10,6 +10,7 @@ export type PanelName =
   | "guild"
   | "mount"
   | "conquest"
+  | "options"
   | null;
 
 export interface HudState {

@@ -11,11 +11,13 @@ export interface FightObject {
   casterId: number;
   cell: number;
   size: number;
+  areaKind?: number;
   element: Element;
   spellId: number;
   spellLevel: number;
   color: number;
   remaining: number;
+  visibleToTeams?: Set<number>;
   onArrival?: ArrivalTrigger;
   onTurnStart?: TurnStartTrigger;
   cellEligible?: (cell: number) => boolean;

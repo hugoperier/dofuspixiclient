@@ -19,25 +19,21 @@ const SHAPE_LETTERS: Record<string, AreaKind> = {
 };
 
 function decodeSize(letter: string): number {
-  if (letter === "_") {
-    return 0;
-  }
-  const code = letter.charCodeAt(0);
-  if (code >= 97 && code <= 122) {
-    return code - 96;
-  }
-  if (code >= 65 && code <= 90) {
-    return code - 64;
-  }
-  return 0;
+  // Spell.as uses Compressor.decode64: a=0, b=1, …, A=26, _=63.
+  return Math.max(
+    0,
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_".indexOf(
+      letter
+    )
+  );
 }
 
 export function decodeZonePair(pair: string): DecodedZone {
   if (pair.length !== 2) {
     return { kind: AreaKind.None, size: 0 };
   }
-  const shapeChar = pair[0]!;
-  const sizeChar = pair[1]!;
+  const shapeChar = pair.charAt(0);
+  const sizeChar = pair.charAt(1);
   const kind = SHAPE_LETTERS[shapeChar] ?? AreaKind.None;
   return { kind, size: decodeSize(sizeChar) };
 }

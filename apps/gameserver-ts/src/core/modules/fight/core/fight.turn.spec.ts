@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { Fighter } from "@modules/fight/core/fight.fighter";
 import { initiativeOf, TurnList } from "@modules/fight/core/fight.turn";
-import { FighterKind } from "@modules/fight/fight.types";
+import { Characteristic, FighterKind } from "@modules/fight/fight.types";
 
 function makeFighter(id: number, level: number): Fighter {
   const f = new Fighter(id, FighterKind.Player, `f${id}`, 100, 6, 3, 3);
@@ -23,6 +23,7 @@ function makeFighter(id: number, level: number): Fighter {
       agility: 0,
     },
   };
+  f.stats.setBase(Characteristic.Strength, level * 2);
   return f;
 }
 
@@ -31,8 +32,11 @@ function makeMonster(id: number): Fighter {
 }
 
 describe("initiativeOf", () => {
-  test("returns level*2 for players", () => {
-    expect(initiativeOf(makeFighter(1, 10))).toBe(20);
+  test("uses characteristics and the current life ratio", () => {
+    const fighter = makeFighter(1, 10);
+    expect(initiativeOf(fighter)).toBe(20);
+    fighter.setLp(50);
+    expect(initiativeOf(fighter)).toBe(10);
   });
 
   test("returns 0 for monsters", () => {
@@ -100,5 +104,6 @@ describe("TurnList", () => {
     tl.advance();
     tl.remove(1);
     expect(tl.fighters()).toHaveLength(1);
+    expect(tl.advance().next?.id).toBe(2);
   });
 });

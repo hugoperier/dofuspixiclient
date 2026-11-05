@@ -7,6 +7,10 @@ export class FightTeam {
   readonly side: TeamSide;
   leaderId: number;
   startCells: number[] = [];
+  markerCell = -1;
+  locked = false;
+  needHelp = false;
+  partyOnly = false;
   private roster: Fighter[] = [];
 
   constructor(side: TeamSide, leaderId: number) {

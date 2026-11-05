@@ -521,7 +521,9 @@ export class Spell1054 extends RuntimeSpell {
     const sprite21Sym: SymbolDefinition = {
       name: "sprite21",
       totalFrames: 1,
-      frames: textures.getFrames("lib_sprite21"),
+      // sprite_21 is baked into anim1's composite frames: drawing it again
+      // doubled it (QA-183, `audit-spell-display-types.ts`). Scripts kept.
+      frames: [],
       anchorX: sprite21Anchor.x,
       anchorY: sprite21Anchor.y,
       frameScripts: new Map([

@@ -27,6 +27,8 @@ export interface MapsLangEntry {
 }
 
 export interface MapsLangSubarea {
+  /** MA.sa[id].m: retail fight playlist, including zones sharing their map theme. */
+  fightMusicIds?: number[];
   name: string;
   areaId: number;
   /** Tactic-mode theme name, used by `scene/map/handler.ts`. */
@@ -60,7 +62,7 @@ type MapsBundle = {
       m?: Record<string, { x?: number; y?: number; sa?: number }>;
       sa?: Record<
         string,
-        { n?: string; a?: number; tt?: string; tc?: string[] }
+        { n?: string; a?: number; tt?: string; tc?: string[]; m?: number[] }
       >;
       a?: Record<string, { n?: string; sua?: number }>;
     };
@@ -111,6 +113,9 @@ export function parseMapsBundle(json: unknown): MapsLangData {
     out.subareas.set(subareaId, {
       name: entry.n ?? "",
       areaId: entry.a ?? -1,
+      fightMusicIds: Array.isArray(entry.m)
+        ? entry.m.filter((id) => Number.isInteger(id) && id > 0)
+        : [],
       themeName: entry.tt,
       themeColors: entry.tc,
     });

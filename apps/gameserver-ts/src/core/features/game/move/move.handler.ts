@@ -10,6 +10,7 @@ import {
 } from "@dofus/proto/game_pb";
 import { DofusMessageSchema } from "@dofus/proto/server_messages_pb";
 import { ExchangeService } from "@modules/exchange/exchange.service";
+import { FightRegistryService } from "@modules/fight/registry/fight.registry";
 import { HarvestService } from "@modules/harvest/harvest.service";
 import {
   type CachedMap,
@@ -46,11 +47,15 @@ export class MoveHandler {
     private readonly exchange: ExchangeService,
     private readonly harvest: HarvestService,
     private readonly sessions: SessionRegistry,
-    private readonly frames: GatewayFrameService
+    private readonly frames: GatewayFrameService,
+    private readonly fights: FightRegistryService
   ) {}
 
   @MessageHandler(GameActionRequestSchema)
   async handle(ctx: HandlerContext, msg: GameActionRequest): Promise<void> {
+    if (this.fights.isInFight(ctx.sessionId)) {
+      return;
+    }
     if (msg.actionType !== GameActionType.ACTION_MOVEMENT) {
       return;
     }
@@ -89,6 +94,9 @@ export class MoveHandler {
     }
 
     const map = await this.mapCache.load(placed.mapId);
+    if (this.fights.isInFight(ctx.sessionId)) {
+      return;
+    }
 
     if (!map) {
       this.logger.warn(`move: map not cached id=${placed.mapId}`);

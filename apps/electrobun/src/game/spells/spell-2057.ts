@@ -71,26 +71,16 @@ export class Spell2057 extends RuntimeSpell {
           (clip) => {
             // AS DefineSprite_9/frame_16/DoAction.as
             // _X = _parent.cellTo.x; _Y = _parent.cellTo.y;
-            // For displayType=11 (TargetCell) the container origin IS cellTo,
-            // so the clip's local (0,0) maps to cellTo. We apply the world
-            // coords here exactly as canonical AS does — reading cellTo from
-            // root.vars and converting to local space.
-            const root = clip.parent;
-            const cellTo = root?.vars.cellTo as
+            // root.vars.cellTo is in the container's space (QA-182): the literal
+            // translation lands on the target under the canonical displayType 51
+            // as under the module's own 11.
+            const cellTo = clip.parent?.vars.cellTo as
               | { x: number; y: number }
               | undefined;
-            const anchor = (root?.vars as Record<string, unknown>)?.cellTo as
-              | { x: number; y: number }
-              | undefined;
-            // The container (root) is positioned at cellTo by the harness.
-            // _X/_Y in AS are in the outer mc's local space, which equals
-            // world space minus the anchor offset. Since anchor == cellTo,
-            // the effective local position is (0,0). We mirror that exactly.
             if (cellTo) {
-              clip.x = 0;
-              clip.y = 0;
+              clip.x = cellTo.x;
+              clip.y = cellTo.y;
             }
-            void anchor;
           },
         ],
         [

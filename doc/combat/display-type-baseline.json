@@ -1,0 +1,9 @@
+{
+  "_doc": "Ratchet for audit-spell-display-types.ts (`just spells-coverage`). Lower these as modules are fixed; never raise them. See QA-181.",
+  "doubleDrawnGraphics": 0,
+  "fallbackPairs": 9,
+  "brokenFallbacks": 6,
+  "offsetPairs": 3,
+  "symbolPairs": 1,
+  "lifecyclePairs": 7
+}

@@ -1,0 +1,6 @@
+{
+  "_doc": "Ratchet for `just spells-coverage`. Lower these as spells are re-exported; never raise them. See doc/combat/asset-reconstruction.md.",
+  "symbolSpells": 71,
+  "refs": 129,
+  "unreadable": 1
+}

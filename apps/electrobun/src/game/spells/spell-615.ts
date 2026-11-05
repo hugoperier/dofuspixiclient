@@ -190,7 +190,9 @@ export class Spell615 extends RuntimeSpell {
     this.sprite9Sym = {
       name: "sprite9",
       totalFrames: 1,
-      frames: textures.getFrames("lib_sprite9"),
+      // sprite_9 is baked into sprite_22's composite frames: drawing it again
+      // doubled it (QA-183, `audit-spell-display-types.ts`). Scripts kept.
+      frames: [],
       anchorX: sprite9Anchor.x,
       anchorY: sprite9Anchor.y,
       onLoad: (clip, ctx) => {
@@ -230,13 +232,16 @@ export class Spell615 extends RuntimeSpell {
           (clip) => {
             // AS: DefineSprite_22/frame_1/DoAction.as — SOMA.playSound("air")
             // (sound is fired from onSpellStart since we only have callbacks there)
-            // AS: DefineSprite_22/frame_1/DoAction_2.as — position at cellTo
-            // For displayType 11 (TargetCell), the container is already at cellTo.
-            // Relative to the container, the sprite should be at (0, 0).
-            // But the canonical AS positions using _parent.cellTo world coords.
-            // Since we are a child of root (which is at cellTo), we set (0, 0).
-            clip.x = 0;
-            clip.y = 0;
+            // AS: DefineSprite_22/frame_1/DoAction_2.as
+            //   _X = _parent.cellTo.x; _Y = _parent.cellTo.y
+            // root.vars.cellTo is in the container's space (QA-182): the literal
+            // translation lands on the target under the canonical displayType as
+            // under the module's own one.
+            const cellTo = clip.parent?.vars.cellTo as
+              | { x: number; y: number }
+              | undefined;
+            clip.x = cellTo?.x ?? 0;
+            clip.y = cellTo?.y ?? 0;
           },
         ],
         [

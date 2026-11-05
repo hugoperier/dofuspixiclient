@@ -139,7 +139,8 @@ export class Spell303 extends RuntimeSpell {
           const newAlpha = clip.alpha - 2 / 100;
           clip.alpha = newAlpha;
           if (clip.alpha <= 10 / 100) {
-            clip.parent?.remove();
+            // The exported particle combines its controller and wrapper.
+            clip.remove();
           }
         }
 

@@ -156,6 +156,19 @@ const GLYPH = effect({
 });
 
 describe("glyphs", () => {
+  test("duration advances only at the caster turn and expires before its next trigger", () => {
+    const h = harness(GLYPH);
+    new TrapGlyphEffectHandler().handleGlyph(h.scope);
+    const objects = h.fight.fightMap.objects;
+    expect(objects.tickDown(h.enemy.id)).toHaveLength(0);
+    expect(objects.snapshot()[0]?.remaining).toBe(3);
+    expect(objects.tickDown(h.caster.id)).toHaveLength(0);
+    expect(objects.tickDown(h.caster.id)).toHaveLength(0);
+    expect(objects.tickDown(h.caster.id)).toHaveLength(1);
+    h.enemy.cell = CENTRE;
+    h.fight.fightMap.fireTurnStartTriggers(h.fight, h.enemy);
+    expect(h.enemy.lp).toBe(100);
+  });
   test("an enemy on the ring is hit, not just one on the centre", () => {
     const h = harness(GLYPH);
     new TrapGlyphEffectHandler().handleGlyph(h.scope);
@@ -180,15 +193,15 @@ describe("glyphs", () => {
     expect(h.enemy.lp).toBe(70);
   });
 
-  test("an ally standing in the zone is spared", () => {
+  test("an ally standing in the zone also takes glyph damage", () => {
     const h = harness(GLYPH);
     new TrapGlyphEffectHandler().handleGlyph(h.scope);
 
     h.ally.cell = CENTRE;
     h.fight.fightMap.fireTurnStartTriggers(h.fight, h.ally);
 
-    expect(h.ally.lp).toBe(100);
-    expect(h.triggers).toEqual([]);
+    expect(h.ally.lp).toBe(70);
+    expect(h.triggers).toEqual([CENTRE]);
   });
 
   test("it fires for the fighter whose turn begins, and no one else", () => {
@@ -202,7 +215,7 @@ describe("glyphs", () => {
     h.fight.fightMap.fireTurnStartTriggers(h.fight, h.ally);
 
     expect(h.enemy.lp).toBe(100);
-    expect(h.ally.lp).toBe(100);
+    expect(h.ally.lp).toBe(70);
 
     h.fight.fightMap.fireTurnStartTriggers(h.fight, h.enemy);
 

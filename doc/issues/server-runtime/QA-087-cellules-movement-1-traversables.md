@@ -9,7 +9,7 @@ session: 2
 opened: 2026-08-25
 closed:
 fixed_in:
-related: [QA-085]
+related: [QA-085, QA-179]
 files:
   - apps/gameserver-ts/src/core/modules/maps/maps.cells-codec.ts:137
   - apps/gameserver-ts/src/core/modules/maps/maps.validate-path.ts

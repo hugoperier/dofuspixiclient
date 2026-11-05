@@ -3,8 +3,8 @@ import type {
   SpellCallbacks,
   SpellContext,
 } from "@dofus/spell-runtime";
-import { SpellDisplayType } from "@dofus/spell-runtime";
 import type { Container } from "pixi.js";
+import { resolveAnchor, SpellDisplayType } from "@dofus/spell-runtime";
 
 import type { SpellVelloRenderer } from "@/game/render/spell-vello-renderer";
 import type { Scene } from "@/game/scene/scene";
@@ -12,6 +12,7 @@ import {
   type LoadedSpell,
   SpellAssetLoader,
 } from "@/game/assets/spell-asset-loader";
+import { playAnimationSound } from "@/game/audio/audio-events";
 import {
   DEFAULT_GROUND_LEVEL,
   DEFAULT_MAP_WIDTH,
@@ -24,9 +25,9 @@ import {
 } from "@/game/datacenter/cell";
 import { createLogger } from "@/utils/logger";
 
+import { effectiveDisplayType } from "./display-type";
 import { PreRenderedSpell } from "./pre-rendered-spell";
 import { SpellActor } from "./spell-actor";
-import { loadSpellClass } from "./spell-module-loader";
 
 const log = createLogger("SpellView");
 
@@ -43,6 +44,7 @@ export type SpellAnimationTypeValue =
   (typeof SpellAnimationType)[keyof typeof SpellAnimationType];
 
 export interface SpellAnimationConfig {
+  signal?: AbortSignal;
   spellId: number;
   casterCellId: number;
   targetCellId: number;
@@ -55,13 +57,14 @@ export interface SpellAnimationConfig {
   element?: number;
   /** Direction the caster is facing. True = right. Inferred from geometry if omitted. */
   casterFacingRight?: boolean;
-  /** Sound playback callback. If omitted, sound triggers are logged but not played. */
+  /** Optional per-cast sound sink; defaults to the active game audio session. */
   playSound?: (soundId: string) => void;
   /**
-   * AS2 displayType (10/11/12/20/21/30/31/40/41/50/51) — controls
-   * where the spell container is anchored. Defaults to 11 (TargetCell)
-   * which matches the most common impact-style behaviour in 1.29 and
-   * preserves the v1 fix's anchor for spells without explicit metadata.
+   * AS2 displayType (10/11/12/20/21/30/31/40/41/50/51) — where the spell
+   * container is anchored and how the harness drives it. Comes from the
+   * server (`GA;300`, `sorts.spriteInfos`) and wins over the module's own
+   * value, which is a generated guess — see `effectiveDisplayType` for the
+   * exceptions (QA-181). Without either, 11 (TargetCell).
    */
   displayType?: number;
   /**
@@ -140,16 +143,24 @@ export class SpellRenderer {
 
   /** Resolves when the spell animation completes (onComplete fires). */
   async playSpell(config: SpellAnimationConfig): Promise<void> {
+    // The catalogue explicitly uses zero/negative for pose-only effects.
+    if (config.spellId < 0) {
+      return;
+    }
     const loaded = await this.assetLoader.loadSpell(config.spellId);
+    config.signal?.throwIfAborted();
 
     if (!loaded) {
-      log.warn(
-        `spell ${config.spellId}: dofasset/manifest missing — cast resolves silently`
+      throw new Error(
+        `Visuel de sort ${config.spellId} absent : dofasset ou manifeste introuvable.`
       );
-      return;
     }
 
     const spell = await this.createSpellInstance(config.spellId, loaded);
+    if (config.signal?.aborted) {
+      spell?.destroy();
+      config.signal.throwIfAborted();
+    }
     if (!spell) {
       log.warn(`spell ${config.spellId}: createSpellInstance returned null`);
       return;
@@ -166,8 +177,9 @@ export class SpellRenderer {
     const probeName = animNames.includes("anim1") ? "anim1" : animNames[0];
     const probeFrames = probeName ? loaded.textures.getFrames(probeName) : [];
     if (probeName && probeFrames.length === 0) {
-      log.warn(
-        `spell ${config.spellId}: ${probeName} has 0 frames — check dofasset compile`
+      spell.destroy();
+      throw new Error(
+        `Visuel ${config.spellId} vide après conversion (${probeName}).`
       );
     }
 
@@ -179,24 +191,34 @@ export class SpellRenderer {
     spell: ISpellAnimation,
     loaded: LoadedSpell
   ): Promise<void> {
-    // RuntimeSpell instances expose their displayType so the harness
-    // can position the container at the canonical AS anchor (caster
-    // for 10/12/20/21/30/31/40/41, target for 11, world origin for
-    // 50/51). Legacy PreRenderedSpell + AI-generated spells have no
-    // displayType and fall back to TargetCell — that matches their
-    // historical "anchor at target" assumption.
-    const spellDisplayType =
-      (spell as { displayType?: number }).displayType ?? config.displayType;
-    const context = this.buildSpellContext(config, spellDisplayType);
+    // Server's canonical displayType over the module's guess, minus the
+    // pairs the audit found broken (display-type.ts, QA-181). RuntimeSpell
+    // reads the result back from `context.displayType` to configure its
+    // harness, so anchor and harness always agree.
+    const displayType = effectiveDisplayType(
+      config.spellId,
+      config.displayType,
+      (spell as { displayType?: number }).displayType
+    );
+    const context = this.buildSpellContext(config, displayType);
 
-    return new Promise<void>((resolve) => {
-      const actor = new SpellActor(this.scene, spell, resolve, (a) =>
-        this.activeSpells.delete(a)
+    return new Promise<void>((resolve, reject) => {
+      const actor = new SpellActor(
+        this.scene,
+        spell,
+        resolve,
+        (a) => {
+          config.signal?.removeEventListener("abort", cancel);
+          this.activeSpells.delete(a);
+        },
+        reject
       );
+      const cancel = () => this.scene.remove(actor.id);
+      config.signal?.addEventListener("abort", cancel, { once: true });
 
       const callbacks: SpellCallbacks = {
         playSound: (soundId: string) => {
-          config.playSound?.(soundId);
+          (config.playSound ?? playAnimationSound)(soundId);
         },
         onComplete: () => {
           actor.markComplete();
@@ -217,10 +239,8 @@ export class SpellRenderer {
       try {
         spell.init(context, callbacks, loaded.textures);
       } catch (err) {
-        log.warn(
-          `spell ${config.spellId}: init threw — visual will be skipped. Error: ${String(err)}`
-        );
-        resolve();
+        reject(new Error(`Animation ${config.spellId} : ${String(err)}`));
+        actor.dispose();
         return;
       }
 
@@ -241,7 +261,24 @@ export class SpellRenderer {
 
   /** Preload spell manifests + textures up-front to avoid first-cast hitches. */
   async preload(spellIds: number[]): Promise<void> {
-    await this.assetLoader.preload(spellIds);
+    const pending = [...new Set(spellIds)];
+    await Promise.all(
+      Array.from({ length: Math.min(4, pending.length) }, async () => {
+        for (let id = pending.shift(); id !== undefined; id = pending.shift()) {
+          const loaded = await this.assetLoader.loadSpell(id);
+          if (!loaded) {
+            log.error(`Préchargement du visuel ${id} impossible`);
+            continue;
+          }
+          if (loaded.manifest.spell.requiresTypeScript) {
+            const { loadSpellClass } = await import("./spell-module-loader");
+            if (!(await loadSpellClass(id))) {
+              log.error(`Module du visuel ${id} absent`);
+            }
+          }
+        }
+      })
+    );
   }
 
   private async createSpellInstance(
@@ -249,23 +286,21 @@ export class SpellRenderer {
     loaded: LoadedSpell
   ): Promise<ISpellAnimation | null> {
     if (loaded.manifest.spell.requiresTypeScript) {
+      const { loadSpellClass } = await import("./spell-module-loader");
       const SpellClass = await loadSpellClass(spellId);
       if (SpellClass) {
         try {
           return new SpellClass();
         } catch (err) {
-          log.warn(
-            `spell ${spellId}: TS class instantiation threw — falling back to PreRenderedSpell. Error: ${String(err)}`
-          );
+          throw new Error(`Initialisation du visuel ${spellId} impossible.`, {
+            cause: err,
+          });
         }
       } else {
-        log.warn(
-          `spell ${spellId}: requiresTypeScript=true but no class loaded — falling back to PreRenderedSpell (frame stepper)`
+        throw new Error(
+          `Le visuel ${spellId} nécessite un module d’animation absent.`
         );
       }
-      // Spell says it needs bespoke code but no module shipped —
-      // fall back to the generic frame-stepper so the cast doesn't
-      // hang the state machine.
     }
     return new PreRenderedSpell(spellId, loaded);
   }
@@ -280,9 +315,6 @@ export class SpellRenderer {
     const dy = to.y - from.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
     const angleDeg = (Math.atan2(dy, dx) * 180) / Math.PI;
-    // Per-spell instance displayType wins over the wire (the spell
-    // module knows the canonical AS displayType for its visual gfx);
-    // wire fallback handles legacy non-runtime spells.
     const displayType =
       overrideDisplayType ?? config.displayType ?? SpellDisplayType.TargetCell;
     const anchor = resolveAnchor(displayType, from, to);
@@ -331,7 +363,8 @@ export class SpellRenderer {
     };
   }
 
-  // Anchor table is in module scope — see resolveAnchor() at bottom.
+  // The anchor table is the runtime harness's own `resolveAnchor`, so the
+  // container origin and `root.vars.cellFrom/cellTo` agree by construction.
 
   private getCellPos(cellId: number): { x: number; y: number } {
     const cell = this.cellDataMap.get(cellId);
@@ -371,46 +404,5 @@ export class SpellRenderer {
   destroy(): void {
     this.clear();
     this.assetLoader.destroy();
-  }
-}
-
-/**
- * Map an AS2 displayType to the world coords where the spell
- * container's origin (0,0) lands. Mirrors VisualEffectHandler.as:85-232:
- *
- *   case 10 / 12        → anchor at caster (`mc._x = _loc12_.x`)
- *   case 11             → anchor at target (`mc._x = _loc13_.x`)
- *   case 20 / 21        → anchor at caster, container is rotated to
- *                         face target; "shoot" attached at delta(target)
- *   case 30 / 31        → anchor at caster (-10 y), parabolic motion
- *   case 40 / 41        → anchor at caster, beam of duplicates to target
- *   case 50 / 51        → anchor at world origin (0,0); script handles
- *                         its own positioning from cellFrom/cellTo
- *
- * Anything outside the documented set falls back to TargetCell (11),
- * matching the v1 default behaviour.
- */
-function resolveAnchor(
-  displayType: number,
-  caster: { x: number; y: number },
-  target: { x: number; y: number }
-): { x: number; y: number } {
-  switch (displayType) {
-    case SpellDisplayType.CasterCell:
-    case SpellDisplayType.CasterCellAlt:
-    case SpellDisplayType.ProjectileLinear:
-    case SpellDisplayType.ProjectileLinearAlt:
-    case SpellDisplayType.BeamLine:
-    case SpellDisplayType.BeamLineAlt:
-      return caster;
-    case SpellDisplayType.ProjectileBallistic:
-    case SpellDisplayType.ProjectileBallisticAlt:
-      return { x: caster.x, y: caster.y - 10 };
-    case SpellDisplayType.WorldAbsolute:
-    case SpellDisplayType.WorldAbsoluteAlt:
-      return { x: 0, y: 0 };
-    case SpellDisplayType.TargetCell:
-    default:
-      return target;
   }
 }

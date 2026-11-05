@@ -20,6 +20,41 @@ export const TargetMask = {
 
 export type TargetMaskValue = (typeof TargetMask)[keyof typeof TargetMask];
 
+/** Retro server exclusion mask. It is deliberately separate from the client FT mask. */
+export function matchesTargetFilter(
+  filter: number,
+  caster: Fighter,
+  target: Fighter
+): boolean {
+  const self = caster.id === target.id;
+  const ally = caster.team?.side === target.team?.side;
+  if (filter & 1024) {
+    return false;
+  }
+  if (filter & 64 && (!ally || self)) {
+    return false;
+  }
+  if (filter & 1 && ally) {
+    return false;
+  }
+  if (filter & 2 && self) {
+    return false;
+  }
+  if (filter & 4 && !ally) {
+    return false;
+  }
+  if (filter & 8 && !target.isInvocation()) {
+    return false;
+  }
+  if (filter & 16 && target.isInvocation()) {
+    return false;
+  }
+  if (filter & 32 && !self) {
+    return false;
+  }
+  return true;
+}
+
 export function isValidTarget(
   mask: number,
   caster: Fighter,
@@ -38,9 +73,7 @@ export function isValidTarget(
     return (mask & TargetMask.Self) !== 0;
   }
   const sameSide =
-    !!caster.team &&
-    !!target.team &&
-    caster.team.side === target.team.side;
+    !!caster.team && !!target.team && caster.team.side === target.team.side;
   if (sameSide) {
     return (mask & TargetMask.Ally) !== 0;
   }

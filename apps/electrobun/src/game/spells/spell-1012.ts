@@ -185,7 +185,19 @@ export class Spell1012 extends RuntimeSpell {
     // Main timeline frame_2/DoAction.as: stop() — the main timeline stops
     // after placing children; children run independently.
     // Attach both sprites so they start ticking from the next runtime frame.
-    this.root.attach(this.sprite17Sym, "sprite17", 1, context);
+    //
+    // sprite_17 (one grass blade, its own random playhead) was exported
+    // dynamically, which strips it from its parent's composite: in the SWF
+    // it lives inside sprite_18, which moves onto `_parent.cellTo` on its
+    // frame_1. Under the canonical displayType 51 the container sits at the
+    // world origin, so a blade left at the root's (0,0) was drawn at the
+    // map's corner. It follows sprite_18 onto the target instead (QA-182);
+    // kept at the root so it still draws beneath sprite_18.
+    const cellTo = this.root.vars.cellTo as { x: number; y: number };
+    this.root.attach(this.sprite17Sym, "sprite17", 1, context, {
+      x: cellTo.x,
+      y: cellTo.y,
+    });
     this.root.attach(this.sprite18Sym, "sprite18", 2, context);
   }
 }

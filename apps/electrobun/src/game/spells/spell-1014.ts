@@ -146,27 +146,17 @@ export class Spell1014 extends RuntimeSpell {
           0,
           (clip) => {
             // AS DefineSprite_17/frame_1/DoAction.as
-            // For displayType=11 (TargetCell), the container is already anchored
-            // at cellTo. The frame_1 script positions self at _parent.cellTo in
-            // world coords. Since root.vars.cellTo holds world coords and our
-            // container origin IS cellTo (anchor resolved by harness), we set
-            // the clip position to world cellTo coords relative to the container
-            // origin (which is cellTo itself), i.e. (0, 0) offset from origin.
-            // However, the canonical AS assigns _X/_Y to world coords — the clip
-            // is a direct child of root whose origin is at cellTo, so the child's
-            // local position should be (0, 0) to appear at cellTo.
-            // We faithfully set x/y from root.vars.cellTo minus anchor (= 0,0).
+            //   _X = _parent.cellTo.x; _Y = _parent.cellTo.y
+            // root.vars.cellTo is in the container's space (QA-182): the
+            // literal translation lands on the target under the canonical
+            // displayType 51 as under the module's own 11.
             const root = clip.parent;
             const cellTo = root?.vars.cellTo as
               | { x: number; y: number }
               | undefined;
-            // The container origin is at cellTo (TargetCell anchor).
-            // In container-local coords, cellTo is (0,0).
-            // Setting clip to world cellTo would offset it by the container's
-            // world position (cellTo), effectively doubling. We use (0,0).
             if (cellTo) {
-              clip.x = 0;
-              clip.y = 0;
+              clip.x = cellTo.x;
+              clip.y = cellTo.y;
             }
           },
         ],

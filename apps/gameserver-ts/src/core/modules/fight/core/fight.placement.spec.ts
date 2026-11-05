@@ -48,37 +48,21 @@ describe("PlacementState", () => {
     ]);
   });
 
-  test("overflows onto free walkable cells when the team block is too small", () => {
-    // 615 maps ship fewer team-1 cells than `maps.mob_size_max` allows, so a
-    // full group does not fit. Every monster must still get a cell: one left
-    // at -1 is alive, invisible, and makes the fight unwinnable.
-    const fight = makeFight([100, 101], [200, 201]);
-    const monsters = addMonsters(fight, 5);
-
-    new PlacementState().enter(fight);
-
-    for (const m of monsters) {
-      expect(m.cell).toBeGreaterThanOrEqual(0);
-    }
-    // No two fighters share a cell.
-    const cells = monsters.map((m) => m.cell);
-    expect(new Set(cells).size).toBe(cells.length);
+  test("rejects insufficient positions without partially placing fighters", () => {
+    const fight = makeFight([100], [200, 201]);
+    const monsters = addMonsters(fight, 3);
+    expect(() => new PlacementState().enter(fight)).toThrow("placement");
+    expect(monsters.map((fighter) => fighter.cell)).toEqual([-1, -1, -1]);
   });
 
-  test("overflow never lands on either team's placement block", () => {
-    const team0 = [100, 101];
-    const team1 = [200, 201];
-    const fight = makeFight(team0, team1);
-    const monsters = addMonsters(fight, 5);
-
-    new PlacementState().enter(fight);
-
-    const reserved = new Set([...team0, ...team1]);
-    const overflowed = monsters.filter((m) => !team1.includes(m.cell));
-    expect(overflowed.length).toBe(3);
-    for (const m of overflowed) {
-      expect(reserved.has(m.cell)).toBe(false);
-    }
+  test("rejects overlapping and non-walkable placement cells", () => {
+    const fight = makeFight([100], [100]);
+    addMonsters(fight, 1);
+    expect(() => new PlacementState().enter(fight)).toThrow("placement");
+    const blocked = makeFight([100], [200]);
+    blocked.fightMap.setWalkableCells([100]);
+    addMonsters(blocked, 1);
+    expect(() => new PlacementState().enter(blocked)).toThrow("placement");
   });
 
   test("cell id 0 is a usable placement cell, not a falsy 'no room'", () => {

@@ -28,8 +28,10 @@ export type Shortcut =
   | "GUILD"
   | "MOUNT"
   | "JOBS"
+  | "OPTIONS"
   // ── Hotbar ───────────────────────────────────────────────
   | "SWAP"
+  | "SH0"
   | HotbarShortcut
   // ── Debug tooling (not in legacy) ────────────────────────
   | "DEBUG_TOGGLE"
@@ -41,8 +43,9 @@ export type Shortcut =
 /**
  * `SH1`..`SH14` — one per cell of the shortcut bar. The legacy client
  * names them the same way (`MouseShortcuts.onShortcut` switches on
- * `"SH" + n`); `SH0` is the melee-attack container, which this hotbar
- * does not have yet.
+ * `"SH" + n`). `SH0` is the melee-attack container and is declared
+ * separately, because it is not a cell of the 14-slot grid: it holds
+ * the equipped weapon and never takes a drop.
  */
 export type HotbarShortcut =
   `SH${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14}`;
@@ -73,55 +76,74 @@ export interface ChordKey {
 }
 
 /**
- * Default bindings — picked to match documented Dofus 1.29 conventions where
- * the legacy `SHORTCUTS_DEFAULT_SET` SharedObject specified them. See
- * `dofus/utils/DofusTranslator.as:getKeyboardShortcuts()` for the indirection.
+ * Default bindings.
+ *
+ * Most are read out of the retail lang bundle rather than guessed:
+ * `assets/dist/langs/fr/shortcuts.json`, table `SSK`, default set 1
+ * (`Clavier français - France`). A shortcut may carry more than one
+ * chord — the retail table has the same notion, as the `k2`/`c2`
+ * columns on `CODE_CLEAR` show, and the melee slot needs it.
+ *
+ * Three entries deliberately diverge from that bundle:
+ *
+ *   - `SWAP` is `Maj+<` where retail binds a bare `<`. A bare `<` is a
+ *     printable character and swallowing it costs a key that chat and
+ *     future text fields want.
+ *   - `NEXTTURN` is `Ctrl+Fin` where retail binds `F1`. `F1` is the
+ *     browser's help key and cannot be reliably intercepted here.
+ *   - `SH0` adds `0` alongside retail's `²`, which does not exist on
+ *     every keyboard this client runs on.
+ *
+ * All three are rebindable from the options panel; retail's values are
+ * legal targets there.
  */
-const DEFAULT_BINDINGS: Record<Shortcut, ChordKey> = {
-  ESCAPE: { key: "escape" },
-  ACCEPT_CURRENT_DIALOG: { key: "enter" },
-  NEXTTURN: { key: "f1" },
+const DEFAULT_BINDINGS: Record<Shortcut, ChordKey[]> = {
+  ESCAPE: [{ key: "escape" }],
+  ACCEPT_CURRENT_DIALOG: [{ key: "enter" }],
+  NEXTTURN: [{ key: "end", ctrl: true }],
 
-  CHARAC: { key: "c" },
-  SPELLS: { key: "s" },
-  INVENTORY: { key: "i" },
-  QUESTS: { key: "q" },
-  MAP: { key: "m" },
-  FRIENDS: { key: "f" },
-  GUILD: { key: "g" },
-  MOUNT: { key: "u" },
-  JOBS: { key: "j" },
+  CHARAC: [{ key: "c" }],
+  SPELLS: [{ key: "s" }],
+  INVENTORY: [{ key: "i" }],
+  QUESTS: [{ key: "q" }],
+  MAP: [{ key: "m" }],
+  FRIENDS: [{ key: "f" }],
+  GUILD: [{ key: "g" }],
+  MOUNT: [{ key: "u" }],
+  JOBS: [{ key: "j" }],
+  OPTIONS: [{ key: "o" }],
 
-  // Read out of the retail lang bundle rather than guessed:
-  // `assets/dist/langs/fr/shortcuts.json`, table `SSK`, default set 1
-  // (`Clavier français - France`). Top row 1..7 are the bare digits,
-  // bottom row A..G are the same digits with Ctrl, and SWAP — the
-  // Spells/Items toggle — is `<` (keycode 226).
-  SWAP: { key: "<" },
-  SH1: { key: "1" },
-  SH2: { key: "2" },
-  SH3: { key: "3" },
-  SH4: { key: "4" },
-  SH5: { key: "5" },
-  SH6: { key: "6" },
-  SH7: { key: "7" },
-  SH8: { key: "1", ctrl: true },
-  SH9: { key: "2", ctrl: true },
-  SH10: { key: "3", ctrl: true },
-  SH11: { key: "4", ctrl: true },
-  SH12: { key: "5", ctrl: true },
-  SH13: { key: "6", ctrl: true },
-  SH14: { key: "7", ctrl: true },
+  // Top row 1..7 are the bare digits, bottom row the same digits with
+  // Ctrl, and SH0 — the weapon / close-combat container — is `²`.
+  SWAP: [{ key: "<", shift: true }],
+  SH0: [{ key: "²" }, { key: "0" }],
+  SH1: [{ key: "1" }],
+  SH2: [{ key: "2" }],
+  SH3: [{ key: "3" }],
+  SH4: [{ key: "4" }],
+  SH5: [{ key: "5" }],
+  SH6: [{ key: "6" }],
+  SH7: [{ key: "7" }],
+  SH8: [{ key: "1", ctrl: true }],
+  SH9: [{ key: "2", ctrl: true }],
+  SH10: [{ key: "3", ctrl: true }],
+  SH11: [{ key: "4", ctrl: true }],
+  SH12: [{ key: "5", ctrl: true }],
+  SH13: [{ key: "6", ctrl: true }],
+  SH14: [{ key: "7", ctrl: true }],
 
-  DEBUG_TOGGLE: { key: "d" },
-  DEBUG_GRID: { key: "g", shift: true },
-  DEBUG_TRANSPARENCY: { key: "v" },
-  ADMIN: { key: "a", ctrl: true, shift: true },
+  DEBUG_TOGGLE: [{ key: "d" }],
+  DEBUG_GRID: [{ key: "g", shift: true }],
+  DEBUG_TRANSPARENCY: [{ key: "v" }],
+  ADMIN: [{ key: "a", ctrl: true, shift: true }],
 };
 
 const STORAGE_KEY = "dofus.keybindings.v1";
 
 type ShortcutHandler = () => void;
+
+/** Persisted overrides, before normalisation. */
+type StoredChords = ChordKey | ChordKey[];
 
 function chordKey(e: KeyboardEvent): string {
   return e.key.toLowerCase();
@@ -136,10 +158,56 @@ function chordsEqual(a: ChordKey, b: ChordKey): boolean {
 }
 
 /**
+ * Render a chord the way the retail options window does — `Ctrl+Fin`,
+ * `Maj+<`, `²`. `shortcuts.json` ships the same strings in its `s`
+ * column, so the options panel reads like the one players know.
+ */
+export function formatChord(chord: ChordKey): string {
+  const parts: string[] = [];
+
+  if (chord.ctrl) {
+    parts.push("Ctrl");
+  }
+
+  if (chord.shift) {
+    parts.push("Maj");
+  }
+
+  parts.push(KEY_LABELS[chord.key.toLowerCase()] ?? chord.key.toUpperCase());
+  return parts.join("+");
+}
+
+/** Keys whose `KeyboardEvent.key` is not what a player would recognise. */
+const KEY_LABELS: Record<string, string> = {
+  " ": "Espace",
+  arrowdown: "Bas",
+  arrowleft: "Gauche",
+  arrowright: "Droite",
+  arrowup: "Haut",
+  delete: "Suppr",
+  end: "Fin",
+  enter: "Entrée",
+  escape: "Échap.",
+  home: "Origine",
+  pagedown: "Page bas",
+  pageup: "Page haut",
+  tab: "Tab",
+};
+
+/**
+ * Normalise one persisted entry. v1 of the storage format held a single
+ * chord per shortcut; reading it as a list keeps a profile written
+ * before the melee slot existed instead of silently resetting it.
+ */
+function toChordList(stored: StoredChords): ChordKey[] {
+  return Array.isArray(stored) ? stored : [stored];
+}
+
+/**
  * Load overrides persisted in localStorage (mirrors KeyManager's SharedObject).
  * Never throws — malformed data resets to defaults.
  */
-function loadOverrides(): Partial<Record<Shortcut, ChordKey>> {
+function loadOverrides(): Partial<Record<Shortcut, ChordKey[]>> {
   try {
     const raw = globalThis.localStorage?.getItem(STORAGE_KEY);
 
@@ -147,14 +215,27 @@ function loadOverrides(): Partial<Record<Shortcut, ChordKey>> {
       return {};
     }
 
-    const parsed = JSON.parse(raw) as Partial<Record<Shortcut, ChordKey>>;
-    return typeof parsed === "object" && parsed !== null ? parsed : {};
+    const parsed = JSON.parse(raw) as Partial<Record<Shortcut, StoredChords>>;
+
+    if (typeof parsed !== "object" || parsed === null) {
+      return {};
+    }
+
+    const out: Partial<Record<Shortcut, ChordKey[]>> = {};
+
+    for (const [shortcut, stored] of Object.entries(parsed)) {
+      if (stored) {
+        out[shortcut as Shortcut] = toChordList(stored);
+      }
+    }
+
+    return out;
   } catch {
     return {};
   }
 }
 
-function saveOverrides(overrides: Partial<Record<Shortcut, ChordKey>>): void {
+function saveOverrides(overrides: Partial<Record<Shortcut, ChordKey[]>>): void {
   try {
     globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify(overrides));
   } catch {
@@ -168,11 +249,11 @@ function saveOverrides(overrides: Partial<Record<Shortcut, ChordKey>>): void {
  * legacy KeyManager.
  */
 export class Keybindings {
-  private bindings: Record<Shortcut, ChordKey>;
+  private bindings: Record<Shortcut, ChordKey[]>;
   private readonly handlers = new Map<Shortcut, ShortcutHandler>();
   private onKeyDown: ((e: KeyboardEvent) => void) | null = null;
 
-  constructor(overrides?: Partial<Record<Shortcut, ChordKey>>) {
+  constructor(overrides?: Partial<Record<Shortcut, ChordKey[]>>) {
     const persisted = loadOverrides();
     this.bindings = {
       ...DEFAULT_BINDINGS,
@@ -191,22 +272,47 @@ export class Keybindings {
     this.handlers.delete(shortcut);
   }
 
-  /** Rebind and persist. */
-  rebind(shortcut: Shortcut, chord: ChordKey): void {
-    this.bindings[shortcut] = chord;
+  /** Rebind and persist. Accepts one chord or a list of alternatives. */
+  rebind(shortcut: Shortcut, chords: ChordKey | ChordKey[]): void {
+    const list = toChordList(chords);
+    this.bindings[shortcut] = list;
     const overrides = loadOverrides();
-    overrides[shortcut] = chord;
+    overrides[shortcut] = list;
     saveOverrides(overrides);
   }
 
-  /** Current chord for a shortcut. */
-  getChord(shortcut: Shortcut): ChordKey {
+  /** Primary chord for a shortcut — the one an options row edits. */
+  getChord(shortcut: Shortcut): ChordKey | undefined {
+    return this.bindings[shortcut][0];
+  }
+
+  /** Every chord bound to a shortcut, primary first. */
+  getChords(shortcut: Shortcut): readonly ChordKey[] {
     return this.bindings[shortcut];
   }
 
   /** All current bindings — read-only snapshot. */
-  getAll(): Readonly<Record<Shortcut, ChordKey>> {
+  getAll(): Readonly<Record<Shortcut, ChordKey[]>> {
     return { ...this.bindings };
+  }
+
+  /**
+   * The shortcut already answering to `chord`, if any. The options panel
+   * asks before it writes, so a rebind cannot quietly shadow another
+   * action.
+   */
+  findConflict(chord: ChordKey, except?: Shortcut): Shortcut | undefined {
+    for (const [shortcut, bound] of Object.entries(this.bindings)) {
+      if (shortcut === except) {
+        continue;
+      }
+
+      if (bound.some((candidate) => chordsEqual(chord, candidate))) {
+        return shortcut as Shortcut;
+      }
+    }
+
+    return undefined;
   }
 
   /** Reset to defaults, clearing persisted overrides. */
@@ -236,7 +342,7 @@ export class Keybindings {
       };
 
       for (const [shortcut, bound] of Object.entries(this.bindings)) {
-        if (!chordsEqual(chord, bound)) {
+        if (!bound.some((candidate) => chordsEqual(chord, candidate))) {
           continue;
         }
 
@@ -266,6 +372,13 @@ export class Keybindings {
     this.handlers.clear();
   }
 
+  /**
+   * The one guard that keeps combat keys out of the chat.
+   *
+   * Every fight shortcut is a printable character — the bare digits, `²`,
+   * `<` — so without this, typing "1234" in the chat would select four
+   * spells. `KeyManager.as` gates on `Selection.getFocus()` the same way.
+   */
   private isTypingInInput(target: EventTarget | null): boolean {
     if (!(target instanceof HTMLElement)) {
       return false;
@@ -280,3 +393,61 @@ export class Keybindings {
     );
   }
 }
+
+/**
+ * The process-wide dispatcher.
+ *
+ * `MapRenderer` registers the handlers and owns `attach()` / `destroy()`;
+ * the options panel reads and rewrites the bindings. Both need the same
+ * instance, and a second one would answer the same keys twice.
+ */
+export const keybindings = new Keybindings();
+
+/**
+ * The rows of the options panel, grouped and ordered the way the retail
+ * shortcut window lists them. Debug bindings are deliberately absent:
+ * they have no 1.29 counterpart and rebinding them is not a player
+ * concern.
+ */
+export const SHORTCUT_GROUPS: readonly {
+  title: string;
+  entries: readonly { shortcut: Shortcut; label: string }[];
+}[] = [
+  {
+    title: "Combat",
+    entries: [
+      { shortcut: "NEXTTURN", label: "Terminer le tour" },
+      { shortcut: "SH0", label: "Attaque avec l'arme / CàC" },
+      { shortcut: "SWAP", label: "Basculer Sorts / Objets" },
+    ],
+  },
+  {
+    title: "Barre de raccourcis — première ligne",
+    entries: HOTBAR_SHORTCUTS.slice(0, 7).map((shortcut, i) => ({
+      shortcut,
+      label: `Raccourci ${i + 1}`,
+    })),
+  },
+  {
+    title: "Barre de raccourcis — deuxième ligne",
+    entries: HOTBAR_SHORTCUTS.slice(7).map((shortcut, i) => ({
+      shortcut,
+      label: `Raccourci ${i + 8}`,
+    })),
+  },
+  {
+    title: "Fenêtres",
+    entries: [
+      { shortcut: "CHARAC", label: "Caractéristiques" },
+      { shortcut: "SPELLS", label: "Sorts" },
+      { shortcut: "INVENTORY", label: "Inventaire" },
+      { shortcut: "QUESTS", label: "Quêtes" },
+      { shortcut: "MAP", label: "Carte du monde" },
+      { shortcut: "FRIENDS", label: "Amis" },
+      { shortcut: "GUILD", label: "Guilde" },
+      { shortcut: "MOUNT", label: "Monture" },
+      { shortcut: "JOBS", label: "Métiers" },
+      { shortcut: "OPTIONS", label: "Options" },
+    ],
+  },
+];

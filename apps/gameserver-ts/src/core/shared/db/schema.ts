@@ -53,6 +53,25 @@ export type AccountRow = Selectable<AccountsTable>;
 export type NewAccount = Insertable<AccountsTable>;
 export type AccountUpdate = Updateable<AccountsTable>;
 
+/**
+ * One row per successful login. Read only to name the *previous*
+ * connection in the welcome line — `accounts.lastLoginAt` is already the
+ * current one by the time the player reaches enter-game.
+ */
+export interface AccountLoginsTable {
+  id: Generated<string>;
+  accountId: string;
+  // Spelled out rather than `Generated<TimestampTz>`: nesting one
+  // ColumnType inside another hides the `Date` select type, and this is
+  // the one timestamp in the schema a query actually reads back.
+  at: ColumnType<Date, Date | string | undefined, never>;
+  ip: string | null;
+}
+
+export type AccountLoginRow = Selectable<AccountLoginsTable>;
+export type NewAccountLogin = Insertable<AccountLoginsTable>;
+export type AccountLoginUpdate = Updateable<AccountLoginsTable>;
+
 export interface AdminCommandAuditTable {
   requestId: string;
   actorAccountId: string;
@@ -357,8 +376,19 @@ export interface ItemTemplatesTable {
   sellPrice: number;
   maxPerTarget: number;
   description: string;
-  /** `items.json`'s `an`; roleplay default is `anim3`. */
-  animationId: number;
+  /**
+   * `items.json`'s `an`, null when the bundle names none. The default
+   * depends on where the item is used — `anim3` for a harvest, `anim0`
+   * for a swing in a fight (`PlayableCharacter.ToolAnimation`) — so it
+   * is applied by the reader, not stored.
+   */
+  animationId: number | null;
+  /**
+   * Close-combat statistics for a weapon — `WeaponInfo`, or null for
+   * everything that is not swung. `migrations/0065` seeds it from the
+   * lang bundle; `fight.close-combat.ts` is the only reader.
+   */
+  weaponInfo: Json | null;
 }
 
 export type ItemTemplateRow = Selectable<ItemTemplatesTable>;
@@ -405,6 +435,17 @@ export interface SpellTemplatesTable {
   id: number;
   name: string;
   sprite: number;
+  /**
+   * `sorts.spriteInfos`, imported by 0068 — what 1.29 sends after the gfx
+   * id in `GA;300`. `displayType` is how the client anchors the visual
+   * (10/12 caster, 11 target, 20/21 linear, 30/31 ballistic, 40/41 beam,
+   * 50/51 world); `castAnimation` the caster's `anim<n>` pose;
+   * `spriteInFront` the side of the caster sprite the effect is layered
+   * on. NULL for a spell the dump does not describe.
+   */
+  displayType: number | null;
+  castAnimation: number | null;
+  spriteInFront: boolean | null;
 }
 
 export type SpellTemplateRow = Selectable<SpellTemplatesTable>;
@@ -412,6 +453,8 @@ export type NewSpellTemplate = Insertable<SpellTemplatesTable>;
 export type SpellTemplateUpdate = Updateable<SpellTemplatesTable>;
 
 export interface SpellLevelsTable {
+  requiredStates: Generated<Json>;
+  forbiddenStates: Generated<Json>;
   spellId: number;
   level: number;
   effects: Json;
@@ -1969,6 +2012,7 @@ export type ProvisioningRequestUpdate = Updateable<ProvisioningRequestsTable>;
 export type DB = {
   adminCommandAudit: AdminCommandAuditTable;
   accounts: AccountsTable;
+  accountLogins: AccountLoginsTable;
   gameServers: GameServersTable;
   accountServers: AccountServersTable;
   authTickets: AuthTicketsTable;
@@ -1991,6 +2035,11 @@ export type DB = {
   itemSuperTypes: ItemSuperTypesTable;
   spellTemplates: SpellTemplatesTable;
   spellLevels: SpellLevelsTable;
+  summonGrades: {
+    templateId: number;
+    grade: number;
+    data: import("@modules/spells/combat-catalog.types").SummonTemplate;
+  };
   monsterAiProfiles: MonsterAiProfilesTable;
   monsterTemplates: MonsterTemplatesTable;
   monsterLevels: MonsterLevelsTable;

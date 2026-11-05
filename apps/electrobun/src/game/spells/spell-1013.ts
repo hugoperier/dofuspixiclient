@@ -113,7 +113,9 @@ export class Spell1013 extends RuntimeSpell {
     this.sprite14Sym = {
       name: "sprite14",
       totalFrames: 1,
-      frames: textures.getFrames("lib_sprite14"),
+      // sprite_14 is baked into sprite_25's composite frames: drawing it again
+      // doubled it (QA-183, `audit-spell-display-types.ts`). Scripts kept.
+      frames: [],
       anchorX: sprite14Anchor.x,
       anchorY: sprite14Anchor.y,
       onEnterFrame: (clip) => {
@@ -177,7 +179,9 @@ export class Spell1013 extends RuntimeSpell {
     this.sprite24v14Sym = {
       name: "sprite_24_v14",
       totalFrames: 24,
-      frames: textures.getFrames("sprite_24"),
+      // sprite_24 is baked into sprite_25's composite frames: drawing it again
+      // doubled it (QA-183, `audit-spell-display-types.ts`). Scripts kept.
+      frames: [],
       anchorX: sprite24Anchor.x,
       anchorY: sprite24Anchor.y,
       onLoad: (clip) => {
@@ -212,7 +216,9 @@ export class Spell1013 extends RuntimeSpell {
     this.sprite24v7aSym = {
       name: "sprite_24_v7a",
       totalFrames: 24,
-      frames: textures.getFrames("sprite_24"),
+      // sprite_24 is baked into sprite_25's composite frames: drawing it again
+      // doubled it (QA-183, `audit-spell-display-types.ts`). Scripts kept.
+      frames: [],
       anchorX: sprite24Anchor.x,
       anchorY: sprite24Anchor.y,
       onLoad: (clip) => {
@@ -244,7 +250,9 @@ export class Spell1013 extends RuntimeSpell {
     this.sprite24v7bSym = {
       name: "sprite_24_v7b",
       totalFrames: 24,
-      frames: textures.getFrames("sprite_24"),
+      // sprite_24 is baked into sprite_25's composite frames: drawing it again
+      // doubled it (QA-183, `audit-spell-display-types.ts`). Scripts kept.
+      frames: [],
       anchorX: sprite24Anchor.x,
       anchorY: sprite24Anchor.y,
       onLoad: (clip) => {
@@ -276,7 +284,9 @@ export class Spell1013 extends RuntimeSpell {
     this.sprite24v7cSym = {
       name: "sprite_24_v7c",
       totalFrames: 24,
-      frames: textures.getFrames("sprite_24"),
+      // sprite_24 is baked into sprite_25's composite frames: drawing it again
+      // doubled it (QA-183, `audit-spell-display-types.ts`). Scripts kept.
+      frames: [],
       anchorX: sprite24Anchor.x,
       anchorY: sprite24Anchor.y,
       onLoad: (clip) => {
@@ -308,7 +318,9 @@ export class Spell1013 extends RuntimeSpell {
     this.sprite24v21Sym = {
       name: "sprite_24_v21",
       totalFrames: 24,
-      frames: textures.getFrames("sprite_24"),
+      // sprite_24 is baked into sprite_25's composite frames: drawing it again
+      // doubled it (QA-183, `audit-spell-display-types.ts`). Scripts kept.
+      frames: [],
       anchorX: sprite24Anchor.x,
       anchorY: sprite24Anchor.y,
       onLoad: (clip) => {

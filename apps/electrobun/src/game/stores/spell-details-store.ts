@@ -31,6 +31,7 @@ export interface SpellDetailLevel {
   cooldown: number;
   minPlayerLevel: number;
   critFailureEndsTurn: boolean;
+  combatUnavailableReason?: string;
   effects: SpellDetailEffect[];
   criticalEffects: SpellDetailEffect[];
 }
@@ -97,6 +98,7 @@ export function applySpellDetails(details: SpellDetails): void {
       cooldown: l.cooldown,
       minPlayerLevel: l.minPlayerLevel,
       critFailureEndsTurn: l.critFailureEndsTurn,
+      combatUnavailableReason: l.combatUnavailableReason,
       effects: l.effects.map(toEffect),
       criticalEffects: l.criticalEffects.map(toEffect),
     })),

@@ -1,0 +1,7 @@
+[test]
+# Scope the test runner to src/. Left at the default ".", bun walks the whole
+# app directory looking for test files, public/assets included — 5.8 GB of
+# published sprite sheets. It runs out of file descriptors partway through
+# (EMFILE) and exits 1 without printing a single line, so `bun test` looked
+# like every spec in the client was failing. No spec lives outside src/.
+root = "src"

@@ -50,6 +50,7 @@ export function SpellTypeSelect({
   return (
     <div ref={rootRef} style={{ position: "relative", height: "100%" }}>
       <button
+        data-audio="click3"
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -103,6 +104,7 @@ export function SpellTypeSelect({
         >
           {OPTIONS.map((option) => (
             <button
+              data-audio="click3"
               key={option.value}
               type="button"
               role="option"

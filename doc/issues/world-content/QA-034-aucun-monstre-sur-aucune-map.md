@@ -9,7 +9,7 @@ session: 1
 opened: 2026-08-20
 closed:
 fixed_in:
-related: [QA-035, QA-058]
+related: [QA-035]
 files: [apps/gameserver-ts/scripts/import-starloco-content.ts]
 ---
 
@@ -47,4 +47,4 @@ Vérifié en session : `[MapMonsterService] spawned 3 monster groups on map=7448
 puis `sending GM: self=1 cell=289 … + 3 monster groups`, les groupes arrivant au
 client avec noms, niveaux et gfx (`Bouftou(lvl3,gfx1566)`, `Arakne(lvl1,…)`).
 
-**Reste à jouer un combat réel pour clore** — voir QA-058.
+**Reste à jouer un combat réel pour clore.**

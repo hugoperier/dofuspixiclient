@@ -2,12 +2,15 @@ import type { MountDisplay } from "@dofus/proto";
 import { Sprite } from "pixi.js";
 
 import type { ActivePlayer } from "@/game/scene/player/types";
+import { carryingAnimation } from "@/game/assets/carried-anchors";
 import {
   type CharacterAnimation,
   type CharacterSpriteLoader,
   getDirectionSuffix,
   isDirectionFlipped,
 } from "@/game/assets/character-sprite";
+import { playAnimationSound } from "@/game/audio/audio-events";
+import { playFrameSounds } from "@/game/audio/sprite-sounds";
 import {
   isOneShotAnimation,
   updateFrameAnimation,
@@ -25,10 +28,15 @@ const CHEVAUCHOR_ID_OFFSET = 1_000_000;
  * passes in, which lets PlayerRenderer stay a pure coordinator.
  */
 export class PlayerSpriteController {
+  private readonly soundFrames = new WeakMap<
+    ActivePlayer,
+    { animation: CharacterAnimation; frame: number }
+  >();
   constructor(
     private readonly spriteLoader: CharacterSpriteLoader,
     private readonly fighterExists: (id: number) => boolean,
-    private readonly playerCount: () => number
+    private readonly playerCount: () => number,
+    private readonly playSound: (name: string) => void = playAnimationSound
   ) {}
 
   /**
@@ -97,6 +105,7 @@ export class PlayerSpriteController {
    * the async load completes.
    */
   switch(player: ActivePlayer, baseAnim: string, direction: number): void {
+    baseAnim = carryingAnimation(baseAnim, player.carrying ?? false);
     const animName = `${baseAnim}${getDirectionSuffix(direction)}`;
 
     // Same anim name but direction may have flipped (e.g., SE unflipped vs SW flipped).
@@ -125,6 +134,7 @@ export class PlayerSpriteController {
     }
 
     const anim = player.currentAnimData;
+    this.soundFrame(player);
     // Atlas mode: textures.length=1 but real frame count lives in frameCount.
     const realFrameCount = anim.frameCount ?? anim.textures.length;
     const frameState = {
@@ -137,6 +147,7 @@ export class PlayerSpriteController {
 
     player.frameIndex = frameState.frameIndex;
     player.frameTimer = frameState.frameTimer;
+    this.soundFrame(player);
 
     if (anim.resolveFrame) {
       const tex = anim.resolveFrame(player.frameIndex);
@@ -277,6 +288,14 @@ export class PlayerSpriteController {
       player.frameTimer = 0;
     }
 
+    // Direction changes preserve phase and must not replay the current cue.
+    if (sameCycle) {
+      this.soundFrames.set(player, { animation, frame: player.frameIndex });
+    } else {
+      this.soundFrames.delete(player);
+      this.soundFrame(player);
+    }
+
     if (player.placeholderGraphics) {
       player.container.removeChild(player.placeholderGraphics);
       player.placeholderGraphics.destroy();
@@ -292,6 +311,7 @@ export class PlayerSpriteController {
       sprite.x = flipped ? -animation.offsetX : animation.offsetX;
       sprite.y = animation.offsetY;
       sprite.zIndex = 0;
+      sprite.visible = !player.artworkHidden;
       player.container.addChild(sprite);
       player.sprite = sprite;
     } else {
@@ -303,6 +323,30 @@ export class PlayerSpriteController {
 
     if (player.isMounting) {
       this.applyMount(player, animName, flipped);
+    }
+  }
+
+  private soundFrame(player: ActivePlayer): void {
+    const animation = player.currentAnimData;
+    if (!animation) {
+      return;
+    }
+    const previous = this.soundFrames.get(player);
+    if (
+      previous?.animation === animation &&
+      previous.frame === player.frameIndex
+    ) {
+      return;
+    }
+    this.soundFrames.set(player, { animation, frame: player.frameIndex });
+    // Harvest already owns its canonical/custom per-job sound pair. In
+    // particular fishing must not play flotteur twice on the same swing.
+    if (player.animation !== "harvest") {
+      playFrameSounds(
+        animation.sounds ?? [],
+        player.frameIndex,
+        this.playSound
+      );
     }
   }
 

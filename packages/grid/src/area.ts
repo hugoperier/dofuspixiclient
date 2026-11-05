@@ -1,6 +1,6 @@
 import { match } from "ts-pattern";
 
-import { cellToCoord } from "./cell.ts";
+import { cellToCoord, totalCells } from "./cell.ts";
 
 export const AreaKind = {
   None: 0,
@@ -30,6 +30,48 @@ export interface FightMapLos extends FightMapDims {
    * keep working.
    */
   losBlocked?(cell: number): boolean;
+}
+
+export interface CastGeometry {
+  rangeMin: number;
+  rangeMax: number;
+  rangeBonus: number;
+  modifiableRange: boolean;
+  lineOnly: boolean;
+  lineOfSight: boolean;
+  emptyCell: boolean;
+}
+
+/** Geometry only: the server also checks ownership, resources, states and usage. */
+export function castGeometryError(
+  fmap: FightMapLos,
+  from: number,
+  to: number,
+  rules: CastGeometry
+): string | null {
+  if (!inBounds(fmap, from) || !inBounds(fmap, to)) {
+    return "bad_cell";
+  }
+  const max = Math.max(
+    rules.rangeMin,
+    rules.rangeMax + (rules.modifiableRange ? rules.rangeBonus : 0)
+  );
+  const range = fightDistance(fmap, from, to);
+  if (range < rules.rangeMin || range > max) {
+    return "out_of_range";
+  }
+  const a = cellToCoord(from, fmap.width);
+  const b = cellToCoord(to, fmap.width);
+  if (rules.lineOnly && a.x !== b.x && a.y !== b.y) {
+    return "not_in_line";
+  }
+  if (rules.emptyCell && fmap.occupantOf(to) !== undefined) {
+    return "occupied_cell";
+  }
+  if (rules.lineOfSight && !hasLineOfSight(fmap, from, to)) {
+    return "no_los";
+  }
+  return null;
 }
 
 function directionDelta(dir: number, width: number): number {
@@ -64,8 +106,20 @@ const CARDINAL_DIRECTIONS = [1, 3, 5, 7] as const;
 const STRAIGHT_DIRECTIONS = [0, 2, 4, 6] as const;
 
 function inBounds(fmap: FightMapDims, cell: number): boolean {
-  const total = fmap.width * fmap.height * 2;
-  return cell >= 0 && cell < total;
+  return (
+    Number.isInteger(cell) &&
+    cell >= 0 &&
+    cell < totalCells(fmap.width, fmap.height)
+  );
+}
+
+function validStep(fmap: FightMapDims, from: number, to: number): boolean {
+  if (!inBounds(fmap, from) || !inBounds(fmap, to)) {
+    return false;
+  }
+  const a = cellToCoord(from, fmap.width);
+  const b = cellToCoord(to, fmap.width);
+  return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) === 1;
 }
 
 function projectLine(
@@ -79,12 +133,11 @@ function projectLine(
   const delta = directionDelta(dir, fmap.width);
 
   for (let i = 0; i < steps; i++) {
-    cell += delta;
-
-    if (!inBounds(fmap, cell)) {
+    const next = cell + delta;
+    if (!validStep(fmap, cell, next)) {
       break;
     }
-
+    cell = next;
     out.push(cell);
   }
 
@@ -105,7 +158,7 @@ function dominantDirection(
   // (N/E/S/W in pixels = STRAIGHT_DIRECTIONS in cellId terms).
   // D (DiagonalLine) zones extend along a screen-diagonal axis
   // (NE/SE/SW/NW = CARDINAL_DIRECTIONS in cellId terms).
-  const candidates = diagonal ? CARDINAL_DIRECTIONS : STRAIGHT_DIRECTIONS;
+  const candidates = diagonal ? STRAIGHT_DIRECTIONS : CARDINAL_DIRECTIONS;
   let best: number = candidates[0] ?? 0;
   let bestScore = -1;
 
@@ -140,6 +193,9 @@ export function cellsInArea(
   kind: AreaKind,
   size: number
 ): number[] {
+  if (!inBounds(fmap, origin)) {
+    return [];
+  }
   return match(kind)
     .with(AreaKind.None, () => [origin])
     .with(AreaKind.Cross, () => crossCells(fmap, origin, size))
@@ -160,11 +216,9 @@ function crossCells(
   origin: number,
   size: number
 ): number[] {
-  // X zones (Xa, Xb, …) draw a "+" on screen: 4 lines extending
-  // visually N / E / S / W. Those visual axes correspond to the
-  // 2-cell-jump directions on the iso grid (cellId offsets ±1, ±stride).
+  // Retail Zone.drawCross walks ±width and ±(width-1), adjacent diamonds.
   const out = [origin];
-  for (const dir of STRAIGHT_DIRECTIONS) {
+  for (const dir of CARDINAL_DIRECTIONS) {
     out.push(...projectLine(fmap, origin, dir, size));
   }
   return out;
@@ -179,7 +233,7 @@ function perpCrossCells(
   // NE / SE / SW / NW (the iso-screen diagonals). Those map to the
   // adjacent-cell directions on the iso grid (cellId offsets ±W, ±(W-1)).
   const out = [origin];
-  for (const dir of CARDINAL_DIRECTIONS) {
+  for (const dir of STRAIGHT_DIRECTIONS) {
     out.push(...projectLine(fmap, origin, dir, size));
   }
   return out;
@@ -242,7 +296,7 @@ function bfsCells(
     for (const dir of directions) {
       const n = cell + directionDelta(dir, fmap.width);
 
-      if (!inBounds(fmap, n) || seen.has(n)) {
+      if (!validStep(fmap, cell, n) || seen.has(n)) {
         continue;
       }
 
@@ -272,86 +326,122 @@ function ringCells(
 }
 
 /**
- * Bresenham line-of-sight in Dofus 1.29 isometric grid coordinates.
+ * The iso `(x, y)` cells a sight line crosses from `from` to `to`, in
+ * walk order, `from` excluded and `to` included.
  *
- * The original AS algorithm (Pathfinding.as / MapHandler.as) walks a
- * straight line in iso-cell-space (the `(x, y)` returned by
- * `cellToCoord`, which is the same space the server uses in its own
- * checkSight). For each intermediate cell along that line, LoS is
- * blocked by:
- *   1. The cell being out of map bounds.
- *   2. The cell carrying `lineOfSight = false` (walls, decorations).
- *   3. A living fighter occupying the cell (caller-supplied via
- *      `occupantOf`; the caller is responsible for filtering out dead
- *      fighters and the caster/target endpoints if they should be
- *      transparent — endpoints ARE transparent here, see below).
+ * A literal port of retail `Pathfinding.getCellsIdBetween`
+ * (`assets/sources/client-code/ank/battlefield/utils/Pathfinding.as`),
+ * arithmetic included, so near-corner ties resolve as they do in 1.29.
+ * It is a grid traversal from cell centre to cell centre that steps one
+ * axis at a time, so every cell the segment passes through is visited.
+ * It moves diagonally only when the segment crosses a grid corner
+ * exactly (`|tMaxX - tMaxY| < 1e-10`).
  *
- * The endpoints (`from` and `to`) are intentionally exempt from the
- * blocking checks so the caster never blocks themselves and the target
- * cell does not need to be unoccupied (you obviously want to target
- * the enemy who's standing on the cell). The previous implementation
- * walked the dominant direction only, which broke any non-axial line
- * of sight (the loop could fall through with `return true` after 128
- * steps without ever reaching the target, or block on a fighter who
- * happened to lie on the swept axis but not on the actual line). The
- * Bresenham walk handles diagonals correctly.
+ * Bresenham is the wrong tool here: it takes a diagonal step whenever
+ * the error term allows, and so skips one of the two cells the segment
+ * actually crosses. From (0,0) to (2,-3) it checks (1,-1) (1,-2), the
+ * retail walk checks (0,-1) (1,-1) (1,-2) (2,-2). A fighter on (0,-1)
+ * then blocked the 1.29 client but not this one (QA-178).
+ */
+export function sightLineCoords(
+  width: number,
+  from: number,
+  to: number
+): Array<{ x: number; y: number }> {
+  if (from === to) {
+    return [];
+  }
+  const a = cellToCoord(from, width);
+  const b = cellToCoord(to, width);
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const length = Math.sqrt(dx * dx + dy * dy);
+  const ux = dx / length;
+  const uy = dy / length;
+  // 1/0 is Infinity on an axial line: that axis is simply never stepped.
+  const tDeltaX = Math.abs(1 / ux);
+  const tDeltaY = Math.abs(1 / uy);
+  const sx = ux >= 0 ? 1 : -1;
+  const sy = uy >= 0 ? 1 : -1;
+  let tMaxX = 0.5 * tDeltaX;
+  let tMaxY = 0.5 * tDeltaY;
+  let x = a.x;
+  let y = a.y;
+  const out: Array<{ x: number; y: number }> = [];
+
+  // The walk reaches `to` in |dx| + |dy| steps at most; the cap only
+  // guards against a degenerate input never converging.
+  for (let guard = 0; guard < 1024 && (x !== b.x || y !== b.y); guard++) {
+    if (Math.abs(tMaxX - tMaxY) < 1e-10) {
+      tMaxX += tDeltaX;
+      tMaxY += tDeltaY;
+      x += sx;
+      y += sy;
+    } else if (tMaxX < tMaxY) {
+      tMaxX += tDeltaX;
+      x += sx;
+    } else {
+      tMaxY += tDeltaY;
+      y += sy;
+    }
+    out.push({ x, y });
+  }
+
+  return out;
+}
+
+/**
+ * Line of sight as the retail client computes it (`Pathfinding.checkView`).
+ *
+ * Sight is refused when the target cell itself blocks sight, or when any
+ * cell strictly between caster and target (see `sightLineCoords`):
+ *   1. lies outside the map,
+ *   2. carries `lineOfSight = false` (walls, decorations), or
+ *   3. holds a fighter (caller-supplied via `occupantOf`; the caller
+ *      filters out dead, carried and invisible fighters).
+ *
+ * The caster's and the target's own occupants never block: you target
+ * the enemy standing on the cell, and the caster never hides itself.
  */
 export function hasLineOfSight(
   fmap: FightMapLos,
   from: number,
   to: number
 ): boolean {
-  if (from === to) {
-    return true;
+  if (!inBounds(fmap, from) || !inBounds(fmap, to)) {
+    return false;
+  }
+  if (fmap.losBlocked?.(to)) {
+    return false;
   }
 
-  const a = cellToCoord(from, fmap.width);
+  const line = sightLineCoords(fmap.width, from, to);
+  // The last entry is the target, already checked above. A walk that did
+  // not end on it only happens if the guard tripped: refuse sight.
+  const end = line.pop();
   const b = cellToCoord(to, fmap.width);
+  if (from !== to && (end?.x !== b.x || end?.y !== b.y)) {
+    return false;
+  }
 
-  let x = a.x;
-  let y = a.y;
-  const dx = Math.abs(b.x - x);
-  const dy = Math.abs(b.y - y);
-  const sx = a.x < b.x ? 1 : -1;
-  const sy = a.y < b.y ? 1 : -1;
-  let err = dx - dy;
+  for (const step of line) {
+    const cellId = step.x * fmap.width + (fmap.width - 1) * step.y;
+    const coord = cellToCoord(cellId, fmap.width);
 
-  // Hard cap to avoid runaway loops on degenerate input. Max iso-line
-  // length on a Dofus map is ~ width + height; 1024 leaves plenty of
-  // headroom while still terminating in pathological cases.
-  for (let guard = 0; guard < 1024; guard++) {
-    const e2 = 2 * err;
-
-    if (e2 > -dy) {
-      err -= dy;
-      x += sx;
-    }
-
-    if (e2 < dx) {
-      err += dx;
-      y += sy;
-    }
-
-    if (x === b.x && y === b.y) {
-      return true;
-    }
-
-    const cellId = x * fmap.width + (fmap.width - 1) * y;
-
-    if (cellId < 0 || cellId >= fmap.width * fmap.height * 2) {
+    // An (x, y) off the map still encodes to *some* id; the round trip
+    // rejects it instead of reading whatever cell the id wraps onto.
+    if (!inBounds(fmap, cellId) || coord.x !== step.x || coord.y !== step.y) {
       return false;
     }
-
     if (fmap.losBlocked?.(cellId)) {
       return false;
     }
-
     if (fmap.occupantOf(cellId) !== undefined) {
       return false;
     }
   }
 
-  return false;
+  return true;
 }
 
 export function fightDistance(
@@ -359,53 +449,14 @@ export function fightDistance(
   a: number,
   b: number
 ): number {
+  if (!inBounds(fmap, a) || !inBounds(fmap, b)) {
+    return 1 << 20;
+  }
   if (a === b) {
     return 0;
   }
 
-  const total = fmap.width * fmap.height * 2;
-
-  if (a < 0 || a >= total || b < 0 || b >= total) {
-    return 1 << 20;
-  }
-
-  const visited = new Map<number, number>([[a, 0]]);
-  const queue = [a];
-
-  let head = 0;
-
-  while (head < queue.length) {
-    const cell = queue[head] ?? 0;
-    const d = visited.get(cell) ?? 0;
-
-    head++;
-
-    if (d > 128) {
-      break;
-    }
-    // Canonical Dofus 1.29 spell + fight distance uses 4-way Manhattan
-    // BFS over the diamond-adjacent cells (SE/SW/NW/NE = direction
-    // indices 1/3/5/7), NOT the 8-way Chebyshev distance over all
-    // diagonals. The 8-way variant would let cells diagonally 2 cells
-    // away count as distance 2 (Chebyshev), shrinking large ranges
-    // dramatically and producing a SQUARE preview shape instead of
-    // the canonical diamond.
-    for (const dir of CARDINAL_DIRECTIONS) {
-      const n = cell + directionDelta(dir, fmap.width);
-
-      if (n < 0 || n >= total || visited.has(n)) {
-        continue;
-      }
-
-      visited.set(n, d + 1);
-
-      if (n === b) {
-        return d + 1;
-      }
-
-      queue.push(n);
-    }
-  }
-
-  return 1 << 20;
+  const from = cellToCoord(a, fmap.width);
+  const to = cellToCoord(b, fmap.width);
+  return Math.abs(from.x - to.x) + Math.abs(from.y - to.y);
 }

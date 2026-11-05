@@ -84,9 +84,7 @@ français à quelques chaînes près.
 ### Ce qui n'a pas pu être testé
 
 **Le combat, entièrement** — le cœur de Dofus et la plus grosse lacune de la
-session. Le détail des deux verrous, l'état de chacun et la marche à suivre pour
-amorcer un premier combat sont dans
-[QA-058](issues/fight/QA-058-combat-jamais-teste.md).
+session.
 
 ### Notes de méthode — deux faux positifs écartés
 
@@ -107,7 +105,7 @@ correction, toutes les configurations testées tiennent le plafond d'affichage :
 | Panneau Inventaire ouvert | 72 |
 
 Le rendu n'est donc pas un problème sur cette charge — une map, un acteur, aucun
-combat. À re-mesurer sous charge de combat (QA-058).
+combat. À re-mesurer sous charge de combat.
 
 **Audio.** J'ai d'abord conclu à tort que rien ne jouait, sur la foi d'un
 `document.querySelectorAll("audio")` vide — or `new Audio(url)` ne crée aucun
